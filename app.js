@@ -1,24 +1,30 @@
-/* Road Discovery AU - GitHub Pages prototype
-   Static, phone-friendly, no backend.
-   Uses Leaflet, OpenStreetMap/CARTO tiles, and Overpass for nearby roads.
-*/
-
 const STORAGE_KEY = "roadDiscoveryAU.visited.v1";
-const SETTINGS_KEY = "roadDiscoveryAU.settings.v1";
+const SETTINGS_KEY = "roadDiscoveryAU.settings.v2";
+
+const LOAD_RADIUS_M = 2500;
+const AUTO_RELOAD_DISTANCE_M = 1700;
+const MIN_AUTO_RELOAD_TIME_MS = 12000;
 
 const els = {
   status: document.getElementById("statusText"),
   areaProgress: document.getElementById("areaProgress"),
   todayKm: document.getElementById("todayKm"),
   unlockedCount: document.getElementById("unlockedCount"),
+
   loadRoadsBtn: document.getElementById("loadRoadsBtn"),
   startBtn: document.getElementById("startBtn"),
   finishBtn: document.getElementById("finishBtn"),
   demoBtn: document.getElementById("demoBtn"),
   locateBtn: document.getElementById("locateBtn"),
+
+  loadingSheet: document.getElementById("loadingSheet"),
+  progressBar: document.getElementById("progressBar"),
+  progressText: document.getElementById("progressText"),
+
   summarySheet: document.getElementById("summarySheet"),
   summaryText: document.getElementById("summaryText"),
   closeSummaryBtn: document.getElementById("closeSummaryBtn"),
+
   settingsToggle: document.getElementById("settingsToggle"),
   settingsPanel: document.getElementById("settingsPanel"),
   unlockRadius: document.getElementById("unlockRadius"),
@@ -37,6 +43,7 @@ const state = {
   accuracyCircle: null,
 
   roadSegments: [],
+  roadSegmentIds: new Set(),
   visited: loadVisited(),
 
   watchId: null,
@@ -46,7 +53,12 @@ const state = {
   tripDistanceM: 0,
   lastPoint: null,
 
+  lastRoadLoadCenter: null,
+  lastAutoReloadAt: 0,
+  isLoadingRoads: false,
+
   demoTimer: null,
+  loadingTimer: null,
 
   settings: loadSettings(),
 };
@@ -66,33 +78,31 @@ function init() {
   }).addTo(state.map);
 
   state.roadsLayer.addTo(state.map);
-state.tripLayer.addTo(state.map);
+  state.tripLayer.addTo(state.map);
 
-// Fix weird blank tile gaps on first load / mobile browsers
-setTimeout(() => {
-  state.map.invalidateSize(true);
-}, 250);
+  setTimeout(() => {
+    state.map.invalidateSize(true);
+  }, 250);
 
-setTimeout(() => {
-  state.map.invalidateSize(true);
-}, 1000);
+  setTimeout(() => {
+    state.map.invalidateSize(true);
+  }, 1000);
 
-window.addEventListener("resize", () => {
-  state.map.invalidateSize(true);
-});
+  window.addEventListener("resize", () => {
+    state.map.invalidateSize(true);
+  });
 
-applySettingsToUi();
-wireEvents();
+  applySettingsToUi();
+  wireEvents();
   registerServiceWorker();
   updateStats();
 
   locateUser(false);
-
-  setStatus("Load roads near you, or press Demo Drive to test instantly.");
+  setStatus("Press Locate Self to begin.");
 }
 
 function wireEvents() {
-  els.loadRoadsBtn.addEventListener("click", () => loadRoadsNearMapCenter());
+  els.loadRoadsBtn.addEventListener("click", locateLoadAndStart);
   els.startBtn.addEventListener("click", startDrive);
   els.finishBtn.addEventListener("click", finishDrive);
   els.demoBtn.addEventListener("click", runDemoDrive);
@@ -123,7 +133,7 @@ function wireEvents() {
   els.segmentSize.addEventListener("change", () => {
     state.settings.segmentSize = Number(els.segmentSize.value);
     saveSettings();
-    setStatus("Segment size changed. Load roads again to rebuild chunks.");
+    setStatus("Segment size changed. Press Locate Self again to rebuild road chunks.");
   });
 }
 
@@ -136,7 +146,7 @@ function applySettingsToUi() {
   els.maxAccuracyText.textContent = `${state.settings.maxAccuracy} m`;
 }
 
-async function locateUser(zoom) {
+function locateUser(zoom) {
   if (!navigator.geolocation) {
     setStatus("GPS is not available in this browser.");
     return;
@@ -145,7 +155,6 @@ async function locateUser(zoom) {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const point = positionToPoint(pos);
-
       updateUserMarker(point);
 
       if (zoom) {
@@ -154,7 +163,7 @@ async function locateUser(zoom) {
         state.map.setView([point.lat, point.lng], Math.max(state.map.getZoom(), 14));
       }
 
-      setStatus("GPS ready. Load roads here, then Start Drive.");
+      setStatus("GPS ready. Press Locate Self to load roads and start.");
     },
     () => {
       setStatus("GPS permission blocked or unavailable. Demo Drive still works.");
@@ -167,22 +176,97 @@ async function locateUser(zoom) {
   );
 }
 
-async function loadRoadsNearMapCenter() {
-  const center = state.map.getCenter();
-  await loadRoads(center.lat, center.lng, 1800);
+async function locateLoadAndStart() {
+  if (!navigator.geolocation) {
+    setStatus("GPS is not available in this browser.");
+    return;
+  }
+
+  stopDemo();
+  stopGpsWatch();
+
+  state.isRecording = false;
+  state.tripUnlocked.clear();
+  state.tripDistanceM = 0;
+  state.lastPoint = null;
+  state.tripLayer.clearLayers();
+
+  showLoading(0);
+  setStatus("Finding your location...");
+
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const point = positionToPoint(pos);
+
+      updateUserMarker(point);
+      state.map.setView([point.lat, point.lng], 16);
+
+      showLoading(10);
+      animateLoadingTo(35);
+      setStatus("Location found. Loading nearby roads...");
+
+      await loadRoads(point.lat, point.lng, LOAD_RADIUS_M, {
+        replace: true,
+        showPopupProgress: true,
+        reason: "initial",
+      });
+
+      updateLoading(100);
+
+      setTimeout(() => {
+        hideLoading();
+
+        if (state.roadSegments.length > 0) {
+          startDrive();
+          setStatus("Roads loaded. Drive now — grey roads will turn orange.");
+        } else {
+          setStatus("No roads loaded here. Try again or use Demo Drive.");
+        }
+      }, 450);
+    },
+    () => {
+      hideLoading();
+      setStatus("GPS permission blocked or unavailable.");
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 12000,
+      maximumAge: 2000,
+    }
+  );
 }
 
-async function loadRoads(lat, lng, radiusM) {
-  stopDemo();
+async function loadRoads(lat, lng, radiusM, options = {}) {
+  const {
+    replace = false,
+    showPopupProgress = false,
+    reason = "manual",
+  } = options;
 
-  state.roadsLayer.clearLayers();
-  state.tripLayer.clearLayers();
-  state.roadSegments = [];
+  if (state.isLoadingRoads) return;
 
-  updateStats();
-
-  setStatus(`Loading roads within ${(radiusM / 1000).toFixed(1)} km...`);
+  state.isLoadingRoads = true;
   els.loadRoadsBtn.disabled = true;
+
+  if (replace) {
+    state.roadsLayer.clearLayers();
+    state.roadSegments = [];
+    state.roadSegmentIds.clear();
+    state.lastRoadLoadCenter = null;
+    updateStats();
+  }
+
+  if (showPopupProgress) {
+    animateLoadingTo(85);
+  }
+
+  const km = (radiusM / 1000).toFixed(1);
+
+  if (reason === "auto") {
+    setStatus(`Loading more roads ahead...`);
+  } else {
+    setStatus(`Loading roads within ${km} km...`);
+  }
 
   const query = `
     [out:json][timeout:25];
@@ -210,24 +294,46 @@ async function loadRoads(lat, lng, radiusM) {
     const data = await response.json();
     const ways = data.elements || [];
 
+    const before = state.roadSegments.length;
+
     buildSegmentsFromWays(ways);
-    drawSegments();
+    drawNewSegments(before);
+
+    state.lastRoadLoadCenter = {
+      lat,
+      lng,
+      timestamp: Date.now(),
+    };
+
     updateStats();
 
-    setStatus(
-      `Loaded ${state.roadSegments.length.toLocaleString()} road chunks. Press Start Drive.`
-    );
+    const added = state.roadSegments.length - before;
+
+    if (showPopupProgress) {
+      updateLoading(100);
+    }
+
+    if (reason === "auto") {
+      setStatus(`More roads loaded. Added ${added.toLocaleString()} chunks.`);
+    } else {
+      setStatus(`Loaded ${state.roadSegments.length.toLocaleString()} road chunks.`);
+    }
   } catch (err) {
     console.error(err);
-    setStatus("Could not load nearby roads. Press Demo Drive, or try again in a smaller area.");
+
+    if (reason === "auto") {
+      setStatus("Could not auto-load more roads. Still tracking current loaded area.");
+    } else {
+      setStatus("Could not load nearby roads. Press Demo Drive, or try again.");
+    }
   } finally {
+    state.isLoadingRoads = false;
     els.loadRoadsBtn.disabled = false;
   }
 }
 
 function buildSegmentsFromWays(ways) {
   const segmentSizeM = state.settings.segmentSize;
-  const seen = new Set();
 
   for (const way of ways) {
     if (!way.geometry || way.geometry.length < 2) continue;
@@ -257,8 +363,8 @@ function buildSegmentsFromWays(ways) {
 
         const id = `${way.id}:${i}:${p}:${segmentSizeM}`;
 
-        if (seen.has(id)) continue;
-        seen.add(id);
+        if (state.roadSegmentIds.has(id)) continue;
+        state.roadSegmentIds.add(id);
 
         state.roadSegments.push({
           id,
@@ -278,23 +384,11 @@ function buildSegmentsFromWays(ways) {
   }
 }
 
-function drawSegments() {
-  const greyStyle = {
-    color: "#4e5563",
-    weight: 4,
-    opacity: 0.82,
-    lineCap: "round",
-  };
+function drawNewSegments(startIndex = 0) {
+  for (let i = startIndex; i < state.roadSegments.length; i++) {
+    const seg = state.roadSegments[i];
 
-  const orangeStyle = {
-    color: "#ff8a18",
-    weight: 5,
-    opacity: 1,
-    lineCap: "round",
-  };
-
-  for (const seg of state.roadSegments) {
-    const layer = L.polyline(seg.coords, seg.visited ? orangeStyle : greyStyle);
+    const layer = L.polyline(seg.coords, getSegmentStyle(seg));
 
     layer.bindTooltip(
       `${seg.name}<br>${seg.visited ? "Discovered" : "Undiscovered"}`,
@@ -302,9 +396,35 @@ function drawSegments() {
     );
 
     layer.addTo(state.roadsLayer);
-
     seg.layer = layer;
   }
+}
+
+function getSegmentStyle(seg) {
+  if (seg.currentTrip) {
+    return {
+      color: "#ffb04a",
+      weight: 6,
+      opacity: 1,
+      lineCap: "round",
+    };
+  }
+
+  if (seg.visited) {
+    return {
+      color: "#ff8a18",
+      weight: 5,
+      opacity: 1,
+      lineCap: "round",
+    };
+  }
+
+  return {
+    color: "#4e5563",
+    weight: 4,
+    opacity: 0.82,
+    lineCap: "round",
+  };
 }
 
 function startDrive() {
@@ -314,11 +434,12 @@ function startDrive() {
   }
 
   if (state.roadSegments.length === 0) {
-    setStatus("Load roads first, or use Demo Drive.");
+    setStatus("No road chunks loaded yet.");
     return;
   }
 
   stopDemo();
+  stopGpsWatch();
 
   state.isRecording = true;
   state.tripUnlocked.clear();
@@ -346,15 +467,11 @@ function startDrive() {
 
 function finishDrive() {
   stopDemo();
-
-  if (state.watchId !== null) {
-    navigator.geolocation.clearWatch(state.watchId);
-    state.watchId = null;
-  }
+  stopGpsWatch();
 
   state.isRecording = false;
 
-  els.startBtn.classList.remove("hidden");
+  els.startBtn.classList.add("hidden");
   els.finishBtn.classList.add("hidden");
 
   const newKm = sumTripUnlockedKm();
@@ -366,8 +483,14 @@ function finishDrive() {
   `;
 
   els.summarySheet.classList.remove("hidden");
+  setStatus("Trip finished. Progress saved on this device.");
+}
 
-  setStatus("Trip finished. Progress saved on this phone.");
+function stopGpsWatch() {
+  if (state.watchId !== null) {
+    navigator.geolocation.clearWatch(state.watchId);
+    state.watchId = null;
+  }
 }
 
 function onGpsPosition(position) {
@@ -379,6 +502,8 @@ function onGpsPosition(position) {
     animate: true,
     duration: 0.3,
   });
+
+  maybeAutoLoadMoreRoads(point);
 
   if (point.accuracy > state.settings.maxAccuracy) {
     setStatus(`GPS accuracy ${Math.round(point.accuracy)} m. Waiting for cleaner signal...`);
@@ -401,11 +526,46 @@ function onGpsPosition(position) {
 
   updateStats();
 
-  setStatus(
-    unlockedNow > 0
-      ? `Unlocked ${unlockedNow} road chunks.`
-      : "Recording. Roads turn orange as you drive."
-  );
+  if (unlockedNow > 0) {
+    setStatus(`Unlocked ${unlockedNow} road chunks.`);
+  } else if (!state.isLoadingRoads) {
+    setStatus("Recording. Grey roads will turn orange as you drive.");
+  }
+}
+
+function maybeAutoLoadMoreRoads(point) {
+  if (!state.isRecording) return;
+  if (state.isLoadingRoads) return;
+
+  const now = Date.now();
+
+  if (now - state.lastAutoReloadAt < MIN_AUTO_RELOAD_TIME_MS) {
+    return;
+  }
+
+  if (!state.lastRoadLoadCenter) {
+    state.lastAutoReloadAt = now;
+
+    loadRoads(point.lat, point.lng, LOAD_RADIUS_M, {
+      replace: false,
+      showPopupProgress: false,
+      reason: "auto",
+    });
+
+    return;
+  }
+
+  const distanceFromLoadCenter = haversine(point, state.lastRoadLoadCenter);
+
+  if (distanceFromLoadCenter >= AUTO_RELOAD_DISTANCE_M) {
+    state.lastAutoReloadAt = now;
+
+    loadRoads(point.lat, point.lng, LOAD_RADIUS_M, {
+      replace: false,
+      showPopupProgress: false,
+      reason: "auto",
+    });
+  }
 }
 
 function unlockNearbySegments(point) {
@@ -425,7 +585,6 @@ function unlockNearbySegments(point) {
       state.tripUnlocked.add(seg.id);
 
       styleSegment(seg);
-
       unlocked++;
     }
   }
@@ -439,29 +598,7 @@ function unlockNearbySegments(point) {
 
 function styleSegment(seg) {
   if (!seg.layer) return;
-
-  if (seg.currentTrip) {
-    seg.layer.setStyle({
-      color: "#ffb04a",
-      weight: 6,
-      opacity: 1,
-      lineCap: "round",
-    });
-  } else if (seg.visited) {
-    seg.layer.setStyle({
-      color: "#ff8a18",
-      weight: 5,
-      opacity: 1,
-      lineCap: "round",
-    });
-  } else {
-    seg.layer.setStyle({
-      color: "#4e5563",
-      weight: 4,
-      opacity: 0.82,
-      lineCap: "round",
-    });
-  }
+  seg.layer.setStyle(getSegmentStyle(seg));
 }
 
 function drawTripLine(a, b) {
@@ -534,13 +671,21 @@ function sumTripUnlockedKm() {
 
 function runDemoDrive() {
   stopDemo();
+  stopGpsWatch();
 
   state.roadsLayer.clearLayers();
   state.tripLayer.clearLayers();
+  state.roadSegments = [];
+  state.roadSegmentIds.clear();
+  state.lastRoadLoadCenter = null;
 
   state.roadSegments = buildDemoSegments();
 
-  drawSegments();
+  for (const seg of state.roadSegments) {
+    state.roadSegmentIds.add(seg.id);
+  }
+
+  drawNewSegments(0);
   updateStats();
 
   const path = demoPath();
@@ -595,7 +740,7 @@ function buildDemoSegments() {
       name: "Reservoir Road",
       coords: [
         [-33.7798, 150.9056],
-        [-33.779, 150.9134],
+        [-33.7790, 150.9134],
       ],
     },
     {
@@ -611,9 +756,9 @@ function buildDemoSegments() {
       id: "demo-c",
       name: "Richmond Road",
       coords: [
-        [-33.772, 150.893],
+        [-33.7720, 150.8930],
         [-33.7756, 150.9002],
-        [-33.779, 150.9134],
+        [-33.7790, 150.9134],
       ],
     },
     {
@@ -622,16 +767,16 @@ function buildDemoSegments() {
       coords: [
         [-33.7832, 150.8966],
         [-33.7798, 150.9056],
-        [-33.7772, 150.918],
+        [-33.7772, 150.9180],
       ],
     },
     {
       id: "demo-e",
       name: "Back Street",
       coords: [
-        [-33.787, 150.9042],
+        [-33.7870, 150.9042],
         [-33.7848, 150.9118],
-        [-33.781, 150.9192],
+        [-33.7810, 150.9192],
       ],
     },
   ];
@@ -681,11 +826,11 @@ function buildDemoSegments() {
 
 function demoPath() {
   const anchors = [
-    [-33.772, 150.893],
+    [-33.7720, 150.8930],
     [-33.7756, 150.9002],
     [-33.7798, 150.9056],
-    [-33.779, 150.9134],
-    [-33.7772, 150.918],
+    [-33.7790, 150.9134],
+    [-33.7772, 150.9180],
   ];
 
   const path = [];
@@ -708,12 +853,11 @@ function demoPath() {
   }
 
   path.push(anchors[anchors.length - 1]);
-
   return path;
 }
 
 function resetVisited() {
-  const ok = confirm("Reset all discovered roads saved on this phone?");
+  const ok = confirm("Reset all discovered roads saved on this device?");
 
   if (!ok) return;
 
@@ -727,10 +871,52 @@ function resetVisited() {
   }
 
   state.tripUnlocked.clear();
-
   updateStats();
-
   setStatus("Discovered roads reset.");
+}
+
+function showLoading(percent) {
+  clearLoadingTimer();
+  els.loadingSheet.classList.remove("hidden");
+  updateLoading(percent);
+}
+
+function hideLoading() {
+  clearLoadingTimer();
+  els.loadingSheet.classList.add("hidden");
+}
+
+function updateLoading(percent) {
+  const safe = Math.max(0, Math.min(100, Math.round(percent)));
+  els.progressBar.style.width = `${safe}%`;
+  els.progressText.textContent = `${safe}%`;
+}
+
+function animateLoadingTo(target) {
+  clearLoadingTimer();
+
+  state.loadingTimer = setInterval(() => {
+    const current = Number(els.progressText.textContent.replace("%", "")) || 0;
+
+    if (current >= target) {
+      clearLoadingTimer();
+      return;
+    }
+
+    const next = Math.min(
+      target,
+      current + Math.max(1, Math.round((target - current) * 0.12))
+    );
+
+    updateLoading(next);
+  }, 120);
+}
+
+function clearLoadingTimer() {
+  if (state.loadingTimer) {
+    clearInterval(state.loadingTimer);
+    state.loadingTimer = null;
+  }
 }
 
 function setStatus(text) {
@@ -826,15 +1012,15 @@ function saveVisited() {
 function loadSettings() {
   try {
     return {
-      unlockRadius: 30,
-      maxAccuracy: 50,
+      unlockRadius: 20,
+      maxAccuracy: 35,
       segmentSize: 50,
       ...JSON.parse(localStorage.getItem(SETTINGS_KEY)),
     };
   } catch {
     return {
-      unlockRadius: 30,
-      maxAccuracy: 50,
+      unlockRadius: 20,
+      maxAccuracy: 35,
       segmentSize: 50,
     };
   }
