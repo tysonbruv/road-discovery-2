@@ -155,6 +155,7 @@ function locateUser(zoom) {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const point = positionToPoint(pos);
+
       updateUserMarker(point);
 
       if (zoom) {
@@ -186,6 +187,8 @@ async function locateLoadAndStart() {
   stopGpsWatch();
 
   state.isRecording = false;
+  document.body.classList.remove("recording");
+
   state.tripUnlocked.clear();
   state.tripDistanceM = 0;
   state.lastPoint = null;
@@ -263,7 +266,7 @@ async function loadRoads(lat, lng, radiusM, options = {}) {
   const km = (radiusM / 1000).toFixed(1);
 
   if (reason === "auto") {
-    setStatus(`Loading more roads ahead...`);
+    setStatus("Loading more roads ahead...");
   } else {
     setStatus(`Loading roads within ${km} km...`);
   }
@@ -293,7 +296,6 @@ async function loadRoads(lat, lng, radiusM, options = {}) {
 
     const data = await response.json();
     const ways = data.elements || [];
-
     const before = state.roadSegments.length;
 
     buildSegmentsFromWays(ways);
@@ -364,6 +366,7 @@ function buildSegmentsFromWays(ways) {
         const id = `${way.id}:${i}:${p}:${segmentSizeM}`;
 
         if (state.roadSegmentIds.has(id)) continue;
+
         state.roadSegmentIds.add(id);
 
         state.roadSegments.push({
@@ -387,7 +390,6 @@ function buildSegmentsFromWays(ways) {
 function drawNewSegments(startIndex = 0) {
   for (let i = startIndex; i < state.roadSegments.length; i++) {
     const seg = state.roadSegments[i];
-
     const layer = L.polyline(seg.coords, getSegmentStyle(seg));
 
     layer.bindTooltip(
@@ -442,12 +444,12 @@ function startDrive() {
   stopGpsWatch();
 
   state.isRecording = true;
-document.body.classList.add("recording");
+  document.body.classList.add("recording");
 
-state.tripUnlocked.clear();
-state.tripDistanceM = 0;
-state.lastPoint = null;
-state.tripLayer.clearLayers();
+  state.tripUnlocked.clear();
+  state.tripDistanceM = 0;
+  state.lastPoint = null;
+  state.tripLayer.clearLayers();
 
   els.startBtn.classList.add("hidden");
   els.finishBtn.classList.remove("hidden");
@@ -472,10 +474,10 @@ function finishDrive() {
   stopGpsWatch();
 
   state.isRecording = false;
-document.body.classList.remove("recording");
+  document.body.classList.remove("recording");
 
-els.startBtn.classList.add("hidden");
-els.finishBtn.classList.add("hidden");
+  els.startBtn.classList.add("hidden");
+  els.finishBtn.classList.add("hidden");
 
   const newKm = sumTripUnlockedKm();
 
@@ -652,7 +654,7 @@ function updateUserMarker(point) {
 
 function updateStats() {
   const total = state.roadSegments.length;
-  const visitedInArea = state.roadSegments.filter((s) => s.visited).length;
+  const visitedInArea = state.roadSegments.filter((seg) => seg.visited).length;
   const percent = total ? (visitedInArea / total) * 100 : 0;
 
   els.areaProgress.textContent = `${percent.toFixed(2)}%`;
@@ -696,11 +698,11 @@ function runDemoDrive() {
   state.map.setView(path[0], 15);
 
   state.isRecording = true;
-document.body.classList.add("recording");
+  document.body.classList.add("recording");
 
-state.tripUnlocked.clear();
-state.tripDistanceM = 0;
-state.lastPoint = null;
+  state.tripUnlocked.clear();
+  state.tripDistanceM = 0;
+  state.lastPoint = null;
 
   els.startBtn.classList.add("hidden");
   els.finishBtn.classList.remove("hidden");
@@ -893,6 +895,7 @@ function hideLoading() {
 
 function updateLoading(percent) {
   const safe = Math.max(0, Math.min(100, Math.round(percent)));
+
   els.progressBar.style.width = `${safe}%`;
   els.progressText.textContent = `${safe}%`;
 }
