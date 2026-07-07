@@ -14,7 +14,6 @@ const els = {
   loadRoadsBtn: document.getElementById("loadRoadsBtn"),
   startBtn: document.getElementById("startBtn"),
   finishBtn: document.getElementById("finishBtn"),
-  demoBtn: document.getElementById("demoBtn"),
   locateBtn: document.getElementById("locateBtn"),
 
   loadingSheet: document.getElementById("loadingSheet"),
@@ -105,7 +104,6 @@ function wireEvents() {
   els.loadRoadsBtn.addEventListener("click", locateLoadAndStart);
   els.startBtn.addEventListener("click", startDrive);
   els.finishBtn.addEventListener("click", finishDrive);
-  els.demoBtn.addEventListener("click", runDemoDrive);
   els.locateBtn.addEventListener("click", () => locateUser(true));
 
   els.closeSummaryBtn.addEventListener("click", () => {
