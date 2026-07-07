@@ -383,3 +383,7 @@ button:active {
 .leaflet-popup-pane {
   z-index: 700;
 }
+
+body.recording .stats {
+  bottom: calc(270px + env(safe-area-inset-bottom));
+}
