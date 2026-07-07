@@ -385,5 +385,5 @@ button:active {
 }
 
 body.recording .stats {
-  bottom: calc(10px + env(safe-area-inset-bottom));
+  bottom: calc(30px + env(safe-area-inset-bottom));
 }
