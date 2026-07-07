@@ -95,7 +95,7 @@ body {
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: calc(88px + env(safe-area-inset-bottom));
+  bottom: calc(188px + env(safe-area-inset-bottom));
   z-index: 1000;
   border-radius: 22px;
   padding: 12px;
@@ -318,6 +318,7 @@ button:active {
     left: 18px;
     right: auto;
     width: 390px;
+    bottom: calc(188px + env(safe-area-inset-bottom));
   }
 
   .controls {
