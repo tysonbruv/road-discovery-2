@@ -696,9 +696,11 @@ function runDemoDrive() {
   state.map.setView(path[0], 15);
 
   state.isRecording = true;
-  state.tripUnlocked.clear();
-  state.tripDistanceM = 0;
-  state.lastPoint = null;
+document.body.classList.add("recording");
+
+state.tripUnlocked.clear();
+state.tripDistanceM = 0;
+state.lastPoint = null;
 
   els.startBtn.classList.add("hidden");
   els.finishBtn.classList.remove("hidden");
