@@ -56,7 +56,6 @@ const state = {
   lastAutoReloadAt: 0,
   isLoadingRoads: false,
 
-  demoTimer: null,
   loadingTimer: null,
 
   settings: loadSettings(),
@@ -165,7 +164,7 @@ function locateUser(zoom) {
       setStatus("GPS ready. Press Locate Self to load roads and start.");
     },
     () => {
-      setStatus("GPS permission blocked or unavailable. Demo Drive still works.");
+      setStatus("GPS permission blocked or unavailable.");
     },
     {
       enableHighAccuracy: true,
@@ -181,7 +180,6 @@ async function locateLoadAndStart() {
     return;
   }
 
-  stopDemo();
   stopGpsWatch();
 
   state.isRecording = false;
@@ -191,6 +189,8 @@ async function locateLoadAndStart() {
   state.tripDistanceM = 0;
   state.lastPoint = null;
   state.tripLayer.clearLayers();
+
+  els.summarySheet.classList.add("hidden");
 
   showLoading(0);
   setStatus("Finding your location...");
@@ -221,7 +221,7 @@ async function locateLoadAndStart() {
           startDrive();
           setStatus("Roads loaded. Drive now — grey roads will turn orange.");
         } else {
-          setStatus("No roads loaded here. Try again or use Demo Drive.");
+          setStatus("No roads loaded here. Try again.");
         }
       }, 450);
     },
@@ -324,7 +324,7 @@ async function loadRoads(lat, lng, radiusM, options = {}) {
     if (reason === "auto") {
       setStatus("Could not auto-load more roads. Still tracking current loaded area.");
     } else {
-      setStatus("Could not load nearby roads. Press Demo Drive, or try again.");
+      setStatus("Could not load nearby roads. Try again.");
     }
   } finally {
     state.isLoadingRoads = false;
@@ -438,7 +438,6 @@ function startDrive() {
     return;
   }
 
-  stopDemo();
   stopGpsWatch();
 
   state.isRecording = true;
@@ -468,7 +467,6 @@ function startDrive() {
 }
 
 function finishDrive() {
-  stopDemo();
   stopGpsWatch();
 
   state.isRecording = false;
@@ -670,195 +668,6 @@ function sumTripUnlockedKm() {
   }
 
   return meters / 1000;
-}
-
-function runDemoDrive() {
-  stopDemo();
-  stopGpsWatch();
-
-  state.roadsLayer.clearLayers();
-  state.tripLayer.clearLayers();
-  state.roadSegments = [];
-  state.roadSegmentIds.clear();
-  state.lastRoadLoadCenter = null;
-
-  state.roadSegments = buildDemoSegments();
-
-  for (const seg of state.roadSegments) {
-    state.roadSegmentIds.add(seg.id);
-  }
-
-  drawNewSegments(0);
-  updateStats();
-
-  const path = demoPath();
-
-  state.map.setView(path[0], 15);
-
-  state.isRecording = true;
-  document.body.classList.add("recording");
-
-  state.tripUnlocked.clear();
-  state.tripDistanceM = 0;
-  state.lastPoint = null;
-
-  els.startBtn.classList.add("hidden");
-  els.finishBtn.classList.remove("hidden");
-
-  setStatus("Demo Drive running. Watch the roads turn orange.");
-
-  let i = 0;
-
-  state.demoTimer = setInterval(() => {
-    const [lat, lng] = path[i];
-
-    onGpsPosition({
-      coords: {
-        latitude: lat,
-        longitude: lng,
-        accuracy: 8,
-        speed: 8,
-        heading: 0,
-      },
-      timestamp: Date.now(),
-    });
-
-    i++;
-
-    if (i >= path.length) {
-      finishDrive();
-    }
-  }, 450);
-}
-
-function stopDemo() {
-  if (state.demoTimer) {
-    clearInterval(state.demoTimer);
-    state.demoTimer = null;
-  }
-}
-
-function buildDemoSegments() {
-  const roads = [
-    {
-      id: "demo-a",
-      name: "Reservoir Road",
-      coords: [
-        [-33.7798, 150.9056],
-        [-33.7790, 150.9134],
-      ],
-    },
-    {
-      id: "demo-b",
-      name: "Sunnyholt Road",
-      coords: [
-        [-33.7756, 150.9002],
-        [-33.7798, 150.9056],
-        [-33.7848, 150.9118],
-      ],
-    },
-    {
-      id: "demo-c",
-      name: "Richmond Road",
-      coords: [
-        [-33.7720, 150.8930],
-        [-33.7756, 150.9002],
-        [-33.7790, 150.9134],
-      ],
-    },
-    {
-      id: "demo-d",
-      name: "Main Street",
-      coords: [
-        [-33.7832, 150.8966],
-        [-33.7798, 150.9056],
-        [-33.7772, 150.9180],
-      ],
-    },
-    {
-      id: "demo-e",
-      name: "Back Street",
-      coords: [
-        [-33.7870, 150.9042],
-        [-33.7848, 150.9118],
-        [-33.7810, 150.9192],
-      ],
-    },
-  ];
-
-  const segments = [];
-
-  for (const road of roads) {
-    for (let i = 0; i < road.coords.length - 1; i++) {
-      const a = {
-        lat: road.coords[i][0],
-        lng: road.coords[i][1],
-      };
-
-      const b = {
-        lat: road.coords[i + 1][0],
-        lng: road.coords[i + 1][1],
-      };
-
-      const dist = haversine(a, b);
-      const pieces = Math.max(1, Math.ceil(dist / state.settings.segmentSize));
-
-      for (let p = 0; p < pieces; p++) {
-        const start = interpolate(a, b, p / pieces);
-        const end = interpolate(a, b, (p + 1) / pieces);
-
-        const id = `${road.id}:${i}:${p}:${state.settings.segmentSize}`;
-
-        segments.push({
-          id,
-          name: road.name,
-          highway: "demo",
-          coords: [
-            [start.lat, start.lng],
-            [end.lat, end.lng],
-          ],
-          lengthM: haversine(start, end),
-          visited: Boolean(state.visited[id]),
-          currentTrip: false,
-          layer: null,
-        });
-      }
-    }
-  }
-
-  return segments;
-}
-
-function demoPath() {
-  const anchors = [
-    [-33.7720, 150.8930],
-    [-33.7756, 150.9002],
-    [-33.7798, 150.9056],
-    [-33.7790, 150.9134],
-    [-33.7772, 150.9180],
-  ];
-
-  const path = [];
-
-  for (let i = 0; i < anchors.length - 1; i++) {
-    const a = {
-      lat: anchors[i][0],
-      lng: anchors[i][1],
-    };
-
-    const b = {
-      lat: anchors[i + 1][0],
-      lng: anchors[i + 1][1],
-    };
-
-    for (let p = 0; p < 12; p++) {
-      const q = interpolate(a, b, p / 12);
-      path.push([q.lat, q.lng]);
-    }
-  }
-
-  path.push(anchors[anchors.length - 1]);
-  return path;
 }
 
 function resetVisited() {
