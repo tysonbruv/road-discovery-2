@@ -208,6 +208,46 @@ button:active {
   line-height: 1.55;
 }
 
+.loadingSheet {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2500;
+  border-radius: 26px;
+  padding: 22px;
+  text-align: center;
+}
+
+.loadingSheet h2 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.loadingSheet p {
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0 0 18px;
+}
+
+.progressTrack {
+  height: 14px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.progressBar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(135deg, #ff8a18, #ff6b00);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
 .settingsToggle {
   position: fixed;
   right: 14px;
@@ -286,6 +326,7 @@ button:active {
     width: 390px;
   }
 }
+
 /* Leaflet fallback fix: keeps map tiles positioned correctly */
 .leaflet-container {
   position: relative;
