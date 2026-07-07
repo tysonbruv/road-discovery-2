@@ -442,10 +442,12 @@ function startDrive() {
   stopGpsWatch();
 
   state.isRecording = true;
-  state.tripUnlocked.clear();
-  state.tripDistanceM = 0;
-  state.lastPoint = null;
-  state.tripLayer.clearLayers();
+document.body.classList.add("recording");
+
+state.tripUnlocked.clear();
+state.tripDistanceM = 0;
+state.lastPoint = null;
+state.tripLayer.clearLayers();
 
   els.startBtn.classList.add("hidden");
   els.finishBtn.classList.remove("hidden");
