@@ -2,15 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover"
   />
+
   <meta name="theme-color" content="#090b0f" />
+
   <title>Road Discovery AU</title>
 
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
   <link rel="stylesheet" href="style.css" />
 </head>
 
@@ -21,12 +29,15 @@
     <header class="topbar glass">
       <div>
         <div class="brand">Road Discovery AU</div>
+
         <div id="statusText" class="subtle">
           Press Locate Self to begin.
         </div>
       </div>
 
-      <button id="locateBtn" class="iconBtn" title="Centre on me">◎</button>
+      <button id="locateBtn" class="iconBtn" title="Centre on me">
+        ◎
+      </button>
     </header>
 
     <section class="stats glass">
@@ -47,15 +58,29 @@
     </section>
 
     <section class="controls glass">
-      <button id="loadRoadsBtn" class="primary">Locate Self</button>
-      <button id="startBtn" class="secondary hidden">Start Drive</button>
-      <button id="finishBtn" class="danger hidden">Finish</button>
-      <button id="demoBtn" class="secondary">Demo Drive</button>
+      <button id="loadRoadsBtn" class="primary">
+        Locate Self
+      </button>
+
+      <button id="startBtn" class="secondary hidden">
+        Start Drive
+      </button>
+
+      <button id="finishBtn" class="danger hidden">
+        Finish
+      </button>
+
+      <button id="demoBtn" class="secondary">
+        Demo Drive
+      </button>
     </section>
 
     <section id="loadingSheet" class="loadingSheet glass hidden">
       <h2>Loading roads</h2>
-      <p>Hang tight. Getting nearby road segments ready.</p>
+
+      <p>
+        Hang tight. Getting nearby road segments ready.
+      </p>
 
       <div class="progressTrack">
         <div id="progressBar" class="progressBar"></div>
@@ -66,24 +91,44 @@
 
     <section id="summarySheet" class="summary glass hidden">
       <h2>Trip Complete</h2>
-      <p id="summaryText">No trip yet.</p>
-      <button id="closeSummaryBtn" class="primary">Done</button>
+
+      <p id="summaryText">
+        No trip yet.
+      </p>
+
+      <button id="closeSummaryBtn" class="primary">
+        Done
+      </button>
     </section>
 
-    <button id="settingsToggle" class="settingsToggle glass">⚙</button>
+    <button id="settingsToggle" class="settingsToggle glass">
+      ⚙
+    </button>
 
     <aside id="settingsPanel" class="settings glass hidden">
       <h3>Prototype settings</h3>
 
       <label>
         Unlock radius
-        <input id="unlockRadius" type="range" min="10" max="60" value="20" />
+        <input
+          id="unlockRadius"
+          type="range"
+          min="10"
+          max="60"
+          value="20"
+        />
         <span id="unlockRadiusText">20 m</span>
       </label>
 
       <label>
         Ignore GPS worse than
-        <input id="maxAccuracy" type="range" min="10" max="100" value="35" />
+        <input
+          id="maxAccuracy"
+          type="range"
+          min="10"
+          max="100"
+          value="35"
+        />
         <span id="maxAccuracyText">35 m</span>
       </label>
 
@@ -96,7 +141,9 @@
         </select>
       </label>
 
-      <button id="resetBtn" class="danger small">Reset discovered roads</button>
+      <button id="resetBtn" class="danger small">
+        Reset discovered roads
+      </button>
 
       <p class="tiny">
         This prototype saves progress only on this device/browser using localStorage.
@@ -104,12 +151,7 @@
     </aside>
   </div>
 
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
-
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
