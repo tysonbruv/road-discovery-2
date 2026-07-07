@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
   <meta name="theme-color" content="#090b0f" />
   <title>Road Discovery AU</title>
 
   <link rel="manifest" href="manifest.json" />
-
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
   <link rel="stylesheet" href="style.css" />
 </head>
 
@@ -21,7 +22,7 @@
       <div>
         <div class="brand">Road Discovery AU</div>
         <div id="statusText" class="subtle">
-          Load roads near you, then press Start Drive.
+          Press Locate Self to begin.
         </div>
       </div>
 
@@ -46,10 +47,21 @@
     </section>
 
     <section class="controls glass">
-      <button id="loadRoadsBtn" class="secondary">Load roads here</button>
-      <button id="startBtn" class="primary">Start Drive</button>
+      <button id="loadRoadsBtn" class="primary">Locate Self</button>
+      <button id="startBtn" class="secondary hidden">Start Drive</button>
       <button id="finishBtn" class="danger hidden">Finish</button>
       <button id="demoBtn" class="secondary">Demo Drive</button>
+    </section>
+
+    <section id="loadingSheet" class="loadingSheet glass hidden">
+      <h2>Loading roads</h2>
+      <p>Hang tight. Getting nearby road segments ready.</p>
+
+      <div class="progressTrack">
+        <div id="progressBar" class="progressBar"></div>
+      </div>
+
+      <strong id="progressText">0%</strong>
     </section>
 
     <section id="summarySheet" class="summary glass hidden">
@@ -65,14 +77,14 @@
 
       <label>
         Unlock radius
-        <input id="unlockRadius" type="range" min="10" max="60" value="30" />
-        <span id="unlockRadiusText">30 m</span>
+        <input id="unlockRadius" type="range" min="10" max="60" value="20" />
+        <span id="unlockRadiusText">20 m</span>
       </label>
 
       <label>
         Ignore GPS worse than
-        <input id="maxAccuracy" type="range" min="10" max="100" value="50" />
-        <span id="maxAccuracyText">50 m</span>
+        <input id="maxAccuracy" type="range" min="10" max="100" value="35" />
+        <span id="maxAccuracyText">35 m</span>
       </label>
 
       <label>
@@ -87,7 +99,7 @@
       <button id="resetBtn" class="danger small">Reset discovered roads</button>
 
       <p class="tiny">
-        This prototype saves progress only on this device using localStorage.
+        This prototype saves progress only on this device/browser using localStorage.
       </p>
     </aside>
   </div>
@@ -95,8 +107,8 @@
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin="">
-  </script>
+    crossorigin=""
+  ></script>
 
   <script src="app.js"></script>
 </body>
