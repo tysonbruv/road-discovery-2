@@ -472,9 +472,10 @@ function finishDrive() {
   stopGpsWatch();
 
   state.isRecording = false;
+document.body.classList.remove("recording");
 
-  els.startBtn.classList.add("hidden");
-  els.finishBtn.classList.add("hidden");
+els.startBtn.classList.add("hidden");
+els.finishBtn.classList.add("hidden");
 
   const newKm = sumTripUnlockedKm();
 
