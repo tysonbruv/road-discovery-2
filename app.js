@@ -20,6 +20,11 @@ const els = {
   progressBar: document.getElementById("progressBar"),
   progressText: document.getElementById("progressText"),
 
+  failureSheet: document.getElementById("failureSheet"),
+  failureTitle: document.getElementById("failureTitle"),
+  failureText: document.getElementById("failureText"),
+  retryBtn: document.getElementById("retryBtn"),
+
   summarySheet: document.getElementById("summarySheet"),
   summaryText: document.getElementById("summaryText"),
   closeSummaryBtn: document.getElementById("closeSummaryBtn"),
@@ -95,8 +100,9 @@ function init() {
   registerServiceWorker();
   updateStats();
 
+  setMainButton("Start Drive", false);
   locateUser(false);
-  setStatus("Press Locate Self to begin.");
+  setStatus("Tap Start Drive to begin.");
 }
 
 function wireEvents() {
@@ -104,6 +110,13 @@ function wireEvents() {
   els.startBtn.addEventListener("click", startDrive);
   els.finishBtn.addEventListener("click", finishDrive);
   els.locateBtn.addEventListener("click", () => locateUser(true));
+
+  if (els.retryBtn) {
+    els.retryBtn.addEventListener("click", () => {
+      hideFailure();
+      locateLoadAndStart();
+    });
+  }
 
   els.closeSummaryBtn.addEventListener("click", () => {
     els.summarySheet.classList.add("hidden");
@@ -130,7 +143,7 @@ function wireEvents() {
   els.segmentSize.addEventListener("change", () => {
     state.settings.segmentSize = Number(els.segmentSize.value);
     saveSettings();
-    setStatus("Segment size changed. Press Locate Self again to rebuild road chunks.");
+    setStatus("Segment size changed. Tap Start Drive again to rebuild road chunks.");
   });
 }
 
@@ -161,10 +174,14 @@ function locateUser(zoom) {
         state.map.setView([point.lat, point.lng], Math.max(state.map.getZoom(), 14));
       }
 
-      setStatus("GPS ready. Press Locate Self to load roads and start.");
+      if (!state.isRecording) {
+        setStatus("GPS ready. Tap Start Drive to load roads and begin.");
+      }
     },
     () => {
-      setStatus("GPS permission blocked or unavailable.");
+      if (!state.isRecording) {
+        setStatus("GPS permission blocked or unavailable.");
+      }
     },
     {
       enableHighAccuracy: true,
@@ -176,6 +193,13 @@ function locateUser(zoom) {
 
 async function locateLoadAndStart() {
   if (!navigator.geolocation) {
+    setMainButton("Try Again", false);
+
+    showFailure(
+      "GPS not available",
+      "This browser cannot access GPS. Try Safari or check location permissions."
+    );
+
     setStatus("GPS is not available in this browser.");
     return;
   }
@@ -195,9 +219,11 @@ async function locateLoadAndStart() {
   els.finishBtn.classList.add("hidden");
 
   els.summarySheet.classList.add("hidden");
+  hideFailure();
 
+  setMainButton("Finding GPS...", true);
   showLoading(0);
-  setStatus("Finding your location...");
+  setStatus("Finding your GPS...");
 
   navigator.geolocation.getCurrentPosition(
     async (pos) => {
@@ -208,7 +234,9 @@ async function locateLoadAndStart() {
 
       showLoading(10);
       animateLoadingTo(35);
-      setStatus("Location found. Loading nearby roads...");
+
+      setMainButton("Loading roads...", true);
+      setStatus("GPS found. Loading nearby roads...");
 
       await loadRoads(point.lat, point.lng, LOAD_RADIUS_M, {
         replace: true,
@@ -217,6 +245,7 @@ async function locateLoadAndStart() {
       });
 
       updateLoading(100);
+      setMainButton("Starting drive...", true);
 
       setTimeout(() => {
         hideLoading();
@@ -229,7 +258,14 @@ async function locateLoadAndStart() {
           els.startBtn.classList.add("hidden");
           els.finishBtn.classList.add("hidden");
 
-          setStatus("No roads loaded here. Try again.");
+          setMainButton("Try Again", false);
+
+          showFailure(
+            "Couldn’t load roads",
+            "Reception or the map server may be slow. Wait a few seconds, then tap Try Again."
+          );
+
+          setStatus("Couldn’t load roads. Tap Try Again.");
         }
       }, 450);
     },
@@ -240,7 +276,14 @@ async function locateLoadAndStart() {
       els.startBtn.classList.add("hidden");
       els.finishBtn.classList.add("hidden");
 
-      setStatus("GPS permission blocked or unavailable.");
+      setMainButton("Try Again", false);
+
+      showFailure(
+        "Couldn’t get GPS",
+        "GPS or reception may be weak. Move outside, wait a few seconds, then tap Try Again."
+      );
+
+      setStatus("Couldn’t get GPS. Tap Try Again.");
     },
     {
       enableHighAccuracy: true,
@@ -337,7 +380,7 @@ async function loadRoads(lat, lng, radiusM, options = {}) {
     if (reason === "auto") {
       setStatus("Could not auto-load more roads. Still tracking current loaded area.");
     } else {
-      setStatus("Could not load nearby roads. Try again.");
+      setStatus("Could not load nearby roads. Tap Try Again.");
     }
   } finally {
     state.isLoadingRoads = false;
@@ -447,7 +490,14 @@ function startDrive() {
   }
 
   if (state.roadSegments.length === 0) {
-    setStatus("No road chunks loaded yet.");
+    setMainButton("Try Again", false);
+
+    showFailure(
+      "No roads loaded",
+      "Nearby roads were not ready yet. Wait a few seconds, then tap Try Again."
+    );
+
+    setStatus("No road chunks loaded yet. Tap Try Again.");
     return;
   }
 
@@ -460,6 +510,8 @@ function startDrive() {
   state.tripDistanceM = 0;
   state.lastPoint = null;
   state.tripLayer.clearLayers();
+
+  hideFailure();
 
   els.loadRoadsBtn.classList.add("hidden");
   els.startBtn.classList.add("hidden");
@@ -485,6 +537,8 @@ function finishDrive() {
 
   state.isRecording = false;
   document.body.classList.remove("recording");
+
+  setMainButton("Start Drive", false);
 
   els.loadRoadsBtn.classList.remove("hidden");
   els.startBtn.classList.add("hidden");
@@ -702,6 +756,25 @@ function resetVisited() {
   state.tripUnlocked.clear();
   updateStats();
   setStatus("Discovered roads reset.");
+}
+
+function setMainButton(text, disabled = false) {
+  els.loadRoadsBtn.textContent = text;
+  els.loadRoadsBtn.disabled = disabled;
+}
+
+function showFailure(title, text) {
+  if (!els.failureSheet) return;
+
+  els.failureTitle.textContent = title;
+  els.failureText.textContent = text;
+  els.failureSheet.classList.remove("hidden");
+}
+
+function hideFailure() {
+  if (!els.failureSheet) return;
+
+  els.failureSheet.classList.add("hidden");
 }
 
 function showLoading(percent) {
