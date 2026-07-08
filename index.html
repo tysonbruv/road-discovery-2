@@ -19,7 +19,7 @@
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
 
-  <link rel="stylesheet" href="style.css?v=20" />
+  <link rel="stylesheet" href="style.css?v=21" />
 </head>
 
 <body>
@@ -31,7 +31,7 @@
         <div class="brand">Road Discovery AU</div>
 
         <div id="statusText" class="subtle">
-          Press Locate Self to begin.
+          Tap Start Drive to begin.
         </div>
       </div>
 
@@ -59,7 +59,7 @@
 
     <section class="controls glass">
       <button id="loadRoadsBtn" class="primary">
-        Locate Self
+        Start Drive
       </button>
 
       <button id="startBtn" class="secondary hidden">
@@ -67,7 +67,7 @@
       </button>
 
       <button id="finishBtn" class="danger hidden">
-        Finish
+        Finish Drive
       </button>
     </section>
 
@@ -83,6 +83,18 @@
       </div>
 
       <strong id="progressText">0%</strong>
+    </section>
+
+    <section id="failureSheet" class="failureSheet glass hidden">
+      <h2 id="failureTitle">Couldn’t start</h2>
+
+      <p id="failureText">
+        GPS or reception may be weak. Wait a few seconds, then try again.
+      </p>
+
+      <button id="retryBtn" class="primary">
+        Try Again
+      </button>
     </section>
 
     <section id="summarySheet" class="summary glass hidden">
@@ -148,6 +160,6 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=20"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>
