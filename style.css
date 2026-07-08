@@ -148,6 +148,11 @@ select {
   touch-action: manipulation;
 }
 
+button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 button:active {
   transform: scale(0.985);
 }
@@ -226,6 +231,29 @@ button:active {
 }
 
 .loadingSheet p {
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 0 0 18px;
+}
+
+.failureSheet {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2600;
+  border-radius: 26px;
+  padding: 22px;
+  text-align: center;
+}
+
+.failureSheet h2 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.failureSheet p {
   color: var(--muted);
   line-height: 1.45;
   margin: 0 0 18px;
