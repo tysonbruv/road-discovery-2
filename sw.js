@@ -1,4 +1,4 @@
-const CACHE_NAME = "road-discovery-au-v20";
+const CACHE_NAME = "road-discovery-au-v21";
 
 const ASSETS = [
   "./",
