@@ -1,5 +1,6 @@
 const STORAGE_KEY = "roadDiscoveryAU.visited.v1";
 const SETTINGS_KEY = "roadDiscoveryAU.settings.v2";
+const SAVED_SEGMENTS_KEY = "roadDiscoveryAU.savedSegments.v1";
 
 const LOAD_RADIUS_M = 2500;
 const AUTO_RELOAD_DISTANCE_M = 1700;
@@ -42,13 +43,19 @@ const els = {
 const state = {
   map: null,
   roadsLayer: L.layerGroup(),
+  savedLayer: L.layerGroup(),
   tripLayer: L.layerGroup(),
   userMarker: null,
   accuracyCircle: null,
 
   roadSegments: [],
   roadSegmentIds: new Set(),
+
   visited: loadVisited(),
+  savedSegments: loadSavedSegments(),
+  savedSegmentIds: new Set(Object.keys(loadSavedSegments())),
+  savedDrawnIds: new Set(),
+  needsSavedSegmentsSave: false,
 
   watchId: null,
   isRecording: false,
@@ -81,7 +88,10 @@ function init() {
   }).addTo(state.map);
 
   state.roadsLayer.addTo(state.map);
+  state.savedLayer.addTo(state.map);
   state.tripLayer.addTo(state.map);
+
+  drawSavedSegments();
 
   setTimeout(() => {
     state.map.invalidateSize(true);
@@ -355,6 +365,11 @@ async function loadRoads(lat, lng, radiusM, options = {}) {
     buildSegmentsFromWays(ways);
     drawNewSegments(before);
 
+    if (state.needsSavedSegmentsSave) {
+      saveSavedSegments();
+      state.needsSavedSegmentsSave = false;
+    }
+
     state.lastRoadLoadCenter = {
       lat,
       lng,
@@ -423,7 +438,7 @@ function buildSegmentsFromWays(ways) {
 
         state.roadSegmentIds.add(id);
 
-        state.roadSegments.push({
+        const seg = {
           id,
           name,
           highway,
@@ -435,7 +450,13 @@ function buildSegmentsFromWays(ways) {
           visited: Boolean(state.visited[id]),
           currentTrip: false,
           layer: null,
-        });
+        };
+
+        state.roadSegments.push(seg);
+
+        if (seg.visited) {
+          rememberSavedSegment(seg, false);
+        }
       }
     }
   }
@@ -654,6 +675,7 @@ function unlockNearbySegments(point) {
       state.visited[seg.id] = Date.now();
       state.tripUnlocked.add(seg.id);
 
+      rememberSavedSegment(seg, false);
       styleSegment(seg);
       unlocked++;
     }
@@ -661,9 +683,71 @@ function unlockNearbySegments(point) {
 
   if (unlocked > 0) {
     saveVisited();
+    saveSavedSegments();
+    state.needsSavedSegmentsSave = false;
   }
 
   return unlocked;
+}
+
+function rememberSavedSegment(seg, saveNow = false) {
+  if (state.savedSegmentIds.has(seg.id)) return;
+
+  const saved = {
+    id: seg.id,
+    name: seg.name,
+    highway: seg.highway,
+    coords: compactCoords(seg.coords),
+    lengthM: Math.round(seg.lengthM),
+    unlockedAt: state.visited[seg.id] || Date.now(),
+  };
+
+  state.savedSegments[seg.id] = saved;
+  state.savedSegmentIds.add(seg.id);
+  state.needsSavedSegmentsSave = true;
+
+  drawSavedSegment(saved);
+
+  if (saveNow) {
+    saveSavedSegments();
+    state.needsSavedSegmentsSave = false;
+  }
+}
+
+function compactCoords(coords) {
+  return coords.map((coord) => [
+    Number(coord[0].toFixed(6)),
+    Number(coord[1].toFixed(6)),
+  ]);
+}
+
+function drawSavedSegments() {
+  state.savedLayer.clearLayers();
+  state.savedDrawnIds.clear();
+
+  const saved = Object.values(state.savedSegments);
+
+  for (const seg of saved) {
+    drawSavedSegment(seg);
+  }
+
+  if (saved.length > 0) {
+    setStatus(`${saved.length.toLocaleString()} saved road chunks shown.`);
+  }
+}
+
+function drawSavedSegment(seg) {
+  if (!seg || !seg.id || !seg.coords || seg.coords.length < 2) return;
+  if (state.savedDrawnIds.has(seg.id)) return;
+
+  L.polyline(seg.coords, {
+    color: "#ff8a18",
+    weight: 5,
+    opacity: 0.95,
+    lineCap: "round",
+  }).addTo(state.savedLayer);
+
+  state.savedDrawnIds.add(seg.id);
 }
 
 function styleSegment(seg) {
@@ -745,7 +829,13 @@ function resetVisited() {
   if (!ok) return;
 
   state.visited = {};
+  state.savedSegments = {};
+  state.savedSegmentIds.clear();
+  state.savedDrawnIds.clear();
+  state.savedLayer.clearLayers();
+
   saveVisited();
+  saveSavedSegments();
 
   for (const seg of state.roadSegments) {
     seg.visited = false;
@@ -910,6 +1000,23 @@ function loadVisited() {
 
 function saveVisited() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.visited));
+}
+
+function loadSavedSegments() {
+  try {
+    return JSON.parse(localStorage.getItem(SAVED_SEGMENTS_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSavedSegments() {
+  try {
+    localStorage.setItem(SAVED_SEGMENTS_KEY, JSON.stringify(state.savedSegments));
+  } catch (err) {
+    console.error(err);
+    setStatus("Storage is full. Some saved orange roads may not be kept.");
+  }
 }
 
 function loadSettings() {
