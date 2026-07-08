@@ -95,7 +95,7 @@ body {
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: calc(115px + env(safe-area-inset-bottom));
+  bottom: calc(35px + env(safe-area-inset-bottom));
   z-index: 1002;
   border-radius: 22px;
   padding: 12px;
@@ -318,7 +318,7 @@ button:active {
     left: 18px;
     right: auto;
     width: 390px;
-    bottom: calc(115px + env(safe-area-inset-bottom));
+    bottom: calc(35px + env(safe-area-inset-bottom));
   }
 
   .controls {
@@ -330,7 +330,7 @@ button:active {
 
 /* Recording mode now uses same position because Demo Drive is gone */
 body.recording .stats {
-  bottom: calc(115px + env(safe-area-inset-bottom));
+  bottom: calc(35px + env(safe-area-inset-bottom));
 }
 
 /* Leaflet fallback fix: keeps map tiles positioned correctly */
