@@ -190,6 +190,10 @@ async function locateLoadAndStart() {
   state.lastPoint = null;
   state.tripLayer.clearLayers();
 
+  els.loadRoadsBtn.classList.remove("hidden");
+  els.startBtn.classList.add("hidden");
+  els.finishBtn.classList.add("hidden");
+
   els.summarySheet.classList.add("hidden");
 
   showLoading(0);
@@ -221,12 +225,21 @@ async function locateLoadAndStart() {
           startDrive();
           setStatus("Roads loaded. Drive now — grey roads will turn orange.");
         } else {
+          els.loadRoadsBtn.classList.remove("hidden");
+          els.startBtn.classList.add("hidden");
+          els.finishBtn.classList.add("hidden");
+
           setStatus("No roads loaded here. Try again.");
         }
       }, 450);
     },
     () => {
       hideLoading();
+
+      els.loadRoadsBtn.classList.remove("hidden");
+      els.startBtn.classList.add("hidden");
+      els.finishBtn.classList.add("hidden");
+
       setStatus("GPS permission blocked or unavailable.");
     },
     {
@@ -448,6 +461,7 @@ function startDrive() {
   state.lastPoint = null;
   state.tripLayer.clearLayers();
 
+  els.loadRoadsBtn.classList.add("hidden");
   els.startBtn.classList.add("hidden");
   els.finishBtn.classList.remove("hidden");
 
@@ -472,6 +486,7 @@ function finishDrive() {
   state.isRecording = false;
   document.body.classList.remove("recording");
 
+  els.loadRoadsBtn.classList.remove("hidden");
   els.startBtn.classList.add("hidden");
   els.finishBtn.classList.add("hidden");
 
