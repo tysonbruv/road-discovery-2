@@ -12,7 +12,10 @@
 
   <meta name="theme-color" content="#090b0f" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta
+    name="apple-mobile-web-app-status-bar-style"
+    content="black-translucent"
+  />
   <meta name="apple-mobile-web-app-title" content="Road AU" />
 
   <link rel="manifest" href="manifest.json" />
@@ -22,7 +25,7 @@
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
 
-  <link rel="stylesheet" href="style.css?v=23" />
+  <link rel="stylesheet" href="style.css?v=24" />
 </head>
 
 <body>
@@ -36,11 +39,21 @@
       </div>
 
       <div class="topActions">
-        <button id="locateBtn" class="iconBtn" aria-label="Centre on me">
+        <button
+          id="locateBtn"
+          class="iconBtn"
+          type="button"
+          aria-label="Centre on me"
+        >
           ◎
         </button>
 
-        <button id="settingsToggle" class="iconBtn" aria-label="Settings">
+        <button
+          id="settingsToggle"
+          class="iconBtn"
+          type="button"
+          aria-label="Settings"
+        >
           ⚙
         </button>
       </div>
@@ -48,7 +61,9 @@
 
     <section class="goalBadge glass">
       <span>AU Goal</span>
-      <strong><span id="auGoalCount">0</span> / ~18M</strong>
+      <strong>
+        <span id="auGoalCount">0</span> / ~18M
+      </strong>
     </section>
 
     <section id="settingsPanel" class="settingsPanel glass hidden">
@@ -98,7 +113,7 @@
         </select>
       </label>
 
-      <button id="resetBtn" class="danger">
+      <button id="resetBtn" class="danger" type="button">
         Reset discovered roads
       </button>
     </section>
@@ -121,15 +136,19 @@
     </section>
 
     <section class="controls glass">
-      <button id="loadRoadsBtn" class="primary">
+      <button id="loadRoadsBtn" class="primary" type="button">
         Start Drive
       </button>
 
-      <button id="startBtn" class="primary hidden">
+      <button id="startBtn" class="primary hidden" type="button">
         Start Recording
       </button>
 
-      <button id="finishBtn" class="primary finish hidden">
+      <button
+        id="finishBtn"
+        class="primary finish hidden"
+        type="button"
+      >
         Finish Drive
       </button>
     </section>
@@ -155,7 +174,7 @@
         GPS or reception may be weak. Wait a few seconds, then try again.
       </p>
 
-      <button id="retryBtn" class="primary">
+      <button id="retryBtn" class="primary" type="button">
         Try Again
       </button>
     </section>
@@ -169,15 +188,15 @@
         0 road chunks unlocked
       </p>
 
-      <button id="closeSummaryBtn" class="primary">
+      <button id="closeSummaryBtn" class="primary" type="button">
         Done
       </button>
     </section>
   </main>
 
   <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
-  </script>
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  ></script>
 
   <script src="app.js?v=23"></script>
 </body>
