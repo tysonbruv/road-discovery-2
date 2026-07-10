@@ -25,7 +25,8 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
 }
 
 button,
@@ -379,11 +380,30 @@ body.recording .controls {
   border-color: rgba(255, 138, 24, 0.45);
 }
 
-@media (max-width: 380px) {
+/*
+  iPhone and mobile layout.
+
+  The large "Road Discovery AU" title is hidden on phones.
+  It remains visible on desktop.
+*/
+@media (max-width: 430px) {
   .titleBlock h1 {
-    font-size: 16px;
+    display: none;
   }
 
+  .topbar {
+    min-height: 64px;
+    padding: 10px 12px;
+    border-radius: 20px;
+  }
+
+  .titleBlock p {
+    margin: 0;
+    max-width: 220px;
+  }
+}
+
+@media (max-width: 380px) {
   .titleBlock p {
     font-size: 11px;
     max-width: 205px;
