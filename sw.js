@@ -1,9 +1,9 @@
-const CACHE_NAME = "road-discovery-au-v23";
+const CACHE_NAME = "road-discovery-au-v24";
 
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css?v=23",
+  "./style.css?v=24",
   "./app.js?v=23",
   "./manifest.json",
   "./icon.svg",
