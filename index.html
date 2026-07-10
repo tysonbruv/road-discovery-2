@@ -19,7 +19,7 @@
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
 
-  <link rel="stylesheet" href="style.css?v=21" />
+  <link rel="stylesheet" href="style.css?v=26" />
 </head>
 
 <body>
@@ -109,57 +109,24 @@
       </button>
     </section>
 
-    <button id="settingsToggle" class="settingsToggle glass">
+    <button id="settingsToggle" class="settingsToggle glass" title="Settings">
       ⚙
     </button>
 
     <aside id="settingsPanel" class="settings glass hidden">
-      <h3>Prototype settings</h3>
-
-      <label>
-        Unlock radius
-        <input
-          id="unlockRadius"
-          type="range"
-          min="10"
-          max="60"
-          value="20"
-        />
-        <span id="unlockRadiusText">20 m</span>
-      </label>
-
-      <label>
-        Ignore GPS worse than
-        <input
-          id="maxAccuracy"
-          type="range"
-          min="10"
-          max="100"
-          value="35"
-        />
-        <span id="maxAccuracyText">35 m</span>
-      </label>
-
-      <label>
-        Segment size
-        <select id="segmentSize">
-          <option value="25">25 m</option>
-          <option value="50" selected>50 m</option>
-          <option value="100">100 m</option>
-        </select>
-      </label>
+      <h3>Settings</h3>
 
       <button id="resetBtn" class="danger small">
         Reset discovered roads
       </button>
 
       <p class="tiny">
-        This prototype saves progress only on this device/browser using localStorage.
+        This only resets discovered roads saved on this device/browser.
       </p>
     </aside>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=22"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>
