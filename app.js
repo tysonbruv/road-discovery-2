@@ -86,13 +86,10 @@ function init() {
     attributionControl: true,
   }).setView([-33.7688, 150.905], 14);
 
-  L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    {
-      maxZoom: 20,
-      attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
-    }
-  ).addTo(state.map);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    maxZoom: 20,
+    attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+  }).addTo(state.map);
 
   state.roadsLayer.addTo(state.map);
   state.savedLayer.addTo(state.map);
@@ -160,10 +157,7 @@ function wireEvents() {
   els.segmentSize.addEventListener("change", () => {
     state.settings.segmentSize = Number(els.segmentSize.value);
     saveSettings();
-
-    setStatus(
-      "Segment size changed. Tap Start Drive again to rebuild road chunks."
-    );
+    setStatus("Segment size changed. Tap Start Drive again to rebuild road chunks.");
   });
 }
 
@@ -191,10 +185,7 @@ function locateUser(zoom) {
       if (zoom) {
         state.map.setView([point.lat, point.lng], 16);
       } else {
-        state.map.setView(
-          [point.lat, point.lng],
-          Math.max(state.map.getZoom(), 14)
-        );
+        state.map.setView([point.lat, point.lng], Math.max(state.map.getZoom(), 14));
       }
 
       if (!state.isRecording) {
@@ -275,9 +266,7 @@ async function locateLoadAndStart() {
 
         if (state.roadSegments.length > 0) {
           startDrive();
-          setStatus(
-            "Roads loaded. Drive now — grey roads will turn orange."
-          );
+          setStatus("Roads loaded. Drive now — grey roads will turn orange.");
         } else {
           els.loadRoadsBtn.classList.remove("hidden");
           els.startBtn.classList.add("hidden");
@@ -400,21 +389,15 @@ async function loadRoads(lat, lng, radiusM, options = {}) {
     }
 
     if (reason === "auto") {
-      setStatus(
-        `More roads loaded. Added ${added.toLocaleString()} chunks.`
-      );
+      setStatus(`More roads loaded. Added ${added.toLocaleString()} chunks.`);
     } else {
-      setStatus(
-        `Loaded ${state.roadSegments.length.toLocaleString()} road chunks.`
-      );
+      setStatus(`Loaded ${state.roadSegments.length.toLocaleString()} road chunks.`);
     }
   } catch (err) {
     console.error(err);
 
     if (reason === "auto") {
-      setStatus(
-        "Could not auto-load more roads. Still tracking current loaded area."
-      );
+      setStatus("Could not auto-load more roads. Still tracking current loaded area.");
     } else {
       setStatus("Could not load nearby roads. Tap Try Again.");
     }
@@ -445,7 +428,6 @@ function buildSegmentsFromWays(ways) {
       };
 
       const dist = haversine(a, b);
-
       if (dist < 3) continue;
 
       const pieces = Math.max(1, Math.ceil(dist / segmentSizeM));
@@ -491,9 +473,7 @@ function drawNewSegments(startIndex = 0) {
 
     layer.bindTooltip(
       `${seg.name}<br>${seg.visited ? "Discovered" : "Undiscovered"}`,
-      {
-        sticky: true,
-      }
+      { sticky: true }
     );
 
     layer.addTo(state.roadsLayer);
@@ -601,7 +581,6 @@ function finishDrive() {
   `;
 
   els.summarySheet.classList.remove("hidden");
-
   setStatus("Trip finished. Progress saved on this device.");
 }
 
@@ -625,12 +604,7 @@ function onGpsPosition(position) {
   maybeAutoLoadMoreRoads(point);
 
   if (point.accuracy > state.settings.maxAccuracy) {
-    setStatus(
-      `GPS accuracy ${Math.round(
-        point.accuracy
-      )} m. Waiting for cleaner signal...`
-    );
-
+    setStatus(`GPS accuracy ${Math.round(point.accuracy)} m. Waiting for cleaner signal...`);
     return;
   }
 
@@ -679,10 +653,7 @@ function maybeAutoLoadMoreRoads(point) {
     return;
   }
 
-  const distanceFromLoadCenter = haversine(
-    point,
-    state.lastRoadLoadCenter
-  );
+  const distanceFromLoadCenter = haversine(point, state.lastRoadLoadCenter);
 
   if (distanceFromLoadCenter >= AUTO_RELOAD_DISTANCE_M) {
     state.lastAutoReloadAt = now;
@@ -702,11 +673,7 @@ function unlockNearbySegments(point) {
   for (const seg of state.roadSegments) {
     if (seg.visited) continue;
 
-    const dist = pointToSegmentDistance(
-      point,
-      seg.coords[0],
-      seg.coords[1]
-    );
+    const dist = pointToSegmentDistance(point, seg.coords[0], seg.coords[1]);
 
     if (dist <= radius) {
       seg.visited = true;
@@ -717,7 +684,6 @@ function unlockNearbySegments(point) {
 
       rememberSavedSegment(seg, false);
       styleSegment(seg);
-
       unlocked++;
     }
   }
@@ -793,7 +759,6 @@ function drawSavedSegment(seg) {
 
 function styleSegment(seg) {
   if (!seg.layer) return;
-
   seg.layer.setStyle(getSegmentStyle(seg));
 }
 
@@ -825,9 +790,7 @@ function updateUserMarker(point) {
       iconAnchor: [10, 10],
     });
 
-    state.userMarker = L.marker(latlng, {
-      icon,
-    }).addTo(state.map);
+    state.userMarker = L.marker(latlng, { icon }).addTo(state.map);
   } else {
     state.userMarker.setLatLng(latlng);
   }
@@ -849,19 +812,11 @@ function updateUserMarker(point) {
 
 function updateStats() {
   const total = state.roadSegments.length;
-
-  const visitedInArea = state.roadSegments.filter(
-    (seg) => seg.visited
-  ).length;
-
+  const visitedInArea = state.roadSegments.filter((seg) => seg.visited).length;
   const percent = total ? (visitedInArea / total) * 100 : 0;
 
   els.areaProgress.textContent = `${percent.toFixed(2)}%`;
-
-  els.unlockedCount.textContent = total
-    ? `${visitedInArea}/${total}`
-    : "0";
-
+  els.unlockedCount.textContent = total ? `${visitedInArea}/${total}` : "0";
   els.todayKm.textContent = `${sumTripUnlockedKm().toFixed(2)} km`;
 
   updateGoalBadge();
@@ -871,18 +826,13 @@ function updateGoalBadge() {
   if (!els.auGoalCount) return;
 
   const totalDiscovered = getTotalDiscoveredCount();
-
   els.auGoalCount.textContent = formatCompactCount(totalDiscovered);
 }
 
 function getTotalDiscoveredCount() {
   const visitedIds = Object.keys(state.visited || {});
   const savedIds = Object.keys(state.savedSegments || {});
-
-  const allIds = new Set([
-    ...visitedIds,
-    ...savedIds,
-  ]);
+  const allIds = new Set([...visitedIds, ...savedIds]);
 
   return allIds.size;
 }
@@ -912,15 +862,12 @@ function sumTripUnlockedKm() {
 }
 
 function resetVisited() {
-  const ok = confirm(
-    "Reset all discovered roads saved on this device?"
-  );
+  const ok = confirm("Reset all discovered roads saved on this device?");
 
   if (!ok) return;
 
   state.visited = {};
   state.savedSegments = {};
-
   state.savedSegmentIds.clear();
   state.savedDrawnIds.clear();
   state.savedLayer.clearLayers();
@@ -935,7 +882,6 @@ function resetVisited() {
   }
 
   state.tripUnlocked.clear();
-
   updateStats();
   setStatus("Discovered roads reset.");
 }
@@ -950,7 +896,6 @@ function showFailure(title, text) {
 
   els.failureTitle.textContent = title;
   els.failureText.textContent = text;
-
   els.failureSheet.classList.remove("hidden");
 }
 
@@ -962,23 +907,17 @@ function hideFailure() {
 
 function showLoading(percent) {
   clearLoadingTimer();
-
   els.loadingSheet.classList.remove("hidden");
-
   updateLoading(percent);
 }
 
 function hideLoading() {
   clearLoadingTimer();
-
   els.loadingSheet.classList.add("hidden");
 }
 
 function updateLoading(percent) {
-  const safe = Math.max(
-    0,
-    Math.min(100, Math.round(percent))
-  );
+  const safe = Math.max(0, Math.min(100, Math.round(percent)));
 
   els.progressBar.style.width = `${safe}%`;
   els.progressText.textContent = `${safe}%`;
@@ -988,10 +927,7 @@ function animateLoadingTo(target) {
   clearLoadingTimer();
 
   state.loadingTimer = setInterval(() => {
-    const current =
-      Number(
-        els.progressText.textContent.replace("%", "")
-      ) || 0;
+    const current = Number(els.progressText.textContent.replace("%", "")) || 0;
 
     if (current >= target) {
       clearLoadingTimer();
@@ -1000,11 +936,7 @@ function animateLoadingTo(target) {
 
     const next = Math.min(
       target,
-      current +
-        Math.max(
-          1,
-          Math.round((target - current) * 0.12)
-        )
+      current + Math.max(1, Math.round((target - current) * 0.12))
     );
 
     updateLoading(next);
@@ -1044,18 +976,9 @@ function haversine(a, b) {
 
   const x =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) *
-      Math.cos(lat2) *
-      Math.sin(dLng / 2) ** 2;
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
 
-  return (
-    2 *
-    R *
-    Math.atan2(
-      Math.sqrt(x),
-      Math.sqrt(1 - x)
-    )
-  );
+  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
 function interpolate(a, b, t) {
@@ -1089,13 +1012,7 @@ function pointToSegmentDistance(point, segA, segB) {
     return Math.sqrt(ax * ax + ay * ay);
   }
 
-  const t = Math.max(
-    0,
-    Math.min(
-      1,
-      ((px - ax) * dx + (py - ay) * dy) / len2
-    )
-  );
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
 
   const x = ax + t * dx;
   const y = ay + t * dy;
@@ -1113,30 +1030,19 @@ function toRad(deg) {
 
 function loadVisited() {
   try {
-    return (
-      JSON.parse(
-        localStorage.getItem(STORAGE_KEY)
-      ) || {}
-    );
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
   } catch {
     return {};
   }
 }
 
 function saveVisited() {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify(state.visited)
-  );
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.visited));
 }
 
 function loadSavedSegments() {
   try {
-    return (
-      JSON.parse(
-        localStorage.getItem(SAVED_SEGMENTS_KEY)
-      ) || {}
-    );
+    return JSON.parse(localStorage.getItem(SAVED_SEGMENTS_KEY)) || {};
   } catch {
     return {};
   }
@@ -1144,16 +1050,10 @@ function loadSavedSegments() {
 
 function saveSavedSegments() {
   try {
-    localStorage.setItem(
-      SAVED_SEGMENTS_KEY,
-      JSON.stringify(state.savedSegments)
-    );
+    localStorage.setItem(SAVED_SEGMENTS_KEY, JSON.stringify(state.savedSegments));
   } catch (err) {
     console.error(err);
-
-    setStatus(
-      "Storage is full. Some saved orange roads may not be kept."
-    );
+    setStatus("Storage is full. Some saved orange roads may not be kept.");
   }
 }
 
@@ -1163,9 +1063,7 @@ function loadSettings() {
       unlockRadius: 20,
       maxAccuracy: 35,
       segmentSize: 50,
-      ...JSON.parse(
-        localStorage.getItem(SETTINGS_KEY)
-      ),
+      ...JSON.parse(localStorage.getItem(SETTINGS_KEY)),
     };
   } catch {
     return {
@@ -1177,16 +1075,11 @@ function loadSettings() {
 }
 
 function saveSettings() {
-  localStorage.setItem(
-    SETTINGS_KEY,
-    JSON.stringify(state.settings)
-  );
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
 }
 
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker
-      .register("./sw.js")
-      .catch(() => {});
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 }
