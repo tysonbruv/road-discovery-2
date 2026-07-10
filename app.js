@@ -9,6 +9,10 @@ const LOAD_RADIUS_M = 2500;
 const AUTO_RELOAD_DISTANCE_M = 1700;
 const MIN_AUTO_RELOAD_TIME_MS = 12000;
 
+const ROUTE_ARRIVAL_RADIUS_M = 35;
+const ROUTE_REROUTE_DISTANCE_M = 120;
+const ROUTE_MIN_REROUTE_TIME_MS = 45000;
+
 const els = {
   status: document.getElementById("statusText"),
   areaProgress: document.getElementById("areaProgress"),
@@ -18,6 +22,8 @@ const els = {
   loadRoadsBtn: document.getElementById("loadRoadsBtn"),
   startBtn: document.getElementById("startBtn"),
   finishBtn: document.getElementById("finishBtn"),
+  routeBtn: document.getElementById("routeBtn"),
+  clearRouteBtn: document.getElementById("clearRouteBtn"),
   locateBtn: document.getElementById("locateBtn"),
 
   loadingSheet: document.getElementById("loadingSheet"),
@@ -43,6 +49,7 @@ const state = {
   roadsLayer: L.layerGroup(),
   savedLayer: L.layerGroup(),
   tripLayer: L.layerGroup(),
+  routeLayer: L.layerGroup(),
   userMarker: null,
   accuracyCircle: null,
 
@@ -61,10 +68,23 @@ const state = {
   tripUnlocked: new Set(),
   tripDistanceM: 0,
   lastPoint: null,
+  currentPoint: null,
 
   lastRoadLoadCenter: null,
   lastAutoReloadAt: 0,
   isLoadingRoads: false,
+
+  waypointPoint: null,
+  waypointMarker: null,
+  routeLine: null,
+  routeHalo: null,
+  routeDistanceM: 0,
+  routeDurationS: 0,
+  lastRouteStartPoint: null,
+  lastRouteAt: 0,
+  isRouting: false,
+  awaitingWaypointClick: false,
+  routeRequestId: 0,
 
   loadingTimer: null,
 };
@@ -86,6 +106,7 @@ function init() {
   state.roadsLayer.addTo(state.map);
   state.savedLayer.addTo(state.map);
   state.tripLayer.addTo(state.map);
+  state.routeLayer.addTo(state.map);
 
   drawSavedSegments();
 
@@ -104,6 +125,7 @@ function init() {
   wireEvents();
   registerServiceWorker();
   updateStats();
+  updateWaypointButtons();
 
   setMainButton("Start Drive", false);
   locateUser(false);
@@ -115,6 +137,16 @@ function wireEvents() {
   els.startBtn.addEventListener("click", startDrive);
   els.finishBtn.addEventListener("click", finishDrive);
   els.locateBtn.addEventListener("click", () => locateUser(true));
+
+  state.map.on("click", onMapClickForWaypoint);
+
+  if (els.routeBtn) {
+    els.routeBtn.addEventListener("click", beginWaypointSelect);
+  }
+
+  if (els.clearRouteBtn) {
+    els.clearRouteBtn.addEventListener("click", clearWaypoint);
+  }
 
   if (els.retryBtn) {
     els.retryBtn.addEventListener("click", () => {
@@ -144,6 +176,7 @@ function locateUser(zoom) {
     (pos) => {
       const point = positionToPoint(pos);
 
+      state.currentPoint = point;
       updateUserMarker(point);
 
       if (zoom) {
@@ -207,6 +240,7 @@ async function locateLoadAndStart() {
     async (pos) => {
       const point = positionToPoint(pos);
 
+      state.currentPoint = point;
       updateUserMarker(point);
       state.map.setView([point.lat, point.lng], 16);
 
@@ -555,6 +589,7 @@ function stopGpsWatch() {
 function onGpsPosition(position) {
   const point = positionToPoint(position);
 
+  state.currentPoint = point;
   updateUserMarker(point);
 
   state.map.panTo([point.lat, point.lng], {
@@ -582,10 +617,11 @@ function onGpsPosition(position) {
   state.lastPoint = point;
 
   unlockNearbySegments(point);
+  maybeUpdateWaypointRoute(point);
 
   updateStats();
 
-  if (!state.isLoadingRoads) {
+  if (!state.isLoadingRoads && !state.isRouting) {
     setStatus("Recording. Roads are being discovered.");
   }
 }
@@ -654,6 +690,301 @@ function unlockNearbySegments(point) {
   }
 
   return unlocked;
+}
+
+function beginWaypointSelect() {
+  state.awaitingWaypointClick = true;
+  updateWaypointButtons();
+  setStatus("Tap the map where you want to go.");
+}
+
+function onMapClickForWaypoint(event) {
+  if (!state.awaitingWaypointClick) return;
+
+  const point = {
+    lat: event.latlng.lat,
+    lng: event.latlng.lng,
+  };
+
+  state.awaitingWaypointClick = false;
+  setWaypoint(point);
+}
+
+async function setWaypoint(point) {
+  state.waypointPoint = point;
+  drawWaypointMarker(point);
+  updateWaypointButtons();
+
+  setStatus("Waypoint set. Finding road route...");
+
+  await routeToWaypoint({
+    fit: true,
+    statusOnSuccess: true,
+  });
+}
+
+function drawWaypointMarker(point) {
+  const latlng = [point.lat, point.lng];
+
+  if (!state.waypointMarker) {
+    const icon = L.divIcon({
+      className: "",
+      html: '<div class="waypoint-pin"></div>',
+      iconSize: [28, 28],
+      iconAnchor: [14, 26],
+    });
+
+    state.waypointMarker = L.marker(latlng, { icon }).addTo(state.routeLayer);
+    state.waypointMarker.bindTooltip("Waypoint", { sticky: true });
+  } else {
+    state.waypointMarker.setLatLng(latlng);
+  }
+}
+
+async function routeToWaypoint(options = {}) {
+  const {
+    fit = false,
+    silent = false,
+    statusOnSuccess = false,
+  } = options;
+
+  if (!state.waypointPoint) return;
+  if (state.isRouting) return;
+
+  const start = await getFreshRouteStartPoint();
+
+  if (!start) {
+    setStatus("Need GPS before routing to waypoint.");
+    return;
+  }
+
+  const requestId = ++state.routeRequestId;
+
+  state.isRouting = true;
+  updateWaypointButtons();
+
+  if (!silent) {
+    setStatus("Finding road route...");
+  }
+
+  try {
+    const route = await fetchRoadRoute(start, state.waypointPoint);
+
+    if (requestId !== state.routeRequestId) return;
+
+    drawRouteLine(route.coords);
+
+    state.routeDistanceM = route.distanceM;
+    state.routeDurationS = route.durationS;
+    state.lastRouteStartPoint = start;
+    state.lastRouteAt = Date.now();
+
+    if (fit && route.coords.length > 1) {
+      const bounds = L.latLngBounds(route.coords);
+      state.map.fitBounds(bounds, {
+        padding: [70, 120],
+        maxZoom: 16,
+      });
+    }
+
+    if (statusOnSuccess) {
+      setStatus(`Waypoint route ready. ${metersToKm(route.distanceM)} km by road.`);
+    }
+  } catch (err) {
+    console.error(err);
+
+    if (!silent) {
+      setStatus("Couldn’t find a road route to that waypoint.");
+    }
+  } finally {
+    state.isRouting = false;
+    updateWaypointButtons();
+  }
+}
+
+async function fetchRoadRoute(start, end) {
+  const coords = `${start.lng},${start.lat};${end.lng},${end.lat}`;
+  const url =
+    `https://router.project-osrm.org/route/v1/driving/${coords}` +
+    "?overview=full&geometries=geojson&steps=false";
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Routing returned ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  if (data.code !== "Ok" || !data.routes || !data.routes[0]) {
+    throw new Error(data.message || "No route found");
+  }
+
+  const route = data.routes[0];
+
+  return {
+    distanceM: route.distance || 0,
+    durationS: route.duration || 0,
+    coords: route.geometry.coordinates.map((coord) => [coord[1], coord[0]]),
+  };
+}
+
+async function getFreshRouteStartPoint() {
+  if (
+    state.currentPoint &&
+    Date.now() - state.currentPoint.timestamp < 30000 &&
+    state.currentPoint.accuracy <= MAX_GPS_ACCURACY_M
+  ) {
+    return state.currentPoint;
+  }
+
+  if (!navigator.geolocation) {
+    return state.currentPoint;
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const point = positionToPoint(pos);
+
+        state.currentPoint = point;
+        updateUserMarker(point);
+
+        resolve(point);
+      },
+      () => {
+        resolve(state.currentPoint);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 9000,
+        maximumAge: 5000,
+      }
+    );
+  });
+}
+
+function drawRouteLine(coords) {
+  clearRouteLine();
+
+  if (!coords || coords.length < 2) return;
+
+  state.routeHalo = L.polyline(coords, {
+    color: "#eef7ff",
+    weight: 9,
+    opacity: 0.72,
+    lineCap: "round",
+    lineJoin: "round",
+  }).addTo(state.routeLayer);
+
+  state.routeLine = L.polyline(coords, {
+    color: "#4bb3ff",
+    weight: 5,
+    opacity: 1,
+    lineCap: "round",
+    lineJoin: "round",
+  }).addTo(state.routeLayer);
+
+  if (state.waypointMarker) {
+    state.waypointMarker.addTo(state.routeLayer);
+  }
+}
+
+function clearRouteLine() {
+  if (state.routeHalo) {
+    state.routeLayer.removeLayer(state.routeHalo);
+    state.routeHalo = null;
+  }
+
+  if (state.routeLine) {
+    state.routeLayer.removeLayer(state.routeLine);
+    state.routeLine = null;
+  }
+}
+
+function clearWaypoint() {
+  state.awaitingWaypointClick = false;
+  state.waypointPoint = null;
+  state.routeDistanceM = 0;
+  state.routeDurationS = 0;
+  state.lastRouteStartPoint = null;
+  state.lastRouteAt = 0;
+  state.routeRequestId++;
+
+  clearRouteLine();
+
+  if (state.waypointMarker) {
+    state.routeLayer.removeLayer(state.waypointMarker);
+    state.waypointMarker = null;
+  }
+
+  updateWaypointButtons();
+
+  if (state.isRecording) {
+    setStatus("Recording. Roads are being discovered.");
+  } else {
+    setStatus("Waypoint cleared.");
+  }
+}
+
+function updateWaypointButtons() {
+  if (!els.routeBtn || !els.clearRouteBtn) return;
+
+  if (state.awaitingWaypointClick) {
+    els.routeBtn.textContent = "Tap Map";
+    els.routeBtn.disabled = true;
+    els.clearRouteBtn.classList.remove("hidden");
+    return;
+  }
+
+  els.routeBtn.disabled = state.isRouting;
+
+  if (state.isRouting) {
+    els.routeBtn.textContent = "Routing...";
+  } else if (state.waypointPoint) {
+    els.routeBtn.textContent = "Change Waypoint";
+  } else {
+    els.routeBtn.textContent = "Set Waypoint";
+  }
+
+  if (state.waypointPoint || state.awaitingWaypointClick) {
+    els.clearRouteBtn.classList.remove("hidden");
+  } else {
+    els.clearRouteBtn.classList.add("hidden");
+  }
+}
+
+function maybeUpdateWaypointRoute(point) {
+  if (!state.waypointPoint) return;
+
+  const distanceToWaypoint = haversine(point, state.waypointPoint);
+
+  if (distanceToWaypoint <= ROUTE_ARRIVAL_RADIUS_M) {
+    clearWaypoint();
+    setStatus("Waypoint reached.");
+    return;
+  }
+
+  if (!state.routeLine) return;
+  if (!state.lastRouteStartPoint) return;
+  if (state.isRouting) return;
+
+  const now = Date.now();
+
+  if (now - state.lastRouteAt < ROUTE_MIN_REROUTE_TIME_MS) {
+    return;
+  }
+
+  const movedSinceRoute = haversine(point, state.lastRouteStartPoint);
+
+  if (movedSinceRoute < ROUTE_REROUTE_DISTANCE_M) {
+    return;
+  }
+
+  routeToWaypoint({
+    silent: true,
+    statusOnSuccess: false,
+  });
 }
 
 function rememberSavedSegment(seg, saveNow = false) {
