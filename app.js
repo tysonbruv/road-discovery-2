@@ -6,11 +6,15 @@ const LOAD_RADIUS_M = 2500;
 const AUTO_RELOAD_DISTANCE_M = 1700;
 const MIN_AUTO_RELOAD_TIME_MS = 12000;
 
+const initialVisited = loadVisited();
+const initialSavedSegments = loadSavedSegments();
+
 const els = {
   status: document.getElementById("statusText"),
   areaProgress: document.getElementById("areaProgress"),
   todayKm: document.getElementById("todayKm"),
   unlockedCount: document.getElementById("unlockedCount"),
+  auGoalCount: document.getElementById("auGoalCount"),
 
   loadRoadsBtn: document.getElementById("loadRoadsBtn"),
   startBtn: document.getElementById("startBtn"),
@@ -51,9 +55,9 @@ const state = {
   roadSegments: [],
   roadSegmentIds: new Set(),
 
-  visited: loadVisited(),
-  savedSegments: loadSavedSegments(),
-  savedSegmentIds: new Set(Object.keys(loadSavedSegments())),
+  visited: initialVisited,
+  savedSegments: initialSavedSegments,
+  savedSegmentIds: new Set(Object.keys(initialSavedSegments)),
   savedDrawnIds: new Set(),
   needsSavedSegmentsSave: false,
 
@@ -475,6 +479,9 @@ function drawNewSegments(startIndex = 0) {
     layer.addTo(state.roadsLayer);
     seg.layer = layer;
   }
+
+  state.savedLayer.bringToFront();
+  state.tripLayer.bringToFront();
 }
 
 function getSegmentStyle(seg) {
@@ -707,6 +714,7 @@ function rememberSavedSegment(seg, saveNow = false) {
   state.needsSavedSegmentsSave = true;
 
   drawSavedSegment(saved);
+  updateGoalBadge();
 
   if (saveNow) {
     saveSavedSegments();
@@ -730,10 +738,6 @@ function drawSavedSegments() {
   for (const seg of saved) {
     drawSavedSegment(seg);
   }
-
-  if (saved.length > 0) {
-    setStatus(`${saved.length.toLocaleString()} saved road chunks shown.`);
-  }
 }
 
 function drawSavedSegment(seg) {
@@ -748,6 +752,9 @@ function drawSavedSegment(seg) {
   }).addTo(state.savedLayer);
 
   state.savedDrawnIds.add(seg.id);
+
+  state.savedLayer.bringToFront();
+  state.tripLayer.bringToFront();
 }
 
 function styleSegment(seg) {
@@ -768,6 +775,8 @@ function drawTripLine(a, b) {
       lineCap: "round",
     }
   ).addTo(state.tripLayer);
+
+  state.tripLayer.bringToFront();
 }
 
 function updateUserMarker(point) {
@@ -809,6 +818,35 @@ function updateStats() {
   els.areaProgress.textContent = `${percent.toFixed(2)}%`;
   els.unlockedCount.textContent = total ? `${visitedInArea}/${total}` : "0";
   els.todayKm.textContent = `${sumTripUnlockedKm().toFixed(2)} km`;
+
+  updateGoalBadge();
+}
+
+function updateGoalBadge() {
+  if (!els.auGoalCount) return;
+
+  const totalDiscovered = getTotalDiscoveredCount();
+  els.auGoalCount.textContent = formatCompactCount(totalDiscovered);
+}
+
+function getTotalDiscoveredCount() {
+  const visitedIds = Object.keys(state.visited || {});
+  const savedIds = Object.keys(state.savedSegments || {});
+  const allIds = new Set([...visitedIds, ...savedIds]);
+
+  return allIds.size;
+}
+
+function formatCompactCount(num) {
+  if (num >= 1000000) {
+    return `${(num / 1000000).toFixed(1)}M`;
+  }
+
+  if (num >= 1000) {
+    return `${(num / 1000).toFixed(1)}K`;
+  }
+
+  return String(num);
 }
 
 function sumTripUnlockedKm() {
