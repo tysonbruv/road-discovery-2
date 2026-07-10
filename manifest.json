@@ -2,9 +2,12 @@
   "name": "Road Discovery AU",
   "short_name": "Road AU",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#090b0f",
   "theme_color": "#090b0f",
+  "description": "Discover and track roads across Australia.",
   "icons": [
     {
       "src": "icon.svg",
