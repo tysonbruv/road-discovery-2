@@ -1,6 +1,9 @@
 const STORAGE_KEY = "roadDiscoveryAU.visited.v1";
-const SETTINGS_KEY = "roadDiscoveryAU.settings.v2";
 const SAVED_SEGMENTS_KEY = "roadDiscoveryAU.savedSegments.v1";
+
+const UNLOCK_RADIUS_M = 20;
+const MAX_GPS_ACCURACY_M = 35;
+const SEGMENT_SIZE_M = 50;
 
 const LOAD_RADIUS_M = 2500;
 const AUTO_RELOAD_DISTANCE_M = 1700;
@@ -32,11 +35,6 @@ const els = {
 
   settingsToggle: document.getElementById("settingsToggle"),
   settingsPanel: document.getElementById("settingsPanel"),
-  unlockRadius: document.getElementById("unlockRadius"),
-  unlockRadiusText: document.getElementById("unlockRadiusText"),
-  maxAccuracy: document.getElementById("maxAccuracy"),
-  maxAccuracyText: document.getElementById("maxAccuracyText"),
-  segmentSize: document.getElementById("segmentSize"),
   resetBtn: document.getElementById("resetBtn"),
 };
 
@@ -69,8 +67,6 @@ const state = {
   isLoadingRoads: false,
 
   loadingTimer: null,
-
-  settings: loadSettings(),
 };
 
 init();
@@ -105,7 +101,6 @@ function init() {
     state.map.invalidateSize(true);
   });
 
-  applySettingsToUi();
   wireEvents();
   registerServiceWorker();
   updateStats();
@@ -137,33 +132,6 @@ function wireEvents() {
   });
 
   els.resetBtn.addEventListener("click", resetVisited);
-
-  els.unlockRadius.addEventListener("input", () => {
-    state.settings.unlockRadius = Number(els.unlockRadius.value);
-    saveSettings();
-    applySettingsToUi();
-  });
-
-  els.maxAccuracy.addEventListener("input", () => {
-    state.settings.maxAccuracy = Number(els.maxAccuracy.value);
-    saveSettings();
-    applySettingsToUi();
-  });
-
-  els.segmentSize.addEventListener("change", () => {
-    state.settings.segmentSize = Number(els.segmentSize.value);
-    saveSettings();
-    setStatus("Segment size changed. Tap Start Drive again to rebuild road chunks.");
-  });
-}
-
-function applySettingsToUi() {
-  els.unlockRadius.value = state.settings.unlockRadius;
-  els.maxAccuracy.value = state.settings.maxAccuracy;
-  els.segmentSize.value = state.settings.segmentSize;
-
-  els.unlockRadiusText.textContent = `${state.settings.unlockRadius} m`;
-  els.maxAccuracyText.textContent = `${state.settings.maxAccuracy} m`;
 }
 
 function locateUser(zoom) {
@@ -404,7 +372,7 @@ async function loadRoads(lat, lng, radiusM, options = {}) {
 }
 
 function buildSegmentsFromWays(ways) {
-  const segmentSizeM = state.settings.segmentSize;
+  const segmentSizeM = SEGMENT_SIZE_M;
 
   for (const way of ways) {
     if (!way.geometry || way.geometry.length < 2) continue;
@@ -596,7 +564,7 @@ function onGpsPosition(position) {
 
   maybeAutoLoadMoreRoads(point);
 
-  if (point.accuracy > state.settings.maxAccuracy) {
+  if (point.accuracy > MAX_GPS_ACCURACY_M) {
     setStatus(`GPS accuracy ${Math.round(point.accuracy)} m. Waiting for cleaner signal...`);
     return;
   }
@@ -613,14 +581,12 @@ function onGpsPosition(position) {
 
   state.lastPoint = point;
 
-  const unlockedNow = unlockNearbySegments(point);
+  unlockNearbySegments(point);
 
   updateStats();
 
-  if (unlockedNow > 0) {
-    setStatus(`Unlocked ${unlockedNow} road chunks.`);
-  } else if (!state.isLoadingRoads) {
-    setStatus("Recording. Grey roads will turn orange as you drive.");
+  if (!state.isLoadingRoads) {
+    setStatus("Recording. Roads are being discovered.");
   }
 }
 
@@ -661,7 +627,7 @@ function maybeAutoLoadMoreRoads(point) {
 
 function unlockNearbySegments(point) {
   let unlocked = 0;
-  const radius = state.settings.unlockRadius;
+  const radius = UNLOCK_RADIUS_M;
 
   for (const seg of state.roadSegments) {
     if (seg.visited) continue;
@@ -1017,27 +983,6 @@ function saveSavedSegments() {
     console.error(err);
     setStatus("Storage is full. Some saved orange roads may not be kept.");
   }
-}
-
-function loadSettings() {
-  try {
-    return {
-      unlockRadius: 20,
-      maxAccuracy: 35,
-      segmentSize: 50,
-      ...JSON.parse(localStorage.getItem(SETTINGS_KEY)),
-    };
-  } catch {
-    return {
-      unlockRadius: 20,
-      maxAccuracy: 35,
-      segmentSize: 50,
-    };
-  }
-}
-
-function saveSettings() {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
 }
 
 function registerServiceWorker() {
