@@ -1,16 +1,19 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
 
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
   />
 
-  <meta name="theme-color" content="#090b0f" />
-
   <title>Road Discovery AU</title>
+
+  <meta name="theme-color" content="#090b0f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Road AU" />
 
   <link rel="manifest" href="manifest.json" />
 
@@ -19,40 +22,100 @@
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
 
-  <link rel="stylesheet" href="style.css?v=21" />
+  <link rel="stylesheet" href="style.css?v=23" />
 </head>
 
 <body>
-  <div id="app">
+  <main id="app">
     <div id="map"></div>
 
     <header class="topbar glass">
-      <div>
-        <div class="brand">Road Discovery AU</div>
-
-        <div id="statusText" class="subtle">
-          Tap Start Drive to begin.
-        </div>
+      <div class="titleBlock">
+        <h1>Road Discovery AU</h1>
+        <p id="statusText">Loading...</p>
       </div>
 
-      <button id="locateBtn" class="iconBtn" title="Centre on me">
-        ◎
-      </button>
+      <div class="topActions">
+        <button id="locateBtn" class="iconBtn" aria-label="Centre on me">
+          ◎
+        </button>
+
+        <button id="settingsToggle" class="iconBtn" aria-label="Settings">
+          ⚙
+        </button>
+      </div>
     </header>
 
+    <section class="goalBadge glass">
+      <span>AU Goal</span>
+      <strong><span id="auGoalCount">0</span> / ~18M</strong>
+    </section>
+
+    <section id="settingsPanel" class="settingsPanel glass hidden">
+      <h2>Settings</h2>
+
+      <label>
+        <div class="settingRow">
+          <span>Unlock radius</span>
+          <strong id="unlockRadiusText">20 m</strong>
+        </div>
+
+        <input
+          id="unlockRadius"
+          type="range"
+          min="5"
+          max="60"
+          step="5"
+          value="20"
+        />
+      </label>
+
+      <label>
+        <div class="settingRow">
+          <span>Max GPS accuracy</span>
+          <strong id="maxAccuracyText">35 m</strong>
+        </div>
+
+        <input
+          id="maxAccuracy"
+          type="range"
+          min="10"
+          max="100"
+          step="5"
+          value="35"
+        />
+      </label>
+
+      <label>
+        <div class="settingRow">
+          <span>Road chunk size</span>
+        </div>
+
+        <select id="segmentSize">
+          <option value="25">25 metres</option>
+          <option value="50" selected>50 metres</option>
+          <option value="100">100 metres</option>
+        </select>
+      </label>
+
+      <button id="resetBtn" class="danger">
+        Reset discovered roads
+      </button>
+    </section>
+
     <section class="stats glass">
-      <div class="stat">
-        <span class="label">Area</span>
+      <div>
+        <span>Loaded Area</span>
         <strong id="areaProgress">0.00%</strong>
       </div>
 
-      <div class="stat">
-        <span class="label">Today</span>
+      <div>
+        <span>This Drive</span>
         <strong id="todayKm">0.00 km</strong>
       </div>
 
-      <div class="stat">
-        <span class="label">Unlocked</span>
+      <div>
+        <span>Unlocked</span>
         <strong id="unlockedCount">0</strong>
       </div>
     </section>
@@ -62,11 +125,11 @@
         Start Drive
       </button>
 
-      <button id="startBtn" class="secondary hidden">
-        Start Drive
+      <button id="startBtn" class="primary hidden">
+        Start Recording
       </button>
 
-      <button id="finishBtn" class="danger hidden">
+      <button id="finishBtn" class="primary finish hidden">
         Finish Drive
       </button>
     </section>
@@ -75,7 +138,7 @@
       <h2>Loading roads</h2>
 
       <p>
-        Hang tight. Getting nearby road segments ready.
+        Finding nearby roads and building discovery chunks.
       </p>
 
       <div class="progressTrack">
@@ -97,69 +160,25 @@
       </button>
     </section>
 
-    <section id="summarySheet" class="summary glass hidden">
-      <h2>Trip Complete</h2>
+    <section id="summarySheet" class="summarySheet glass hidden">
+      <h2>Drive complete</h2>
 
       <p id="summaryText">
-        No trip yet.
+        0.00 km travelled<br />
+        0.00 km newly discovered<br />
+        0 road chunks unlocked
       </p>
 
       <button id="closeSummaryBtn" class="primary">
         Done
       </button>
     </section>
+  </main>
 
-    <button id="settingsToggle" class="settingsToggle glass">
-      ⚙
-    </button>
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+  </script>
 
-    <aside id="settingsPanel" class="settings glass hidden">
-      <h3>Prototype settings</h3>
-
-      <label>
-        Unlock radius
-        <input
-          id="unlockRadius"
-          type="range"
-          min="10"
-          max="60"
-          value="20"
-        />
-        <span id="unlockRadiusText">20 m</span>
-      </label>
-
-      <label>
-        Ignore GPS worse than
-        <input
-          id="maxAccuracy"
-          type="range"
-          min="10"
-          max="100"
-          value="35"
-        />
-        <span id="maxAccuracyText">35 m</span>
-      </label>
-
-      <label>
-        Segment size
-        <select id="segmentSize">
-          <option value="25">25 m</option>
-          <option value="50" selected>50 m</option>
-          <option value="100">100 m</option>
-        </select>
-      </label>
-
-      <button id="resetBtn" class="danger small">
-        Reset discovered roads
-      </button>
-
-      <p class="tiny">
-        This prototype saves progress only on this device/browser using localStorage.
-      </p>
-    </aside>
-  </div>
-
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=22"></script>
+  <script src="app.js?v=23"></script>
 </body>
 </html>
