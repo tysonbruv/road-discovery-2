@@ -1,22 +1,16 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
 
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
   />
-
-  <title>Road Discovery AU</title>
 
   <meta name="theme-color" content="#090b0f" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta
-    name="apple-mobile-web-app-status-bar-style"
-    content="black-translucent"
-  />
-  <meta name="apple-mobile-web-app-title" content="Road AU" />
+
+  <title>Road Discovery AU</title>
 
   <link rel="manifest" href="manifest.json" />
 
@@ -25,131 +19,54 @@
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
 
-  <link rel="stylesheet" href="style.css?v=25" />
+  <link rel="stylesheet" href="style.css?v=21" />
 </head>
 
 <body>
-  <main id="app">
+  <div id="app">
     <div id="map"></div>
 
     <header class="topbar glass">
-      <div class="titleBlock">
-        <h1>Road Discovery AU</h1>
-        <p id="statusText">Loading...</p>
+      <div>
+        <div class="brand">Road Discovery AU</div>
+
+        <div id="statusText" class="subtle">
+          Tap Start Drive to begin.
+        </div>
       </div>
 
-      <div class="topActions">
-        <button
-          id="locateBtn"
-          class="iconBtn"
-          type="button"
-          aria-label="Centre on me"
-        >
-          ◎
-        </button>
-
-        <button
-          id="settingsToggle"
-          class="iconBtn"
-          type="button"
-          aria-label="Settings"
-        >
-          ⚙
-        </button>
-      </div>
+      <button id="locateBtn" class="iconBtn" title="Centre on me">
+        ◎
+      </button>
     </header>
 
-    <section class="goalBadge glass">
-      <span>AU Goal</span>
-
-      <strong>
-        <span id="auGoalCount">0</span> / ~18M
-      </strong>
-    </section>
-
-    <section id="settingsPanel" class="settingsPanel glass hidden">
-      <h2>Settings</h2>
-
-      <label>
-        <div class="settingRow">
-          <span>Unlock radius</span>
-          <strong id="unlockRadiusText">20 m</strong>
-        </div>
-
-        <input
-          id="unlockRadius"
-          type="range"
-          min="5"
-          max="60"
-          step="5"
-          value="20"
-        />
-      </label>
-
-      <label>
-        <div class="settingRow">
-          <span>Max GPS accuracy</span>
-          <strong id="maxAccuracyText">35 m</strong>
-        </div>
-
-        <input
-          id="maxAccuracy"
-          type="range"
-          min="10"
-          max="100"
-          step="5"
-          value="35"
-        />
-      </label>
-
-      <label>
-        <div class="settingRow">
-          <span>Road chunk size</span>
-        </div>
-
-        <select id="segmentSize">
-          <option value="25">25 metres</option>
-          <option value="50" selected>50 metres</option>
-          <option value="100">100 metres</option>
-        </select>
-      </label>
-
-      <button id="resetBtn" class="danger" type="button">
-        Reset discovered roads
-      </button>
-    </section>
-
     <section class="stats glass">
-      <div>
-        <span>Loaded Area</span>
+      <div class="stat">
+        <span class="label">Area</span>
         <strong id="areaProgress">0.00%</strong>
       </div>
 
-      <div>
-        <span>This Drive</span>
+      <div class="stat">
+        <span class="label">Today</span>
         <strong id="todayKm">0.00 km</strong>
       </div>
 
-      <div>
-        <span>Unlocked</span>
+      <div class="stat">
+        <span class="label">Unlocked</span>
         <strong id="unlockedCount">0</strong>
       </div>
     </section>
 
     <section class="controls glass">
-      <button id="loadRoadsBtn" class="primary" type="button">
+      <button id="loadRoadsBtn" class="primary">
         Start Drive
       </button>
 
-      <button id="startBtn" class="primary hidden" type="button">
-        Start Recording
+      <button id="startBtn" class="secondary hidden">
+        Start Drive
       </button>
 
-      <button
-        id="finishBtn"
-        class="primary finish hidden"
-        type="button"
-      >
+      <button id="finishBtn" class="danger hidden">
         Finish Drive
       </button>
     </section>
@@ -158,7 +75,7 @@
       <h2>Loading roads</h2>
 
       <p>
-        Finding nearby roads and building discovery chunks.
+        Hang tight. Getting nearby road segments ready.
       </p>
 
       <div class="progressTrack">
@@ -175,30 +92,74 @@
         GPS or reception may be weak. Wait a few seconds, then try again.
       </p>
 
-      <button id="retryBtn" class="primary" type="button">
+      <button id="retryBtn" class="primary">
         Try Again
       </button>
     </section>
 
-    <section id="summarySheet" class="summarySheet glass hidden">
-      <h2>Drive complete</h2>
+    <section id="summarySheet" class="summary glass hidden">
+      <h2>Trip Complete</h2>
 
       <p id="summaryText">
-        0.00 km travelled<br />
-        0.00 km newly discovered<br />
-        0 road chunks unlocked
+        No trip yet.
       </p>
 
-      <button id="closeSummaryBtn" class="primary" type="button">
+      <button id="closeSummaryBtn" class="primary">
         Done
       </button>
     </section>
-  </main>
 
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  ></script>
+    <button id="settingsToggle" class="settingsToggle glass">
+      ⚙
+    </button>
 
-  <script src="app.js?v=23"></script>
+    <aside id="settingsPanel" class="settings glass hidden">
+      <h3>Prototype settings</h3>
+
+      <label>
+        Unlock radius
+        <input
+          id="unlockRadius"
+          type="range"
+          min="10"
+          max="60"
+          value="20"
+        />
+        <span id="unlockRadiusText">20 m</span>
+      </label>
+
+      <label>
+        Ignore GPS worse than
+        <input
+          id="maxAccuracy"
+          type="range"
+          min="10"
+          max="100"
+          value="35"
+        />
+        <span id="maxAccuracyText">35 m</span>
+      </label>
+
+      <label>
+        Segment size
+        <select id="segmentSize">
+          <option value="25">25 m</option>
+          <option value="50" selected>50 m</option>
+          <option value="100">100 m</option>
+        </select>
+      </label>
+
+      <button id="resetBtn" class="danger small">
+        Reset discovered roads
+      </button>
+
+      <p class="tiny">
+        This prototype saves progress only on this device/browser using localStorage.
+      </p>
+    </aside>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js?v=22"></script>
 </body>
 </html>
