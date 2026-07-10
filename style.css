@@ -301,27 +301,11 @@ button:active {
   margin: 0 0 12px;
 }
 
-.settings label {
-  display: block;
-  color: var(--muted);
-  font-size: 13px;
-  margin: 14px 0;
-}
-
-.settings input,
-.settings select {
-  width: 100%;
-  margin-top: 8px;
-}
-
-.settings select {
-  background: rgba(255, 255, 255, 0.08);
-}
-
 .tiny {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
+  margin: 10px 0 0;
 }
 
 .user-dot {
