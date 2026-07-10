@@ -1,10 +1,10 @@
-const CACHE_NAME = "road-discovery-au-v22";
+const CACHE_NAME = "road-discovery-au-v23";
 
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css?v=20",
-  "./app.js?v=20",
+  "./style.css?v=23",
+  "./app.js?v=23",
   "./manifest.json",
   "./icon.svg",
 ];
