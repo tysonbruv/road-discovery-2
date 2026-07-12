@@ -19,7 +19,7 @@
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
 
-  <link rel="stylesheet" href="style.css?v=27" />
+  <link rel="stylesheet" href="style.css?v=28" />
 </head>
 
 <body>
@@ -69,14 +69,6 @@
       <button id="finishBtn" class="danger hidden">
         Finish Drive
       </button>
-
-      <button id="routeBtn" class="secondary">
-        Set Waypoint
-      </button>
-
-      <button id="clearRouteBtn" class="danger hidden">
-        Clear Waypoint
-      </button>
     </section>
 
     <section id="loadingSheet" class="loadingSheet glass hidden">
@@ -121,6 +113,14 @@
       ⚙
     </button>
 
+    <button id="routeBtn" class="mapToolBtn waypointTool glass" title="Set waypoint">
+      ⌖
+    </button>
+
+    <button id="clearRouteBtn" class="mapToolBtn clearTool glass hidden" title="Clear waypoint">
+      ×
+    </button>
+
     <aside id="settingsPanel" class="settings glass hidden">
       <h3>Settings</h3>
 
@@ -135,6 +135,6 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=27"></script>
+  <script src="app.js?v=28"></script>
 </body>
 </html>
