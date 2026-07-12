@@ -693,6 +693,8 @@ function unlockNearbySegments(point) {
 }
 
 function beginWaypointSelect() {
+  if (state.isRouting) return;
+
   state.awaitingWaypointClick = true;
   updateWaypointButtons();
   setStatus("Tap the map where you want to go.");
@@ -930,24 +932,40 @@ function clearWaypoint() {
 function updateWaypointButtons() {
   if (!els.routeBtn || !els.clearRouteBtn) return;
 
+  els.routeBtn.textContent = "⌖";
+  els.clearRouteBtn.textContent = "×";
+
+  els.routeBtn.classList.toggle("active", state.awaitingWaypointClick || Boolean(state.waypointPoint));
+  els.clearRouteBtn.classList.toggle("active", Boolean(state.waypointPoint));
+
   if (state.awaitingWaypointClick) {
-    els.routeBtn.textContent = "Tap Map";
     els.routeBtn.disabled = true;
+    els.routeBtn.title = "Tap the map to place waypoint";
+    els.routeBtn.setAttribute("aria-label", "Tap the map to place waypoint");
+
     els.clearRouteBtn.classList.remove("hidden");
+    els.clearRouteBtn.title = "Cancel waypoint";
+    els.clearRouteBtn.setAttribute("aria-label", "Cancel waypoint");
     return;
   }
 
   els.routeBtn.disabled = state.isRouting;
 
   if (state.isRouting) {
-    els.routeBtn.textContent = "Routing...";
+    els.routeBtn.title = "Finding route";
+    els.routeBtn.setAttribute("aria-label", "Finding route");
   } else if (state.waypointPoint) {
-    els.routeBtn.textContent = "Change Waypoint";
+    els.routeBtn.title = "Change waypoint";
+    els.routeBtn.setAttribute("aria-label", "Change waypoint");
   } else {
-    els.routeBtn.textContent = "Set Waypoint";
+    els.routeBtn.title = "Set waypoint";
+    els.routeBtn.setAttribute("aria-label", "Set waypoint");
   }
 
-  if (state.waypointPoint || state.awaitingWaypointClick) {
+  els.clearRouteBtn.title = "Clear waypoint";
+  els.clearRouteBtn.setAttribute("aria-label", "Clear waypoint");
+
+  if (state.waypointPoint) {
     els.clearRouteBtn.classList.remove("hidden");
   } else {
     els.clearRouteBtn.classList.add("hidden");
