@@ -1,6 +1,8 @@
 const STORAGE_KEY = "roadDiscoveryAU.visited.v1";
 const SAVED_SEGMENTS_KEY = "roadDiscoveryAU.savedSegments.v1";
 
+const AU_TOTAL_UNLOCKS_ESTIMATE = 18000000;
+
 const UNLOCK_RADIUS_M = 20;
 const MAX_GPS_ACCURACY_M = 35;
 const SEGMENT_SIZE_M = 50;
@@ -380,16 +382,14 @@ async function loadRoads(lat, lng, radiusM, options = {}) {
 
     updateStats();
 
-    const added = state.roadSegments.length - before;
-
     if (showPopupProgress) {
       updateLoading(100);
     }
 
     if (reason === "auto") {
-      setStatus(`More roads loaded. Added ${added.toLocaleString()} chunks.`);
+      setStatus("More roads loaded.");
     } else {
-      setStatus(`Loaded ${state.roadSegments.length.toLocaleString()} road chunks.`);
+      setStatus("Roads loaded.");
     }
   } catch (err) {
     console.error(err);
@@ -520,7 +520,7 @@ function startDrive() {
       "Nearby roads were not ready yet. Wait a few seconds, then tap Try Again."
     );
 
-    setStatus("No road chunks loaded yet. Tap Try Again.");
+    setStatus("No roads loaded yet. Tap Try Again.");
     return;
   }
 
@@ -572,7 +572,7 @@ function finishDrive() {
   els.summaryText.innerHTML = `
     ${metersToKm(state.tripDistanceM)} km travelled<br>
     ${newKm.toFixed(2)} km newly discovered<br>
-    ${state.tripUnlocked.size} road chunks unlocked
+    ${state.tripUnlocked.size.toLocaleString()} new unlocks
   `;
 
   els.summarySheet.classList.remove("hidden");
@@ -1047,7 +1047,7 @@ function drawSavedSegments() {
   }
 
   if (saved.length > 0) {
-    setStatus(`${saved.length.toLocaleString()} saved road chunks shown.`);
+    setStatus(`${saved.length.toLocaleString()} saved progress shown.`);
   }
 }
 
@@ -1117,13 +1117,51 @@ function updateUserMarker(point) {
 }
 
 function updateStats() {
-  const total = state.roadSegments.length;
-  const visitedInArea = state.roadSegments.filter((seg) => seg.visited).length;
-  const percent = total ? (visitedInArea / total) * 100 : 0;
+  const lifetimeUnlocked = Object.keys(state.savedSegments).length;
+  const australiaPercent = (lifetimeUnlocked / AU_TOTAL_UNLOCKS_ESTIMATE) * 100;
 
-  els.areaProgress.textContent = `${percent.toFixed(2)}%`;
-  els.unlockedCount.textContent = total ? `${visitedInArea}/${total}` : "0";
+  els.areaProgress.textContent = `${formatAustraliaPercent(australiaPercent)}%`;
   els.todayKm.textContent = `${sumTripUnlockedKm().toFixed(2)} km`;
+  els.unlockedCount.textContent =
+    `${formatUnlockedNumber(lifetimeUnlocked)} / ${formatCompactNumber(AU_TOTAL_UNLOCKS_ESTIMATE)}`;
+}
+
+function formatAustraliaPercent(percent) {
+  if (percent > 0 && percent < 0.0001) {
+    return "<0.0001";
+  }
+
+  return percent.toFixed(4);
+}
+
+function formatUnlockedNumber(value) {
+  if (value < 10000) {
+    return value.toLocaleString();
+  }
+
+  return formatCompactNumber(value);
+}
+
+function formatCompactNumber(value) {
+  if (value >= 1000000) {
+    const millions = value / 1000000;
+    return `${trimDecimal(millions)}M`;
+  }
+
+  if (value >= 1000) {
+    const thousands = value / 1000;
+    return `${trimDecimal(thousands)}K`;
+  }
+
+  return value.toLocaleString();
+}
+
+function trimDecimal(value) {
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+
+  return value.toFixed(1).replace(".0", "");
 }
 
 function sumTripUnlockedKm() {
