@@ -11,16 +11,44 @@
   />
 
   <meta name="theme-color" content="#05070a" />
-  <meta name="description" content="Discover Australia one road at a time." />
+
+  <meta
+    name="description"
+    content="Discover Australia one road at a time."
+  />
 
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="Road Discovery AU" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-  <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="icon.svg" />
+  <meta
+    name="apple-mobile-web-app-capable"
+    content="yes"
+  />
+
+  <meta
+    name="apple-mobile-web-app-title"
+    content="Road Discovery AU"
+  />
+
+  <meta
+    name="apple-mobile-web-app-status-bar-style"
+    content="black-translucent"
+  />
+
+  <link
+    rel="manifest"
+    href="manifest.json"
+  />
+
+  <link
+    rel="icon"
+    href="icon.svg"
+    type="image/svg+xml"
+  />
+
+  <link
+    rel="apple-touch-icon"
+    href="icon.svg"
+  />
 
   <link
     rel="stylesheet"
@@ -28,7 +56,10 @@
     crossorigin=""
   />
 
-  <link rel="stylesheet" href="style.css" />
+  <link
+    rel="stylesheet"
+    href="style.css?v=31"
+  />
 </head>
 
 <body>
@@ -38,48 +69,107 @@
     </div>
   </noscript>
 
-  <div id="appShell" class="app-shell">
+  <div
+    id="appShell"
+    class="app-shell"
+  >
     <!-- Main map -->
-    <main id="map" class="map" aria-label="Road Discovery AU map"></main>
+    <main
+      id="map"
+      class="map"
+      aria-label="Road Discovery AU map"
+    ></main>
 
     <!-- Top HUD -->
-    <header id="topHud" class="top-hud">
+    <header
+      id="topHud"
+      class="top-hud"
+    >
       <div class="brand-row">
         <div class="brand-left">
-          <div class="brand-mark">AU</div>
+          <div class="brand-mark">
+            AU
+          </div>
+
           <div class="brand-text">
-            <div class="brand-title">Road Discovery AU</div>
-            <div id="driveStatus" class="brand-subtitle">Ready to drive</div>
+            <div class="brand-title">
+              Road Discovery AU
+            </div>
+
+            <div
+              id="driveStatus"
+              class="brand-subtitle"
+            >
+              Ready to drive
+            </div>
           </div>
         </div>
 
-        <div id="gpsStatus" class="gps-pill">GPS idle</div>
+        <div
+          id="gpsStatus"
+          class="gps-pill"
+        >
+          GPS idle
+        </div>
       </div>
 
-      <section class="stats-bar" aria-label="Progress stats">
+      <section
+        class="stats-bar"
+        aria-label="Progress stats"
+      >
         <article class="stat-card">
-          <div class="stat-label">Australia</div>
-          <div id="australiaStat" class="stat-value">0.0000%</div>
+          <div class="stat-label">
+            Australia
+          </div>
+
+          <div
+            id="australiaStat"
+            class="stat-value"
+          >
+            0.0000%
+          </div>
         </article>
 
         <article class="stat-card">
-          <div class="stat-label">Today</div>
-          <div id="todayStat" class="stat-value">0.00 km</div>
+          <div class="stat-label">
+            Today
+          </div>
+
+          <div
+            id="todayStat"
+            class="stat-value"
+          >
+            0.00 km
+          </div>
         </article>
 
         <article class="stat-card">
-          <div class="stat-label">Unlocked</div>
-          <div id="unlockedStat" class="stat-value">0 / 18M</div>
+          <div class="stat-label">
+            Unlocked
+          </div>
+
+          <div
+            id="unlockedStat"
+            class="stat-value"
+          >
+            0 / 18M
+          </div>
         </article>
       </section>
 
-      <div id="accuracyStatus" class="accuracy-status">
+      <div
+        id="accuracyStatus"
+        class="accuracy-status"
+      >
         Waiting for location
       </div>
     </header>
 
-    <!-- Right-side tools -->
-    <nav class="tool-stack" aria-label="Map tools">
+    <!-- Right-side map tools -->
+    <nav
+      class="tool-stack"
+      aria-label="Map tools"
+    >
       <button
         id="settingsBtn"
         class="tool-btn"
@@ -94,7 +184,7 @@
         id="waypointBtn"
         class="tool-btn"
         type="button"
-        aria-label="Open waypoint"
+        aria-label="Open waypoint controls"
         title="Waypoint"
       >
         ⌖
@@ -111,6 +201,16 @@
       </button>
 
       <button
+        id="locateBtn"
+        class="tool-btn"
+        type="button"
+        aria-label="Centre map on my location"
+        title="Centre on me"
+      >
+        ◎
+      </button>
+
+      <button
         id="clearWaypointBtn"
         class="tool-btn danger-tool hidden"
         type="button"
@@ -122,12 +222,23 @@
     </nav>
 
     <!-- Bottom drive controls -->
-    <footer id="bottomControls" class="bottom-controls">
-      <button id="startBtn" class="drive-btn primary-drive-btn" type="button">
+    <footer
+      id="bottomControls"
+      class="bottom-controls"
+    >
+      <button
+        id="startBtn"
+        class="drive-btn primary-drive-btn"
+        type="button"
+      >
         Start Drive
       </button>
 
-      <button id="finishBtn" class="drive-btn secondary-drive-btn" type="button">
+      <button
+        id="finishBtn"
+        class="drive-btn secondary-drive-btn hidden"
+        type="button"
+      >
         Finish Drive
       </button>
     </footer>
@@ -150,7 +261,10 @@
       <div class="panel-header">
         <div>
           <h2>Settings</h2>
-          <p>Keep the map clean and private.</p>
+
+          <p>
+            Keep the map clean and private.
+          </p>
         </div>
 
         <button
@@ -167,10 +281,19 @@
         <section class="panel-section">
           <h3>Friends</h3>
 
-          <label class="toggle-row" for="friendProfileToggle">
+          <label
+            class="toggle-row"
+            for="friendProfileToggle"
+          >
             <div class="toggle-text">
-              <strong>Show my Road Profile</strong>
-              <span>Approved friends can see your Australia %, Unlocked score, and progress stats.</span>
+              <strong>
+                Show my Road Profile
+              </strong>
+
+              <span>
+                Approved friends can see your Australia percentage,
+                unlocked score and progress statistics.
+              </span>
             </div>
 
             <input
@@ -179,15 +302,27 @@
               type="checkbox"
             />
 
-            <span class="toggle-switch" aria-hidden="true">
+            <span
+              class="toggle-switch"
+              aria-hidden="true"
+            >
               <span class="toggle-knob"></span>
             </span>
           </label>
 
-          <label class="toggle-row" for="friendMapToggle">
+          <label
+            class="toggle-row"
+            for="friendMapToggle"
+          >
             <div class="toggle-text">
-              <strong>Show my map overview</strong>
-              <span>Approved friends can see the roads you have painted orange.</span>
+              <strong>
+                Show my map overview
+              </strong>
+
+              <span>
+                Approved friends can see the roads you have painted
+                orange.
+              </span>
             </div>
 
             <input
@@ -196,25 +331,34 @@
               type="checkbox"
             />
 
-            <span class="toggle-switch" aria-hidden="true">
+            <span
+              class="toggle-switch"
+              aria-hidden="true"
+            >
               <span class="toggle-knob"></span>
             </span>
           </label>
 
           <div class="privacy-note">
-            Friends cannot see your live location, current drive, blue dot, start point, or end point.
+            Friends cannot see your live location, current drive,
+            blue location marker, starting point or finishing point.
           </div>
         </section>
 
         <section class="panel-section">
           <h3>Data</h3>
 
-          <button id="resetBtn" class="danger-btn" type="button">
+          <button
+            id="resetBtn"
+            class="danger-btn"
+            type="button"
+          >
             Reset discovered roads
           </button>
 
           <p class="small-note">
-            This only affects saved progress on this device.
+            This only affects progress saved on this device and
+            browser.
           </p>
         </section>
       </div>
@@ -230,14 +374,17 @@
       <div class="panel-header">
         <div>
           <h2>Waypoint</h2>
-          <p>Pick somewhere to drive towards.</p>
+
+          <p>
+            Pick somewhere to drive towards.
+          </p>
         </div>
 
         <button
           id="closeWaypointBtn"
           class="panel-close-btn"
           type="button"
-          aria-label="Close waypoint"
+          aria-label="Close waypoint panel"
         >
           ×
         </button>
@@ -245,16 +392,25 @@
 
       <div class="panel-content">
         <section class="panel-section">
-          <button id="setWaypointBtn" class="wide-btn" type="button">
+          <button
+            id="setWaypointBtn"
+            class="wide-btn"
+            type="button"
+          >
             Set waypoint on map
           </button>
 
-          <button id="clearWaypointMenuBtn" class="wide-btn ghost-btn" type="button">
+          <button
+            id="clearWaypointMenuBtn"
+            class="wide-btn ghost-btn"
+            type="button"
+          >
             Clear waypoint
           </button>
 
           <p class="small-note">
-            Tap the map after choosing “Set waypoint on map”.
+            Press “Set waypoint on map”, close this panel and then tap
+            the map where you want to go.
           </p>
         </section>
       </div>
@@ -270,30 +426,47 @@
       <div class="panel-header">
         <div>
           <h2>Friends</h2>
-          <p>Road score style profiles.</p>
+
+          <p>
+            Compare road-discovery profiles.
+          </p>
         </div>
 
         <button
           id="closeFriendsBtn"
           class="panel-close-btn"
           type="button"
-          aria-label="Close friends"
+          aria-label="Close friends panel"
         >
           ×
         </button>
       </div>
 
       <div class="panel-content">
-        <!-- Friends list view -->
-        <section id="friendsListView" class="friends-view">
-          <button id="showAddFriendBtn" class="wide-btn add-friend-main-btn" type="button">
+        <!-- Friends list -->
+        <section
+          id="friendsListView"
+          class="friends-view"
+        >
+          <button
+            id="showAddFriendBtn"
+            class="wide-btn add-friend-main-btn"
+            type="button"
+          >
             + Add Friend
           </button>
 
-          <div id="addFriendBox" class="add-friend-box hidden">
-            <label class="field-label" for="friendSearchInput">
+          <div
+            id="addFriendBox"
+            class="add-friend-box hidden"
+          >
+            <label
+              class="field-label"
+              for="friendSearchInput"
+            >
               Search exact username
             </label>
+
             <div class="field-row">
               <input
                 id="friendSearchInput"
@@ -303,14 +476,23 @@
                 autocomplete="off"
                 placeholder="@joshroads"
               />
-              <button id="searchFriendBtn" class="small-action-btn" type="button">
+
+              <button
+                id="searchFriendBtn"
+                class="small-action-btn"
+                type="button"
+              >
                 Search
               </button>
             </div>
 
-            <label class="field-label" for="friendCodeInput">
+            <label
+              class="field-label"
+              for="friendCodeInput"
+            >
               Add by friend code
             </label>
+
             <div class="field-row">
               <input
                 id="friendCodeInput"
@@ -320,30 +502,58 @@
                 autocomplete="off"
                 placeholder="JR7K-42P"
               />
-              <button id="addFriendCodeBtn" class="small-action-btn" type="button">
+
+              <button
+                id="addFriendCodeBtn"
+                class="small-action-btn"
+                type="button"
+              >
                 Add
               </button>
             </div>
           </div>
 
           <section class="friends-block">
-            <div class="friends-block-title">Friend requests</div>
+            <div class="friends-block-title">
+              Friend requests
+            </div>
 
-            <div id="friendRequestsList" class="requests-list">
-              <div class="empty-state">No pending requests</div>
+            <div
+              id="friendRequestsList"
+              class="requests-list"
+            >
+              <div class="empty-state">
+                No pending requests
+              </div>
             </div>
           </section>
 
           <section class="friends-block">
-            <div class="friends-block-title">Friends</div>
+            <div class="friends-block-title">
+              Friends
+            </div>
 
-            <div id="friendsList" class="friends-list">
-              <button class="friend-row" type="button" data-friend-id="josh">
-                <div class="friend-avatar">J</div>
+            <div
+              id="friendsList"
+              class="friends-list"
+            >
+              <button
+                class="friend-row"
+                type="button"
+                data-friend-id="josh"
+              >
+                <div class="friend-avatar">
+                  J
+                </div>
 
                 <div class="friend-main">
-                  <div class="friend-name">Josh</div>
-                  <div class="friend-sub">Australia 0.0012%</div>
+                  <div class="friend-name">
+                    Josh
+                  </div>
+
+                  <div class="friend-sub">
+                    Australia 0.0012%
+                  </div>
                 </div>
 
                 <div class="friend-score">
@@ -352,12 +562,23 @@
                 </div>
               </button>
 
-              <button class="friend-row" type="button" data-friend-id="dad">
-                <div class="friend-avatar">D</div>
+              <button
+                class="friend-row"
+                type="button"
+                data-friend-id="dad"
+              >
+                <div class="friend-avatar">
+                  D
+                </div>
 
                 <div class="friend-main">
-                  <div class="friend-name">Dad</div>
-                  <div class="friend-sub">Australia 0.0008%</div>
+                  <div class="friend-name">
+                    Dad
+                  </div>
+
+                  <div class="friend-sub">
+                    Australia 0.0008%
+                  </div>
                 </div>
 
                 <div class="friend-score">
@@ -369,51 +590,112 @@
           </section>
         </section>
 
-        <!-- Friend profile view -->
-        <section id="friendProfileView" class="friends-view hidden">
-          <button id="backToFriendsBtn" class="back-btn" type="button">
+        <!-- Friend profile -->
+        <section
+          id="friendProfileView"
+          class="friends-view hidden"
+        >
+          <button
+            id="backToFriendsBtn"
+            class="back-btn"
+            type="button"
+          >
             ← Back
           </button>
 
           <div class="friend-profile-card">
             <div class="friend-profile-top">
-              <div id="friendProfileAvatar" class="friend-profile-avatar">J</div>
+              <div
+                id="friendProfileAvatar"
+                class="friend-profile-avatar"
+              >
+                J
+              </div>
 
               <div>
-                <h2 id="friendProfileName">Josh</h2>
-                <p id="friendProfileHandle">@joshroads</p>
+                <h2 id="friendProfileName">
+                  Josh
+                </h2>
+
+                <p id="friendProfileHandle">
+                  @joshroads
+                </p>
               </div>
             </div>
 
             <div class="friend-stat-grid">
               <article class="friend-stat-card">
-                <div class="friend-stat-label">Australia</div>
-                <div id="friendAustraliaStat" class="friend-stat-value">0.0012%</div>
+                <div class="friend-stat-label">
+                  Australia
+                </div>
+
+                <div
+                  id="friendAustraliaStat"
+                  class="friend-stat-value"
+                >
+                  0.0012%
+                </div>
               </article>
 
               <article class="friend-stat-card">
-                <div class="friend-stat-label">Unlocked</div>
-                <div id="friendUnlockedStat" class="friend-stat-value">210 / 18M</div>
+                <div class="friend-stat-label">
+                  Unlocked
+                </div>
+
+                <div
+                  id="friendUnlockedStat"
+                  class="friend-stat-value"
+                >
+                  210 / 18M
+                </div>
               </article>
 
               <article class="friend-stat-card">
-                <div class="friend-stat-label">Today</div>
-                <div id="friendTodayStat" class="friend-stat-value">2.31 km</div>
+                <div class="friend-stat-label">
+                  Today
+                </div>
+
+                <div
+                  id="friendTodayStat"
+                  class="friend-stat-value"
+                >
+                  2.31 km
+                </div>
               </article>
 
               <article class="friend-stat-card">
-                <div class="friend-stat-label">This Week</div>
-                <div id="friendWeekStat" class="friend-stat-value">18.4 km</div>
+                <div class="friend-stat-label">
+                  This Week
+                </div>
+
+                <div
+                  id="friendWeekStat"
+                  class="friend-stat-value"
+                >
+                  18.4 km
+                </div>
               </article>
             </div>
 
-            <button id="openFriendMapBtn" class="friend-map-preview-btn" type="button">
+            <button
+              id="openFriendMapBtn"
+              class="friend-map-preview-btn"
+              type="button"
+            >
               <div class="preview-header">
-                <span>Map overview</span>
-                <span>Open →</span>
+                <span>
+                  Map overview
+                </span>
+
+                <span>
+                  Open →
+                </span>
               </div>
 
-              <div id="friendMapPreview" class="friend-map-preview">
+              <div
+                id="friendMapPreview"
+                class="friend-map-preview"
+              >
                 <svg
                   id="friendMapPreviewSvg"
                   class="friend-map-svg"
@@ -421,24 +703,44 @@
                   role="img"
                   aria-label="Friend discovered roads preview"
                 >
-                  <path d="M28 150 C70 105, 110 120, 148 82 S235 42, 292 62" />
-                  <path d="M64 42 C92 66, 92 96, 122 116 S174 140, 216 126" />
-                  <path d="M112 168 C150 146, 168 104, 195 76 S244 36, 286 28" />
-                  <path d="M34 92 C72 94, 112 76, 150 56 S226 48, 286 96" />
+                  <path
+                    d="M28 150 C70 105, 110 120, 148 82 S235 42, 292 62"
+                  ></path>
+
+                  <path
+                    d="M64 42 C92 66, 92 96, 122 116 S174 140, 216 126"
+                  ></path>
+
+                  <path
+                    d="M112 168 C150 146, 168 104, 195 76 S244 36, 286 28"
+                  ></path>
+
+                  <path
+                    d="M34 92 C72 94, 112 76, 150 56 S226 48, 286 96"
+                  ></path>
                 </svg>
               </div>
             </button>
 
             <div class="privacy-note">
-              This is not live tracking. It only shows painted road progress.
+              This is not live tracking. It only shows painted-road
+              progress.
             </div>
 
             <div class="friend-actions">
-              <button id="removeFriendBtn" class="ghost-btn wide-btn" type="button">
+              <button
+                id="removeFriendBtn"
+                class="ghost-btn wide-btn"
+                type="button"
+              >
                 Remove friend
               </button>
 
-              <button id="blockFriendBtn" class="danger-btn wide-btn" type="button">
+              <button
+                id="blockFriendBtn"
+                class="danger-btn wide-btn"
+                type="button"
+              >
                 Block
               </button>
             </div>
@@ -455,17 +757,29 @@
       aria-label="Friend map"
     >
       <header class="friend-map-header">
-        <button id="closeFriendMapBtn" class="back-btn" type="button">
+        <button
+          id="closeFriendMapBtn"
+          class="back-btn"
+          type="button"
+        >
           ← Back
         </button>
 
         <div>
-          <h2 id="friendMapTitle">Josh’s Map</h2>
-          <p>Painted roads only. No live location.</p>
+          <h2 id="friendMapTitle">
+            Josh’s Map
+          </h2>
+
+          <p>
+            Painted roads only. No live location.
+          </p>
         </div>
       </header>
 
-      <div id="friendFullMap" class="friend-full-map">
+      <div
+        id="friendFullMap"
+        class="friend-full-map"
+      >
         <svg
           id="friendFullMapSvg"
           class="friend-full-map-svg"
@@ -473,18 +787,40 @@
           role="img"
           aria-label="Friend painted roads"
         >
-          <path d="M74 492 C150 388, 260 412, 338 310 S542 166, 806 210" />
-          <path d="M188 118 C270 184, 248 260, 334 336 S462 446, 610 398" />
-          <path d="M318 554 C422 482, 460 356, 522 258 S660 104, 798 88" />
-          <path d="M96 298 C214 300, 290 230, 400 176 S620 148, 792 312" />
-          <path d="M138 420 C242 364, 304 362, 392 392 S580 476, 730 430" />
-          <path d="M440 72 C430 172, 454 240, 528 318 S622 458, 656 554" />
+          <path
+            d="M74 492 C150 388, 260 412, 338 310 S542 166, 806 210"
+          ></path>
+
+          <path
+            d="M188 118 C270 184, 248 260, 334 336 S462 446, 610 398"
+          ></path>
+
+          <path
+            d="M318 554 C422 482, 460 356, 522 258 S660 104, 798 88"
+          ></path>
+
+          <path
+            d="M96 298 C214 300, 290 230, 400 176 S620 148, 792 312"
+          ></path>
+
+          <path
+            d="M138 420 C242 364, 304 362, 392 392 S580 476, 730 430"
+          ></path>
+
+          <path
+            d="M440 72 C430 172, 454 240, 528 318 S622 458, 656 554"
+          ></path>
         </svg>
       </div>
     </section>
 
-    <!-- Toast / small messages -->
-    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    <!-- Toast messages -->
+    <div
+      id="toast"
+      class="toast hidden"
+      role="status"
+      aria-live="polite"
+    ></div>
   </div>
 
   <script
@@ -492,12 +828,16 @@
     crossorigin=""
   ></script>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=31"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", function () {
-        navigator.serviceWorker.register("./sw.js").catch(function () {});
+        navigator.serviceWorker
+          .register("./sw.js")
+          .catch(function (error) {
+            console.error("Service worker registration failed:", error);
+          });
       });
     }
   </script>
