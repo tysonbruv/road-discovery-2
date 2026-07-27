@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v39
+/* Road Discovery AU v40
    Checkpoint 4: safe aggregate friend stats only.
    This keeps the road/GPS/Overpass/waypoint/localStorage engine local.
    It does not upload live GPS, current drive paths, segment IDs, coordinates, road geometry, speed, heading, blue marker, start point, or finish point.
@@ -113,15 +113,22 @@ const state = {
   },
 
   friends: {
-    incomingRequests: [],
-    acceptedFriends: [],
-    loadingRequests: false,
-    loadingFriends: false,
-    sendingRequest: false,
-    respondingRequestId: null,
-    respondingAction: null,
-    removingFriendId: null
-  },
+  incomingRequests: [],
+  outgoingRequests: [],
+  acceptedFriends: [],
+
+  loadingRequests: false,
+  loadingOutgoingRequests: false,
+  loadingFriends: false,
+
+  sendingRequest: false,
+
+  respondingRequestId: null,
+  respondingAction: null,
+
+  cancellingOutgoingRequestId: null,
+  removingFriendId: null
+},
 
   statsSync: {
     syncing: false,
@@ -248,6 +255,7 @@ function cacheEls() {
     "friendCodeInput",
     "addFriendCodeBtn",
     "friendRequestsList",
+    "outgoingRequestsList",
     "friendsList",
     "backToFriendsBtn",
 
@@ -641,6 +649,21 @@ function bindEvents() {
       declineIncomingFriendRequest(requestId);
     }
   });
+
+   els.outgoingRequestsList?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-outgoing-action]");
+
+  if (!button || !els.outgoingRequestsList.contains(button)) {
+    return;
+  }
+
+  const requestId = button.dataset.requestId || "";
+  const action = button.dataset.outgoingAction || "";
+
+  if (action === "cancel") {
+    cancelOutgoingFriendRequest(requestId);
+  }
+});
 
   els.friendsList?.addEventListener("click", (event) => {
     const row = event.target.closest("[data-friend-id]");
@@ -2347,13 +2370,21 @@ function setAuthMessage(message, type = "info") {
 
 function clearFriendData() {
   state.friends.incomingRequests = [];
+  state.friends.outgoingRequests = [];
   state.friends.acceptedFriends = [];
+
   state.friends.loadingRequests = false;
+  state.friends.loadingOutgoingRequests = false;
   state.friends.loadingFriends = false;
+
   state.friends.sendingRequest = false;
+
   state.friends.respondingRequestId = null;
   state.friends.respondingAction = null;
+
+  state.friends.cancellingOutgoingRequestId = null;
   state.friends.removingFriendId = null;
+
   state.activeFriendId = null;
   state.statsSync.syncing = false;
   state.statsSync.lastSyncAt = 0;
@@ -2370,9 +2401,10 @@ async function refreshFriendData(options = {}) {
   }
 
   await Promise.all([
-    loadIncomingFriendRequests({ quiet: true }),
-    loadFriends({ quiet: true })
-  ]);
+  loadIncomingFriendRequests({ quiet: true }),
+  loadOutgoingFriendRequests({ quiet: true }),
+  loadFriends({ quiet: true })
+]);
 
   if (!quiet) {
     showToast("Friends updated");
@@ -2385,11 +2417,12 @@ function renderFriendsList() {
   const signedIn = Boolean(state.auth.user && state.auth.profile);
 
     const busy =
-    Boolean(state.auth.loading) ||
-    Boolean(state.auth.submitting) ||
-    Boolean(state.friends.sendingRequest) ||
-    Boolean(state.friends.respondingRequestId) ||
-    Boolean(state.friends.removingFriendId);
+  Boolean(state.auth.loading) ||
+  Boolean(state.auth.submitting) ||
+  Boolean(state.friends.sendingRequest) ||
+  Boolean(state.friends.respondingRequestId) ||
+  Boolean(state.friends.cancellingOutgoingRequestId) ||
+  Boolean(state.friends.removingFriendId);
 
   if (els.showAddFriendBtn) {
     els.showAddFriendBtn.disabled = !signedIn || busy;
@@ -2414,7 +2447,8 @@ function renderFriendsList() {
   }
 
   renderIncomingFriendRequests(signedIn);
-  renderAcceptedFriends(signedIn);
+renderOutgoingFriendRequests(signedIn);
+renderAcceptedFriends(signedIn);
 }
 
 async function sendFriendRequestByCode() {
@@ -2522,10 +2556,57 @@ async function loadIncomingFriendRequests(options = {}) {
     return state.friends.incomingRequests;
   }
 
+   
+
   state.friends.incomingRequests = Array.isArray(data) ? data : [];
 
   renderFriendsList();
   return state.friends.incomingRequests;
+}
+
+async function loadOutgoingFriendRequests(options = {}) {
+  const { quiet = false } = options;
+
+  if (!state.auth.client || !state.auth.user) {
+    state.friends.outgoingRequests = [];
+    renderFriendsList();
+    return [];
+  }
+
+  if (state.friends.loadingOutgoingRequests) {
+    return state.friends.outgoingRequests;
+  }
+
+  state.friends.loadingOutgoingRequests = true;
+
+  if (!quiet) {
+    renderFriendsList();
+  }
+
+  const { data, error } = await state.auth.client.rpc(
+    "get_outgoing_friend_requests"
+  );
+
+  state.friends.loadingOutgoingRequests = false;
+
+  if (error) {
+    console.error(error);
+
+    if (!quiet) {
+      showToast(friendRequestErrorMessage(error));
+    }
+
+    renderFriendsList();
+    return state.friends.outgoingRequests;
+  }
+
+  state.friends.outgoingRequests = Array.isArray(data)
+    ? data
+    : [];
+
+  renderFriendsList();
+
+  return state.friends.outgoingRequests;
 }
 
 async function loadFriends(options = {}) {
@@ -2576,6 +2657,80 @@ async function loadFriends(options = {}) {
 
 async function acceptIncomingFriendRequest(requestId) {
   await respondToIncomingFriendRequest("accept", requestId);
+}
+
+async function cancelOutgoingFriendRequest(requestId) {
+  if (!state.auth.client || !state.auth.user) {
+    showToast("Sign in to manage friend requests");
+    return;
+  }
+
+  if (!requestId) {
+    showToast("Friend request was missing an ID");
+    return;
+  }
+
+  if (state.friends.cancellingOutgoingRequestId) {
+    return;
+  }
+
+  const request =
+    state.friends.outgoingRequests.find((item) => {
+      return String(item.request_id || "") === String(requestId);
+    }) || null;
+
+  const username =
+    request?.receiver_username ||
+    "this user";
+
+  const confirmed = confirm(
+    `Cancel your friend request to ${username}?`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  state.friends.cancellingOutgoingRequestId = requestId;
+  renderFriendsList();
+
+  const { data, error } = await state.auth.client.rpc(
+    "cancel_outgoing_friend_request",
+    {
+      target_request_id: requestId
+    }
+  );
+
+  state.friends.cancellingOutgoingRequestId = null;
+
+  if (error) {
+    console.error(error);
+    showToast(friendRequestErrorMessage(error));
+    renderFriendsList();
+    return;
+  }
+
+  if (data !== true) {
+    await refreshFriendData({
+      quiet: true
+    });
+
+    showToast("That request is no longer pending");
+    return;
+  }
+
+  state.friends.outgoingRequests =
+    state.friends.outgoingRequests.filter((item) => {
+      return String(item.request_id || "") !== String(requestId);
+    });
+
+  renderFriendsList();
+
+  await refreshFriendData({
+    quiet: true
+  });
+
+  showToast("Friend request cancelled");
 }
 
 async function declineIncomingFriendRequest(requestId) {
@@ -2696,7 +2851,89 @@ function renderIncomingFriendRequestRow(request) {
     </div>
   `;
 }
+function renderOutgoingFriendRequests(signedIn) {
+  if (!els.outgoingRequestsList) {
+    return;
+  }
 
+  if (!signedIn) {
+    els.outgoingRequestsList.innerHTML =
+      '<div class="empty-state">Sign in to see requests you have sent.</div>';
+    return;
+  }
+
+  if (state.friends.loadingOutgoingRequests) {
+    els.outgoingRequestsList.innerHTML =
+      '<div class="empty-state">Loading outgoing requests...</div>';
+    return;
+  }
+
+  const requests =
+    state.friends.outgoingRequests || [];
+
+  if (requests.length === 0) {
+    els.outgoingRequestsList.innerHTML =
+      '<div class="empty-state">No outgoing friend requests.</div>';
+    return;
+  }
+
+  els.outgoingRequestsList.innerHTML = requests
+    .map((request) => renderOutgoingFriendRequestRow(request))
+    .join("");
+}
+
+function renderOutgoingFriendRequestRow(request) {
+  const requestId = String(
+    request.request_id ||
+    ""
+  );
+
+  const username =
+    request.receiver_username ||
+    "Road Profile";
+
+  const friendCode =
+    request.receiver_friend_code ||
+    "Friend code hidden";
+
+  const initial =
+    username.slice(0, 1).toUpperCase() ||
+    "R";
+
+  const isCancelling =
+    state.friends.cancellingOutgoingRequestId === requestId;
+
+  return `
+    <div
+      class="friend-row request-row"
+      data-request-id="${escapeHtml(requestId)}"
+    >
+      <div class="friend-avatar">
+        ${escapeHtml(initial)}
+      </div>
+
+      <div class="friend-main">
+        <div class="friend-name">
+          ${escapeHtml(username)}
+        </div>
+
+        <div class="friend-sub">
+          ${escapeHtml(friendCode)} • Pending
+        </div>
+      </div>
+
+      <div class="request-actions">
+        <button
+          class="request-action-btn decline-request-btn"
+          type="button"
+          data-outgoing-action="cancel"
+          data-request-id="${escapeHtml(requestId)}"
+          ${isCancelling ? "disabled" : ""}
+        >${isCancelling ? "Cancelling..." : "Cancel"}</button>
+      </div>
+    </div>
+  `;
+}
 function renderAcceptedFriends(signedIn) {
   if (!els.friendsList) return;
 
