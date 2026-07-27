@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v32
+/* Road Discovery AU v33
    - restores the stable v29 road/GPS engine
    - keeps existing v29 progress keys and saved coordinates
    - safely migrates v30 coordinate-key progress where possible
@@ -158,6 +158,8 @@ const state = {
     user: null,
     profile: null,
     loading: false,
+    checkingSession: false,
+    submitting: false,
     passwordRecovery: false
   },
 
@@ -2347,7 +2349,13 @@ function initSupabase() {
 async function loadInitialAuthSession() {
   if (!state.auth.client) return;
 
-  state.auth.loading = true;
+  /*
+    Do not disable the Create / Sign in buttons while Supabase checks
+    for an existing saved session. Some mobile browsers can leave that
+    check slow or stuck, which made the auth fields typeable but the
+    Create Road Profile button physically unclickable.
+  */
+  state.auth.checkingSession = true;
   renderAuthState();
 
   const { data, error } = await state.auth.client.auth.getSession();
@@ -2356,6 +2364,7 @@ async function loadInitialAuthSession() {
     console.error(error);
     setAuthMessage("Could not check sign-in status.", "error");
     state.auth.loading = false;
+    state.auth.checkingSession = false;
     renderAuthState();
     return;
   }
@@ -2368,8 +2377,10 @@ async function loadInitialAuthSession() {
   } else {
     state.auth.profile = null;
     state.auth.loading = false;
-    renderAuthState();
   }
+
+  state.auth.checkingSession = false;
+  renderAuthState();
 }
 
 async function ensureRoadProfile(options = {}) {
@@ -2437,6 +2448,10 @@ async function createRoadProfileAccount() {
     return;
   }
 
+  if (state.auth.submitting) {
+    return;
+  }
+
   const email = els.createEmailInput?.value.trim();
   const password = els.createPasswordInput?.value || "";
 
@@ -2451,6 +2466,7 @@ async function createRoadProfileAccount() {
   }
 
   state.auth.loading = true;
+  state.auth.submitting = true;
   renderAuthState();
   setAuthMessage("Creating Road Profile...", "info");
 
@@ -2462,6 +2478,7 @@ async function createRoadProfileAccount() {
   if (error) {
     console.error(error);
     state.auth.loading = false;
+    state.auth.submitting = false;
     setAuthMessage(error.message || "Could not create account.", "error");
     renderAuthState();
     return;
@@ -2472,12 +2489,16 @@ async function createRoadProfileAccount() {
 
   if (state.auth.session && state.auth.user) {
     await ensureRoadProfile({ quiet: false });
+    state.auth.loading = false;
+    state.auth.submitting = false;
     setAuthMessage("Road Profile created.", "success");
+    renderAuthState();
     showToast("Road Profile created");
     return;
   }
 
   state.auth.loading = false;
+  state.auth.submitting = false;
   setAuthMessage(
     "Account created. Check your email to confirm it, then sign in.",
     "success"
@@ -2491,6 +2512,10 @@ async function signInRoadProfile() {
     return;
   }
 
+  if (state.auth.submitting) {
+    return;
+  }
+
   const email = els.signInEmailInput?.value.trim();
   const password = els.signInPasswordInput?.value || "";
 
@@ -2500,6 +2525,7 @@ async function signInRoadProfile() {
   }
 
   state.auth.loading = true;
+  state.auth.submitting = true;
   renderAuthState();
   setAuthMessage("Signing in...", "info");
 
@@ -2511,6 +2537,7 @@ async function signInRoadProfile() {
   if (error) {
     console.error(error);
     state.auth.loading = false;
+    state.auth.submitting = false;
     setAuthMessage(error.message || "Could not sign in.", "error");
     renderAuthState();
     return;
@@ -2521,10 +2548,14 @@ async function signInRoadProfile() {
 
   if (state.auth.user) {
     await ensureRoadProfile({ quiet: false });
+    state.auth.loading = false;
+    state.auth.submitting = false;
     setAuthMessage("Signed in.", "success");
+    renderAuthState();
     showToast("Signed in");
   } else {
     state.auth.loading = false;
+    state.auth.submitting = false;
     setAuthMessage("Could not read signed-in user.", "error");
     renderAuthState();
   }
@@ -2754,6 +2785,7 @@ function showPasswordRecoveryBox() {
 function renderAuthState() {
   const signedIn = Boolean(state.auth.user);
   const loading = Boolean(state.auth.loading);
+  const submitting = Boolean(state.auth.submitting);
   const profile = state.auth.profile;
 
   els.signedOutProfileCard?.classList.toggle("hidden", signedIn);
@@ -2769,12 +2801,28 @@ function renderAuthState() {
     showPasswordRecoveryBox();
   }
 
+  /*
+    Keep the signed-out Create / Sign in buttons clickable during the
+    initial saved-session check. Only disable them after the user has
+    actually submitted an auth action.
+  */
+  if (els.createProfileBtn) {
+    els.createProfileBtn.disabled = signedIn || submitting;
+  }
+
+  if (els.signInBtn) {
+    els.signInBtn.disabled = signedIn || submitting;
+  }
+
+  if (els.forgotPasswordBtn) {
+    els.forgotPasswordBtn.disabled = submitting;
+  }
+
+  if (els.updatePasswordBtn) {
+    els.updatePasswordBtn.disabled = submitting;
+  }
+
   [
-    els.createProfileBtn,
-    els.signInBtn,
-    els.forgotPasswordBtn,
-    els.updatePasswordBtn,
-    els.copyFriendCodeBtn,
     els.signOutBtn,
     els.profileProfileToggle,
     els.profileMapToggle,
@@ -2782,12 +2830,12 @@ function renderAuthState() {
     els.friendMapToggle
   ].forEach((element) => {
     if (element) {
-      element.disabled = loading;
+      element.disabled = loading || submitting;
     }
   });
 
   if (els.copyFriendCodeBtn) {
-    els.copyFriendCodeBtn.disabled = loading || !profile?.friend_code;
+    els.copyFriendCodeBtn.disabled = loading || submitting || !profile?.friend_code;
   }
 
   applyFriendSettingsToUI();
