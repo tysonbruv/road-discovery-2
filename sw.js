@@ -1,14 +1,14 @@
 "use strict";
 
-/* Road Discovery AU v40 service worker */
+/* Road Discovery AU v41 service worker */
 
-const CACHE_NAME = "road-discovery-au-v39";
+const CACHE_NAME = "road-discovery-au-v41";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./style.css?v=34",
-  "./app.js?v=40",
+  "./style.css?v=35",
+  "./app.js?v=41",
   "./manifest.json",
   "./icon.svg"
 ];
@@ -113,11 +113,11 @@ self.addEventListener("fetch", (event) => {
           the version query string while the cached copy includes it.
         */
         if (url.pathname.endsWith("/style.css")) {
-          return caches.match("./style.css?v=34");
+          return caches.match("./style.css?v=35");
         }
 
         if (url.pathname.endsWith("/app.js")) {
-          return caches.match("./app.js?v=40");
+          return caches.match("./app.js?v=41");
         }
 
         return Response.error();
