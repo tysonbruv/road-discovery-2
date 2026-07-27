@@ -1,1379 +1,1255 @@
+"use strict";
+
+/* Road Discovery AU v30
+   - keeps existing local progress keys safe
+   - adds Friends panel with fake/demo friends
+   - adds friend profile and friend map preview
+   - adds privacy toggles
+   - keeps road progress local until backend is added later
+*/
+
 const STORAGE_KEY = "roadDiscoveryAU.visited.v1";
 const SAVED_SEGMENTS_KEY = "roadDiscoveryAU.savedSegments.v1";
-
-const AU_TOTAL_UNLOCKS_ESTIMATE = 18000000;
+const FRIEND_SETTINGS_KEY = "roadDiscoveryAU.friendSettings.v1";
+const TODAY_UNLOCKS_KEY = "roadDiscoveryAU.todayUnlocks.v1";
 
 const UNLOCK_RADIUS_M = 20;
 const MAX_GPS_ACCURACY_M = 35;
 const SEGMENT_SIZE_M = 50;
+const AU_TOTAL_UNLOCKS_ESTIMATE = 18000000;
 
-const LOAD_RADIUS_M = 2500;
-const AUTO_RELOAD_DISTANCE_M = 1700;
-const MIN_AUTO_RELOAD_TIME_MS = 12000;
+const DEFAULT_CENTER = [-33.8688, 151.2093];
+const DEFAULT_ZOOM = 14;
 
-const ROUTE_ARRIVAL_RADIUS_M = 35;
-const ROUTE_REROUTE_DISTANCE_M = 120;
-const ROUTE_MIN_REROUTE_TIME_MS = 45000;
+const ROAD_GREY = "#5f6975";
+const ROAD_ORANGE = "#ff8a1f";
+const ROUTE_BLUE = "#4aa3ff";
 
-const els = {
-  status: document.getElementById("statusText"),
-  areaProgress: document.getElementById("areaProgress"),
-  todayKm: document.getElementById("todayKm"),
-  unlockedCount: document.getElementById("unlockedCount"),
+const DEMO_FRIENDS = [
+  {
+    id: "josh",
+    name: "Josh",
+    handle: "@joshroads",
+    avatar: "J",
+    australiaPercent: "0.0012%",
+    unlocked: 210,
+    todayKm: 2.31,
+    weekKm: 18.4,
+    previewPaths: [
+      "M28 150 C70 105, 110 120, 148 82 S235 42, 292 62",
+      "M64 42 C92 66, 92 96, 122 116 S174 140, 216 126",
+      "M112 168 C150 146, 168 104, 195 76 S244 36, 286 28",
+      "M34 92 C72 94, 112 76, 150 56 S226 48, 286 96"
+    ],
+    fullPaths: [
+      "M74 492 C150 388, 260 412, 338 310 S542 166, 806 210",
+      "M188 118 C270 184, 248 260, 334 336 S462 446, 610 398",
+      "M318 554 C422 482, 460 356, 522 258 S660 104, 798 88",
+      "M96 298 C214 300, 290 230, 400 176 S620 148, 792 312",
+      "M138 420 C242 364, 304 362, 392 392 S580 476, 730 430",
+      "M440 72 C430 172, 454 240, 528 318 S622 458, 656 554"
+    ]
+  },
+  {
+    id: "dad",
+    name: "Dad",
+    handle: "@dadroads",
+    avatar: "D",
+    australiaPercent: "0.0008%",
+    unlocked: 144,
+    todayKm: 1.12,
+    weekKm: 9.7,
+    previewPaths: [
+      "M34 132 C82 110, 102 72, 150 66 S218 86, 282 44",
+      "M54 58 C96 88, 126 120, 174 132 S234 116, 288 146",
+      "M96 168 C130 134, 158 96, 184 70 S234 42, 292 84",
+      "M26 96 C76 88, 102 102, 140 110 S214 86, 276 104"
+    ],
+    fullPaths: [
+      "M80 430 C174 386, 230 260, 366 240 S568 274, 782 146",
+      "M150 138 C254 214, 326 338, 468 376 S650 358, 820 454",
+      "M282 544 C380 438, 462 278, 548 168 S682 84, 808 254",
+      "M72 286 C214 254, 294 310, 408 336 S638 246, 792 306",
+      "M218 486 C350 414, 438 426, 562 450 S680 476, 760 396"
+    ]
+  }
+];
 
-  loadRoadsBtn: document.getElementById("loadRoadsBtn"),
-  startBtn: document.getElementById("startBtn"),
-  finishBtn: document.getElementById("finishBtn"),
-  routeBtn: document.getElementById("routeBtn"),
-  clearRouteBtn: document.getElementById("clearRouteBtn"),
-  locateBtn: document.getElementById("locateBtn"),
+const $ = (id) => document.getElementById(id);
 
-  loadingSheet: document.getElementById("loadingSheet"),
-  progressBar: document.getElementById("progressBar"),
-  progressText: document.getElementById("progressText"),
-
-  failureSheet: document.getElementById("failureSheet"),
-  failureTitle: document.getElementById("failureTitle"),
-  failureText: document.getElementById("failureText"),
-  retryBtn: document.getElementById("retryBtn"),
-
-  summarySheet: document.getElementById("summarySheet"),
-  summaryText: document.getElementById("summaryText"),
-  closeSummaryBtn: document.getElementById("closeSummaryBtn"),
-
-  settingsToggle: document.getElementById("settingsToggle"),
-  settingsPanel: document.getElementById("settingsPanel"),
-  resetBtn: document.getElementById("resetBtn"),
-};
+const els = {};
 
 const state = {
   map: null,
-  roadsLayer: L.layerGroup(),
-  savedLayer: L.layerGroup(),
-  tripLayer: L.layerGroup(),
-  routeLayer: L.layerGroup(),
+
+  discoveredLayer: null,
+  roadLayer: null,
+  routeLayer: null,
+  driveTrailLayer: null,
+
   userMarker: null,
   accuracyCircle: null,
-
-  roadSegments: [],
-  roadSegmentIds: new Set(),
-
-  visited: loadVisited(),
-  savedSegments: loadSavedSegments(),
-  savedSegmentIds: new Set(Object.keys(loadSavedSegments())),
-  savedDrawnIds: new Set(),
-  needsSavedSegmentsSave: false,
+  waypointMarker: null,
 
   watchId: null,
-  isRecording: false,
+  driveActive: false,
+  firstGpsFix: false,
+  pickingWaypoint: false,
 
-  tripUnlocked: new Set(),
-  tripDistanceM: 0,
-  lastPoint: null,
-  currentPoint: null,
+  currentPosition: null,
+  lastTrailPoint: null,
+  driveTrail: [],
 
-  lastRoadLoadCenter: null,
-  lastAutoReloadAt: 0,
-  isLoadingRoads: false,
+  savedSegments: {},
+  todayUnlocks: {
+    date: getTodayKey(),
+    keys: {}
+  },
 
-  waypointPoint: null,
-  waypointMarker: null,
-  routeLine: null,
-  routeHalo: null,
-  routeDistanceM: 0,
-  routeDurationS: 0,
-  lastRouteStartPoint: null,
+  roadSegments: new Map(),
+  roadLayers: new Map(),
+
+  lastRoadFetchCenter: null,
+  lastRoadFetchAt: 0,
+  fetchingRoads: false,
+
+  waypoint: null,
   lastRouteAt: 0,
-  isRouting: false,
-  awaitingWaypointClick: false,
-  routeRequestId: 0,
+  lastRouteFrom: null,
 
-  loadingTimer: null,
+  activeFriendId: "josh",
+
+  friendSettings: {
+    showProfile: false,
+    showMap: false
+  },
+
+  toastTimer: null
 };
 
-init();
+document.addEventListener("DOMContentLoaded", init);
 
 function init() {
-  state.map = L.map("map", {
+  cacheEls();
+  loadSavedState();
+  initMap();
+  bindEvents();
+  renderAllStats();
+  renderFriendsList();
+  applyFriendSettingsToUI();
+  setDriveStatus("Ready to drive");
+  setGpsStatus("GPS idle");
+  setAccuracyStatus("Waiting for location");
+  showToast("Road Discovery AU ready");
+}
+
+function cacheEls() {
+  const ids = [
+    "map",
+    "driveStatus",
+    "gpsStatus",
+    "australiaStat",
+    "todayStat",
+    "unlockedStat",
+    "accuracyStatus",
+
+    "settingsBtn",
+    "waypointBtn",
+    "friendsBtn",
+    "clearWaypointBtn",
+
+    "startBtn",
+    "finishBtn",
+
+    "panelBackdrop",
+
+    "settingsPanel",
+    "closeSettingsBtn",
+    "friendProfileToggle",
+    "friendMapToggle",
+    "resetBtn",
+
+    "waypointPanel",
+    "closeWaypointBtn",
+    "setWaypointBtn",
+    "clearWaypointMenuBtn",
+
+    "friendsPanel",
+    "closeFriendsBtn",
+    "friendsListView",
+    "friendProfileView",
+    "showAddFriendBtn",
+    "addFriendBox",
+    "friendSearchInput",
+    "searchFriendBtn",
+    "friendCodeInput",
+    "addFriendCodeBtn",
+    "friendRequestsList",
+    "friendsList",
+    "backToFriendsBtn",
+
+    "friendProfileAvatar",
+    "friendProfileName",
+    "friendProfileHandle",
+    "friendAustraliaStat",
+    "friendUnlockedStat",
+    "friendTodayStat",
+    "friendWeekStat",
+    "friendMapPreviewSvg",
+    "openFriendMapBtn",
+    "removeFriendBtn",
+    "blockFriendBtn",
+
+    "friendMapOverlay",
+    "friendMapTitle",
+    "friendFullMapSvg",
+    "closeFriendMapBtn",
+
+    "toast"
+  ];
+
+  ids.forEach((id) => {
+    els[id] = $(id);
+  });
+}
+
+function initMap() {
+  if (!window.L) {
+    showToast("Map library did not load");
+    return;
+  }
+
+  state.map = L.map(els.map, {
     zoomControl: false,
+    attributionControl: false,
     preferCanvas: true,
-    attributionControl: true,
-  }).setView([-33.7688, 150.905], 14);
+    tap: true
+  }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
 
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
     maxZoom: 20,
-    attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+    crossOrigin: true
   }).addTo(state.map);
 
-  state.roadsLayer.addTo(state.map);
-  state.savedLayer.addTo(state.map);
-  state.tripLayer.addTo(state.map);
-  state.routeLayer.addTo(state.map);
+  state.roadLayer = L.layerGroup().addTo(state.map);
+  state.discoveredLayer = L.layerGroup().addTo(state.map);
+  state.routeLayer = L.layerGroup().addTo(state.map);
+  state.driveTrailLayer = L.layerGroup().addTo(state.map);
 
-  drawSavedSegments();
-
-  setTimeout(() => {
-    state.map.invalidateSize(true);
-  }, 250);
-
-  setTimeout(() => {
-    state.map.invalidateSize(true);
-  }, 1000);
-
-  window.addEventListener("resize", () => {
-    state.map.invalidateSize(true);
+  state.map.on("moveend", () => {
+    maybeFetchRoadsForMap();
   });
 
-  wireEvents();
-  registerServiceWorker();
-  updateStats();
-  updateWaypointButtons();
-
-  setMainButton("Start Drive", false);
-  locateUser(false);
-  setStatus("Tap Start Drive to begin.");
-}
-
-function wireEvents() {
-  els.loadRoadsBtn.addEventListener("click", locateLoadAndStart);
-  els.startBtn.addEventListener("click", startDrive);
-  els.finishBtn.addEventListener("click", finishDrive);
-  els.locateBtn.addEventListener("click", () => locateUser(true));
-
-  state.map.on("click", onMapClickForWaypoint);
-
-  if (els.routeBtn) {
-    els.routeBtn.addEventListener("click", beginWaypointSelect);
-  }
-
-  if (els.clearRouteBtn) {
-    els.clearRouteBtn.addEventListener("click", clearWaypoint);
-  }
-
-  if (els.retryBtn) {
-    els.retryBtn.addEventListener("click", () => {
-      hideFailure();
-      locateLoadAndStart();
-    });
-  }
-
-  els.closeSummaryBtn.addEventListener("click", () => {
-    els.summarySheet.classList.add("hidden");
+  state.map.on("click", (event) => {
+    if (!state.pickingWaypoint) return;
+    state.pickingWaypoint = false;
+    setWaypoint(event.latlng);
   });
 
-  els.settingsToggle.addEventListener("click", () => {
-    els.settingsPanel.classList.toggle("hidden");
-  });
-
-  els.resetBtn.addEventListener("click", resetVisited);
+  maybeFetchRoadsForMap();
 }
 
-function locateUser(zoom) {
-  if (!navigator.geolocation) {
-    setStatus("GPS is not available in this browser.");
-    return;
-  }
+/* ---------- Storage ---------- */
 
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const point = positionToPoint(pos);
+function loadSavedState() {
+  const savedSegments = readJson(SAVED_SEGMENTS_KEY, null);
+  const olderVisited = readJson(STORAGE_KEY, null);
 
-      state.currentPoint = point;
-      updateUserMarker(point);
-
-      if (zoom) {
-        state.map.setView([point.lat, point.lng], 16);
-      } else {
-        state.map.setView([point.lat, point.lng], Math.max(state.map.getZoom(), 14));
-      }
-
-      if (!state.isRecording) {
-        setStatus("GPS ready. Tap Start Drive to load roads and begin.");
-      }
-    },
-    () => {
-      if (!state.isRecording) {
-        setStatus("GPS permission blocked or unavailable.");
-      }
-    },
-    {
-      enableHighAccuracy: true,
-      timeout: 9000,
-      maximumAge: 5000,
-    }
-  );
-}
-
-async function locateLoadAndStart() {
-  if (!navigator.geolocation) {
-    setMainButton("Try Again", false);
-
-    showFailure(
-      "GPS not available",
-      "This browser cannot access GPS. Try Safari or check location permissions."
-    );
-
-    setStatus("GPS is not available in this browser.");
-    return;
-  }
-
-  stopGpsWatch();
-
-  state.isRecording = false;
-  document.body.classList.remove("recording");
-
-  state.tripUnlocked.clear();
-  state.tripDistanceM = 0;
-  state.lastPoint = null;
-  state.tripLayer.clearLayers();
-
-  els.loadRoadsBtn.classList.remove("hidden");
-  els.startBtn.classList.add("hidden");
-  els.finishBtn.classList.add("hidden");
-
-  els.summarySheet.classList.add("hidden");
-  hideFailure();
-
-  setMainButton("Finding GPS...", true);
-  showLoading(0);
-  setStatus("Finding your GPS...");
-
-  navigator.geolocation.getCurrentPosition(
-    async (pos) => {
-      const point = positionToPoint(pos);
-
-      state.currentPoint = point;
-      updateUserMarker(point);
-      state.map.setView([point.lat, point.lng], 16);
-
-      showLoading(10);
-      animateLoadingTo(35);
-
-      setMainButton("Loading roads...", true);
-      setStatus("GPS found. Loading nearby roads...");
-
-      await loadRoads(point.lat, point.lng, LOAD_RADIUS_M, {
-        replace: true,
-        showPopupProgress: true,
-        reason: "initial",
-      });
-
-      updateLoading(100);
-      setMainButton("Starting drive...", true);
-
-      setTimeout(() => {
-        hideLoading();
-
-        if (state.roadSegments.length > 0) {
-          startDrive();
-          setStatus("Roads loaded. Drive now — grey roads will turn orange.");
-        } else {
-          els.loadRoadsBtn.classList.remove("hidden");
-          els.startBtn.classList.add("hidden");
-          els.finishBtn.classList.add("hidden");
-
-          setMainButton("Try Again", false);
-
-          showFailure(
-            "Couldn’t load roads",
-            "Reception or the map server may be slow. Wait a few seconds, then tap Try Again."
-          );
-
-          setStatus("Couldn’t load roads. Tap Try Again.");
-        }
-      }, 450);
-    },
-    () => {
-      hideLoading();
-
-      els.loadRoadsBtn.classList.remove("hidden");
-      els.startBtn.classList.add("hidden");
-      els.finishBtn.classList.add("hidden");
-
-      setMainButton("Try Again", false);
-
-      showFailure(
-        "Couldn’t get GPS",
-        "GPS or reception may be weak. Move outside, wait a few seconds, then tap Try Again."
-      );
-
-      setStatus("Couldn’t get GPS. Tap Try Again.");
-    },
-    {
-      enableHighAccuracy: true,
-      timeout: 12000,
-      maximumAge: 2000,
-    }
-  );
-}
-
-async function loadRoads(lat, lng, radiusM, options = {}) {
-  const {
-    replace = false,
-    showPopupProgress = false,
-    reason = "manual",
-  } = options;
-
-  if (state.isLoadingRoads) return;
-
-  state.isLoadingRoads = true;
-  els.loadRoadsBtn.disabled = true;
-
-  if (replace) {
-    state.roadsLayer.clearLayers();
-    state.roadSegments = [];
-    state.roadSegmentIds.clear();
-    state.lastRoadLoadCenter = null;
-    updateStats();
-  }
-
-  if (showPopupProgress) {
-    animateLoadingTo(85);
-  }
-
-  const km = (radiusM / 1000).toFixed(1);
-
-  if (reason === "auto") {
-    setStatus("Loading more roads ahead...");
+  if (savedSegments && typeof savedSegments === "object" && !Array.isArray(savedSegments)) {
+    state.savedSegments = savedSegments;
+  } else if (olderVisited && typeof olderVisited === "object" && !Array.isArray(olderVisited)) {
+    state.savedSegments = olderVisited;
+    saveSegments();
   } else {
-    setStatus(`Loading roads within ${km} km...`);
+    state.savedSegments = {};
   }
 
-  const query = `
-    [out:json][timeout:25];
-    way(around:${Math.round(radiusM)},${lat},${lng})
-      ["highway"]
-      ["highway"!~"footway|cycleway|path|steps|pedestrian|bridleway|corridor|elevator|platform|construction|proposed|raceway"];
-    out tags geom;
-  `;
+  const today = readJson(TODAY_UNLOCKS_KEY, null);
+  if (today && today.date === getTodayKey() && today.keys && typeof today.keys === "object") {
+    state.todayUnlocks = today;
+  } else {
+    state.todayUnlocks = {
+      date: getTodayKey(),
+      keys: {}
+    };
+    saveTodayUnlocks();
+  }
 
-  const url = "https://overpass-api.de/api/interpreter";
+  const friendSettings = readJson(FRIEND_SETTINGS_KEY, null);
+  if (friendSettings && typeof friendSettings === "object") {
+    state.friendSettings = {
+      showProfile: !!friendSettings.showProfile,
+      showMap: !!friendSettings.showMap
+    };
+  }
+}
 
+function saveSegments() {
+  writeJson(SAVED_SEGMENTS_KEY, state.savedSegments);
+  writeJson(STORAGE_KEY, state.savedSegments);
+}
+
+function saveTodayUnlocks() {
+  writeJson(TODAY_UNLOCKS_KEY, state.todayUnlocks);
+}
+
+function saveFriendSettings() {
+  writeJson(FRIEND_SETTINGS_KEY, state.friendSettings);
+}
+
+function readJson(key, fallback) {
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-      },
-      body: new URLSearchParams({ data: query }),
-    });
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw);
+  } catch (error) {
+    return fallback;
+  }
+}
 
-    if (!response.ok) {
-      throw new Error(`Overpass returned ${response.status}`);
-    }
+function writeJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    showToast("Could not save on this device");
+  }
+}
 
-    const data = await response.json();
-    const ways = data.elements || [];
-    const before = state.roadSegments.length;
+/* ---------- Events ---------- */
 
-    buildSegmentsFromWays(ways);
-    drawNewSegments(before);
+function bindEvents() {
+  els.settingsBtn?.addEventListener("click", () => openPanel("settingsPanel"));
+  els.waypointBtn?.addEventListener("click", () => openPanel("waypointPanel"));
+  els.friendsBtn?.addEventListener("click", () => openFriendsPanel());
 
-    if (state.needsSavedSegmentsSave) {
-      saveSavedSegments();
-      state.needsSavedSegmentsSave = false;
-    }
+  els.panelBackdrop?.addEventListener("click", closePanels);
 
-    state.lastRoadLoadCenter = {
-      lat,
-      lng,
-      timestamp: Date.now(),
-    };
+  els.closeSettingsBtn?.addEventListener("click", closePanels);
+  els.closeWaypointBtn?.addEventListener("click", closePanels);
+  els.closeFriendsBtn?.addEventListener("click", closePanels);
 
-    updateStats();
+  els.startBtn?.addEventListener("click", startDrive);
+  els.finishBtn?.addEventListener("click", finishDrive);
 
-    if (showPopupProgress) {
-      updateLoading(100);
-    }
+  els.resetBtn?.addEventListener("click", resetDiscoveredRoads);
 
-    if (reason === "auto") {
-      setStatus("More roads loaded.");
+  els.friendProfileToggle?.addEventListener("change", () => {
+    state.friendSettings.showProfile = !!els.friendProfileToggle.checked;
+    saveFriendSettings();
+
+    if (state.friendSettings.showProfile) {
+      showToast("Road Profile sharing on");
     } else {
-      setStatus("Roads loaded.");
+      showToast("Road Profile sharing off");
     }
-  } catch (err) {
-    console.error(err);
+  });
 
-    if (reason === "auto") {
-      setStatus("Could not auto-load more roads. Still tracking current loaded area.");
+  els.friendMapToggle?.addEventListener("change", () => {
+    state.friendSettings.showMap = !!els.friendMapToggle.checked;
+    saveFriendSettings();
+
+    if (state.friendSettings.showMap) {
+      showToast("Map overview sharing on");
     } else {
-      setStatus("Could not load nearby roads. Tap Try Again.");
+      showToast("Map overview sharing off");
     }
-  } finally {
-    state.isLoadingRoads = false;
-    els.loadRoadsBtn.disabled = false;
-  }
-}
+  });
 
-function buildSegmentsFromWays(ways) {
-  const segmentSizeM = SEGMENT_SIZE_M;
+  els.setWaypointBtn?.addEventListener("click", () => {
+    state.pickingWaypoint = true;
+    closePanels();
+    showToast("Tap the map to set a waypoint");
+  });
 
-  for (const way of ways) {
-    if (!way.geometry || way.geometry.length < 2) continue;
+  els.clearWaypointBtn?.addEventListener("click", clearWaypoint);
+  els.clearWaypointMenuBtn?.addEventListener("click", () => {
+    clearWaypoint();
+    closePanels();
+  });
 
-    const name = way.tags?.name || "Unnamed road";
-    const highway = way.tags?.highway || "road";
+  els.showAddFriendBtn?.addEventListener("click", () => {
+    els.addFriendBox?.classList.toggle("hidden");
+  });
 
-    for (let i = 0; i < way.geometry.length - 1; i++) {
-      const a = {
-        lat: way.geometry[i].lat,
-        lng: way.geometry[i].lon,
-      };
-
-      const b = {
-        lat: way.geometry[i + 1].lat,
-        lng: way.geometry[i + 1].lon,
-      };
-
-      const dist = haversine(a, b);
-      if (dist < 3) continue;
-
-      const pieces = Math.max(1, Math.ceil(dist / segmentSizeM));
-
-      for (let p = 0; p < pieces; p++) {
-        const start = interpolate(a, b, p / pieces);
-        const end = interpolate(a, b, (p + 1) / pieces);
-
-        const id = `${way.id}:${i}:${p}:${segmentSizeM}`;
-
-        if (state.roadSegmentIds.has(id)) continue;
-
-        state.roadSegmentIds.add(id);
-
-        const seg = {
-          id,
-          name,
-          highway,
-          coords: [
-            [start.lat, start.lng],
-            [end.lat, end.lng],
-          ],
-          lengthM: haversine(start, end),
-          visited: Boolean(state.visited[id]),
-          currentTrip: false,
-          layer: null,
-        };
-
-        state.roadSegments.push(seg);
-
-        if (seg.visited) {
-          rememberSavedSegment(seg, false);
-        }
-      }
+  els.searchFriendBtn?.addEventListener("click", () => {
+    const value = els.friendSearchInput?.value.trim();
+    if (!value) {
+      showToast("Enter an exact username");
+      return;
     }
+    showToast("Real username search comes with backend");
+  });
+
+  els.addFriendCodeBtn?.addEventListener("click", () => {
+    const value = els.friendCodeInput?.value.trim();
+    if (!value) {
+      showToast("Enter a friend code");
+      return;
+    }
+    showToast("Friend codes come with backend");
+  });
+
+  els.backToFriendsBtn?.addEventListener("click", showFriendsListView);
+  els.openFriendMapBtn?.addEventListener("click", openFriendFullMap);
+  els.closeFriendMapBtn?.addEventListener("click", closeFriendFullMap);
+
+  els.removeFriendBtn?.addEventListener("click", () => {
+    const friend = getActiveFriend();
+    showToast(`${friend.name} remove button is placeholder`);
+  });
+
+  els.blockFriendBtn?.addEventListener("click", () => {
+    const friend = getActiveFriend();
+    showToast(`${friend.name} block button is placeholder`);
+  });
+
+  window.addEventListener("online", () => showToast("Online"));
+  window.addEventListener("offline", () => showToast("Offline"));
+}
+
+/* ---------- Panels ---------- */
+
+function openPanel(panelId) {
+  closePanels(false);
+
+  els.panelBackdrop?.classList.remove("hidden");
+
+  const panel = els[panelId];
+  if (panel) {
+    panel.classList.remove("hidden");
+    panel.setAttribute("aria-hidden", "false");
   }
 }
 
-function drawNewSegments(startIndex = 0) {
-  for (let i = startIndex; i < state.roadSegments.length; i++) {
-    const seg = state.roadSegments[i];
-    const layer = L.polyline(seg.coords, getSegmentStyle(seg));
+function closePanels(hideBackdrop = true) {
+  ["settingsPanel", "waypointPanel", "friendsPanel"].forEach((id) => {
+    const panel = els[id];
+    if (!panel) return;
+    panel.classList.add("hidden");
+    panel.setAttribute("aria-hidden", "true");
+  });
 
-    layer.bindTooltip(
-      `${seg.name}<br>${seg.visited ? "Discovered" : "Undiscovered"}`,
-      { sticky: true }
-    );
-
-    layer.addTo(state.roadsLayer);
-    seg.layer = layer;
+  if (hideBackdrop) {
+    els.panelBackdrop?.classList.add("hidden");
   }
 }
 
-function getSegmentStyle(seg) {
-  if (seg.currentTrip) {
-    return {
-      color: "#ffb04a",
-      weight: 6,
-      opacity: 1,
-      lineCap: "round",
-    };
-  }
-
-  if (seg.visited) {
-    return {
-      color: "#ff8a18",
-      weight: 5,
-      opacity: 1,
-      lineCap: "round",
-    };
-  }
-
-  return {
-    color: "#4e5563",
-    weight: 4,
-    opacity: 0.82,
-    lineCap: "round",
-  };
+function openFriendsPanel() {
+  renderFriendsList();
+  showFriendsListView();
+  openPanel("friendsPanel");
 }
+
+function showFriendsListView() {
+  els.friendProfileView?.classList.add("hidden");
+  els.friendsListView?.classList.remove("hidden");
+}
+
+function showFriendProfileView() {
+  els.friendsListView?.classList.add("hidden");
+  els.friendProfileView?.classList.remove("hidden");
+}
+
+/* ---------- Drive / GPS ---------- */
 
 function startDrive() {
   if (!navigator.geolocation) {
-    setStatus("GPS is not available in this browser.");
+    showToast("GPS is not available");
     return;
   }
 
-  if (state.roadSegments.length === 0) {
-    setMainButton("Try Again", false);
-
-    showFailure(
-      "No roads loaded",
-      "Nearby roads were not ready yet. Wait a few seconds, then tap Try Again."
-    );
-
-    setStatus("No roads loaded yet. Tap Try Again.");
+  if (state.watchId !== null) {
+    state.driveActive = true;
+    setDriveStatus("Driving");
+    showToast("Drive already started");
     return;
   }
 
-  stopGpsWatch();
+  state.driveActive = true;
+  state.firstGpsFix = false;
+  state.driveTrail = [];
+  state.lastTrailPoint = null;
 
-  state.isRecording = true;
-  document.body.classList.add("recording");
+  state.driveTrailLayer?.clearLayers();
 
-  state.tripUnlocked.clear();
-  state.tripDistanceM = 0;
-  state.lastPoint = null;
-  state.tripLayer.clearLayers();
-
-  hideFailure();
-
-  els.loadRoadsBtn.classList.add("hidden");
-  els.startBtn.classList.add("hidden");
-  els.finishBtn.classList.remove("hidden");
-
-  setStatus("Recording. Keep this page open while driving.");
+  setDriveStatus("Starting GPS");
+  setGpsStatus("GPS starting");
 
   state.watchId = navigator.geolocation.watchPosition(
-    onGpsPosition,
-    (err) => {
-      setStatus(`GPS error: ${err.message || "location unavailable"}`);
-    },
+    handlePosition,
+    handlePositionError,
     {
       enableHighAccuracy: true,
       maximumAge: 1000,
-      timeout: 10000,
+      timeout: 15000
     }
   );
+
+  showToast("Drive started");
 }
 
 function finishDrive() {
-  stopGpsWatch();
+  state.driveActive = false;
+  setDriveStatus("Drive finished");
 
-  state.isRecording = false;
-  document.body.classList.remove("recording");
-
-  setMainButton("Start Drive", false);
-
-  els.loadRoadsBtn.classList.remove("hidden");
-  els.startBtn.classList.add("hidden");
-  els.finishBtn.classList.add("hidden");
-
-  const newKm = sumTripUnlockedKm();
-
-  els.summaryText.innerHTML = `
-    ${metersToKm(state.tripDistanceM)} km travelled<br>
-    ${newKm.toFixed(2)} km newly discovered<br>
-    ${state.tripUnlocked.size.toLocaleString()} new unlocks
-  `;
-
-  els.summarySheet.classList.remove("hidden");
-  setStatus("Trip finished. Progress saved on this device.");
-}
-
-function stopGpsWatch() {
   if (state.watchId !== null) {
     navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
   }
+
+  setGpsStatus("GPS idle");
+  showToast("Drive saved on this device");
+  renderAllStats();
 }
 
-function onGpsPosition(position) {
-  const point = positionToPoint(position);
+function handlePosition(position) {
+  const lat = position.coords.latitude;
+  const lng = position.coords.longitude;
+  const accuracy = position.coords.accuracy || 9999;
 
-  state.currentPoint = point;
-  updateUserMarker(point);
+  const latlng = L.latLng(lat, lng);
 
-  state.map.panTo([point.lat, point.lng], {
-    animate: true,
-    duration: 0.3,
-  });
-
-  maybeAutoLoadMoreRoads(point);
-
-  if (point.accuracy > MAX_GPS_ACCURACY_M) {
-    setStatus(`GPS accuracy ${Math.round(point.accuracy)} m. Waiting for cleaner signal...`);
-    return;
-  }
-
-  if (state.lastPoint) {
-    const d = haversine(state.lastPoint, point);
-
-    if (d < 150) {
-      state.tripDistanceM += d;
-    }
-
-    drawTripLine(state.lastPoint, point);
-  }
-
-  state.lastPoint = point;
-
-  unlockNearbySegments(point);
-  maybeUpdateWaypointRoute(point);
-
-  updateStats();
-
-  if (!state.isLoadingRoads && !state.isRouting) {
-    setStatus("Recording. Roads are being discovered.");
-  }
-}
-
-function maybeAutoLoadMoreRoads(point) {
-  if (!state.isRecording) return;
-  if (state.isLoadingRoads) return;
-
-  const now = Date.now();
-
-  if (now - state.lastAutoReloadAt < MIN_AUTO_RELOAD_TIME_MS) {
-    return;
-  }
-
-  if (!state.lastRoadLoadCenter) {
-    state.lastAutoReloadAt = now;
-
-    loadRoads(point.lat, point.lng, LOAD_RADIUS_M, {
-      replace: false,
-      showPopupProgress: false,
-      reason: "auto",
-    });
-
-    return;
-  }
-
-  const distanceFromLoadCenter = haversine(point, state.lastRoadLoadCenter);
-
-  if (distanceFromLoadCenter >= AUTO_RELOAD_DISTANCE_M) {
-    state.lastAutoReloadAt = now;
-
-    loadRoads(point.lat, point.lng, LOAD_RADIUS_M, {
-      replace: false,
-      showPopupProgress: false,
-      reason: "auto",
-    });
-  }
-}
-
-function unlockNearbySegments(point) {
-  let unlocked = 0;
-  const radius = UNLOCK_RADIUS_M;
-
-  for (const seg of state.roadSegments) {
-    if (seg.visited) continue;
-
-    const dist = pointToSegmentDistance(point, seg.coords[0], seg.coords[1]);
-
-    if (dist <= radius) {
-      seg.visited = true;
-      seg.currentTrip = true;
-
-      state.visited[seg.id] = Date.now();
-      state.tripUnlocked.add(seg.id);
-
-      rememberSavedSegment(seg, false);
-      styleSegment(seg);
-      unlocked++;
-    }
-  }
-
-  if (unlocked > 0) {
-    saveVisited();
-    saveSavedSegments();
-    state.needsSavedSegmentsSave = false;
-  }
-
-  return unlocked;
-}
-
-function beginWaypointSelect() {
-  if (state.isRouting) return;
-
-  state.awaitingWaypointClick = true;
-  updateWaypointButtons();
-  setStatus("Tap the map where you want to go.");
-}
-
-function onMapClickForWaypoint(event) {
-  if (!state.awaitingWaypointClick) return;
-
-  const point = {
-    lat: event.latlng.lat,
-    lng: event.latlng.lng,
+  state.currentPosition = {
+    lat,
+    lng,
+    accuracy,
+    at: Date.now()
   };
 
-  state.awaitingWaypointClick = false;
-  setWaypoint(point);
-}
+  updateGpsVisuals(latlng, accuracy);
 
-async function setWaypoint(point) {
-  state.waypointPoint = point;
-  drawWaypointMarker(point);
-  updateWaypointButtons();
+  if (!state.firstGpsFix) {
+    state.firstGpsFix = true;
+    state.map?.setView(latlng, Math.max(state.map.getZoom(), 16));
+  }
 
-  setStatus("Waypoint set. Finding road route...");
+  if (state.driveActive) {
+    setDriveStatus("Driving");
+    addTrailPoint(latlng, accuracy);
+  }
 
-  await routeToWaypoint({
-    fit: true,
-    statusOnSuccess: true,
-  });
-}
-
-function drawWaypointMarker(point) {
-  const latlng = [point.lat, point.lng];
-
-  if (!state.waypointMarker) {
-    const icon = L.divIcon({
-      className: "",
-      html: '<div class="waypoint-pin"></div>',
-      iconSize: [28, 28],
-      iconAnchor: [14, 26],
-    });
-
-    state.waypointMarker = L.marker(latlng, { icon }).addTo(state.routeLayer);
-    state.waypointMarker.bindTooltip("Waypoint", { sticky: true });
+  if (accuracy <= MAX_GPS_ACCURACY_M) {
+    setGpsStatus("GPS good");
+    setAccuracyStatus(`Accuracy ${Math.round(accuracy)} m`);
+    unlockNearbyRoads(latlng);
   } else {
-    state.waypointMarker.setLatLng(latlng);
+    setGpsStatus("GPS weak");
+    setAccuracyStatus(`GPS too weak: ${Math.round(accuracy)} m`);
   }
+
+  maybeFetchRoadsForPosition(latlng);
+  maybeUpdateWaypointRoute(latlng);
 }
 
-async function routeToWaypoint(options = {}) {
-  const {
-    fit = false,
-    silent = false,
-    statusOnSuccess = false,
-  } = options;
+function handlePositionError(error) {
+  let message = "GPS error";
 
-  if (!state.waypointPoint) return;
-  if (state.isRouting) return;
+  if (error.code === 1) message = "GPS permission denied";
+  if (error.code === 2) message = "GPS position unavailable";
+  if (error.code === 3) message = "GPS timed out";
 
-  const start = await getFreshRouteStartPoint();
-
-  if (!start) {
-    setStatus("Need GPS before routing to waypoint.");
-    return;
-  }
-
-  const requestId = ++state.routeRequestId;
-
-  state.isRouting = true;
-  updateWaypointButtons();
-
-  if (!silent) {
-    setStatus("Finding road route...");
-  }
-
-  try {
-    const route = await fetchRoadRoute(start, state.waypointPoint);
-
-    if (requestId !== state.routeRequestId) return;
-
-    drawRouteLine(route.coords);
-
-    state.routeDistanceM = route.distanceM;
-    state.routeDurationS = route.durationS;
-    state.lastRouteStartPoint = start;
-    state.lastRouteAt = Date.now();
-
-    if (fit && route.coords.length > 1) {
-      const bounds = L.latLngBounds(route.coords);
-      state.map.fitBounds(bounds, {
-        padding: [70, 120],
-        maxZoom: 16,
-      });
-    }
-
-    if (statusOnSuccess) {
-      setStatus(`Waypoint route ready. ${metersToKm(route.distanceM)} km by road.`);
-    }
-  } catch (err) {
-    console.error(err);
-
-    if (!silent) {
-      setStatus("Couldn’t find a road route to that waypoint.");
-    }
-  } finally {
-    state.isRouting = false;
-    updateWaypointButtons();
-  }
+  setDriveStatus("GPS problem");
+  setGpsStatus("GPS error");
+  setAccuracyStatus(message);
+  showToast(message);
 }
 
-async function fetchRoadRoute(start, end) {
-  const coords = `${start.lng},${start.lat};${end.lng},${end.lat}`;
-  const url =
-    `https://router.project-osrm.org/route/v1/driving/${coords}` +
-    "?overview=full&geometries=geojson&steps=false";
-
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`Routing returned ${response.status}`);
-  }
-
-  const data = await response.json();
-
-  if (data.code !== "Ok" || !data.routes || !data.routes[0]) {
-    throw new Error(data.message || "No route found");
-  }
-
-  const route = data.routes[0];
-
-  return {
-    distanceM: route.distance || 0,
-    durationS: route.duration || 0,
-    coords: route.geometry.coordinates.map((coord) => [coord[1], coord[0]]),
-  };
-}
-
-async function getFreshRouteStartPoint() {
-  if (
-    state.currentPoint &&
-    Date.now() - state.currentPoint.timestamp < 30000 &&
-    state.currentPoint.accuracy <= MAX_GPS_ACCURACY_M
-  ) {
-    return state.currentPoint;
-  }
-
-  if (!navigator.geolocation) {
-    return state.currentPoint;
-  }
-
-  return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const point = positionToPoint(pos);
-
-        state.currentPoint = point;
-        updateUserMarker(point);
-
-        resolve(point);
-      },
-      () => {
-        resolve(state.currentPoint);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 9000,
-        maximumAge: 5000,
-      }
-    );
-  });
-}
-
-function drawRouteLine(coords) {
-  clearRouteLine();
-
-  if (!coords || coords.length < 2) return;
-
-  state.routeHalo = L.polyline(coords, {
-    color: "#eef7ff",
-    weight: 9,
-    opacity: 0.72,
-    lineCap: "round",
-    lineJoin: "round",
-  }).addTo(state.routeLayer);
-
-  state.routeLine = L.polyline(coords, {
-    color: "#4bb3ff",
-    weight: 5,
-    opacity: 1,
-    lineCap: "round",
-    lineJoin: "round",
-  }).addTo(state.routeLayer);
-
-  if (state.waypointMarker) {
-    state.waypointMarker.addTo(state.routeLayer);
-  }
-}
-
-function clearRouteLine() {
-  if (state.routeHalo) {
-    state.routeLayer.removeLayer(state.routeHalo);
-    state.routeHalo = null;
-  }
-
-  if (state.routeLine) {
-    state.routeLayer.removeLayer(state.routeLine);
-    state.routeLine = null;
-  }
-}
-
-function clearWaypoint() {
-  state.awaitingWaypointClick = false;
-  state.waypointPoint = null;
-  state.routeDistanceM = 0;
-  state.routeDurationS = 0;
-  state.lastRouteStartPoint = null;
-  state.lastRouteAt = 0;
-  state.routeRequestId++;
-
-  clearRouteLine();
-
-  if (state.waypointMarker) {
-    state.routeLayer.removeLayer(state.waypointMarker);
-    state.waypointMarker = null;
-  }
-
-  updateWaypointButtons();
-
-  if (state.isRecording) {
-    setStatus("Recording. Roads are being discovered.");
-  } else {
-    setStatus("Waypoint cleared.");
-  }
-}
-
-function updateWaypointButtons() {
-  if (!els.routeBtn || !els.clearRouteBtn) return;
-
-  els.routeBtn.textContent = "⌖";
-  els.clearRouteBtn.textContent = "×";
-
-  els.routeBtn.classList.toggle("active", state.awaitingWaypointClick || Boolean(state.waypointPoint));
-  els.clearRouteBtn.classList.toggle("active", Boolean(state.waypointPoint));
-
-  if (state.awaitingWaypointClick) {
-    els.routeBtn.disabled = true;
-    els.routeBtn.title = "Tap the map to place waypoint";
-    els.routeBtn.setAttribute("aria-label", "Tap the map to place waypoint");
-
-    els.clearRouteBtn.classList.remove("hidden");
-    els.clearRouteBtn.title = "Cancel waypoint";
-    els.clearRouteBtn.setAttribute("aria-label", "Cancel waypoint");
-    return;
-  }
-
-  els.routeBtn.disabled = state.isRouting;
-
-  if (state.isRouting) {
-    els.routeBtn.title = "Finding route";
-    els.routeBtn.setAttribute("aria-label", "Finding route");
-  } else if (state.waypointPoint) {
-    els.routeBtn.title = "Change waypoint";
-    els.routeBtn.setAttribute("aria-label", "Change waypoint");
-  } else {
-    els.routeBtn.title = "Set waypoint";
-    els.routeBtn.setAttribute("aria-label", "Set waypoint");
-  }
-
-  els.clearRouteBtn.title = "Clear waypoint";
-  els.clearRouteBtn.setAttribute("aria-label", "Clear waypoint");
-
-  if (state.waypointPoint) {
-    els.clearRouteBtn.classList.remove("hidden");
-  } else {
-    els.clearRouteBtn.classList.add("hidden");
-  }
-}
-
-function maybeUpdateWaypointRoute(point) {
-  if (!state.waypointPoint) return;
-
-  const distanceToWaypoint = haversine(point, state.waypointPoint);
-
-  if (distanceToWaypoint <= ROUTE_ARRIVAL_RADIUS_M) {
-    clearWaypoint();
-    setStatus("Waypoint reached.");
-    return;
-  }
-
-  if (!state.routeLine) return;
-  if (!state.lastRouteStartPoint) return;
-  if (state.isRouting) return;
-
-  const now = Date.now();
-
-  if (now - state.lastRouteAt < ROUTE_MIN_REROUTE_TIME_MS) {
-    return;
-  }
-
-  const movedSinceRoute = haversine(point, state.lastRouteStartPoint);
-
-  if (movedSinceRoute < ROUTE_REROUTE_DISTANCE_M) {
-    return;
-  }
-
-  routeToWaypoint({
-    silent: true,
-    statusOnSuccess: false,
-  });
-}
-
-function rememberSavedSegment(seg, saveNow = false) {
-  if (state.savedSegmentIds.has(seg.id)) return;
-
-  const saved = {
-    id: seg.id,
-    name: seg.name,
-    highway: seg.highway,
-    coords: compactCoords(seg.coords),
-    lengthM: Math.round(seg.lengthM),
-    unlockedAt: state.visited[seg.id] || Date.now(),
-  };
-
-  state.savedSegments[seg.id] = saved;
-  state.savedSegmentIds.add(seg.id);
-  state.needsSavedSegmentsSave = true;
-
-  drawSavedSegment(saved);
-
-  if (saveNow) {
-    saveSavedSegments();
-    state.needsSavedSegmentsSave = false;
-  }
-}
-
-function compactCoords(coords) {
-  return coords.map((coord) => [
-    Number(coord[0].toFixed(6)),
-    Number(coord[1].toFixed(6)),
-  ]);
-}
-
-function drawSavedSegments() {
-  state.savedLayer.clearLayers();
-  state.savedDrawnIds.clear();
-
-  const saved = Object.values(state.savedSegments);
-
-  for (const seg of saved) {
-    drawSavedSegment(seg);
-  }
-
-  if (saved.length > 0) {
-    setStatus(`${saved.length.toLocaleString()} saved progress shown.`);
-  }
-}
-
-function drawSavedSegment(seg) {
-  if (!seg || !seg.id || !seg.coords || seg.coords.length < 2) return;
-  if (state.savedDrawnIds.has(seg.id)) return;
-
-  L.polyline(seg.coords, {
-    color: "#ff8a18",
-    weight: 5,
-    opacity: 0.95,
-    lineCap: "round",
-  }).addTo(state.savedLayer);
-
-  state.savedDrawnIds.add(seg.id);
-}
-
-function styleSegment(seg) {
-  if (!seg.layer) return;
-  seg.layer.setStyle(getSegmentStyle(seg));
-}
-
-function drawTripLine(a, b) {
-  L.polyline(
-    [
-      [a.lat, a.lng],
-      [b.lat, b.lng],
-    ],
-    {
-      color: "#ffb04a",
-      weight: 7,
-      opacity: 0.35,
-      lineCap: "round",
-    }
-  ).addTo(state.tripLayer);
-}
-
-function updateUserMarker(point) {
-  const latlng = [point.lat, point.lng];
+function updateGpsVisuals(latlng, accuracy) {
+  if (!state.map) return;
 
   if (!state.userMarker) {
-    const icon = L.divIcon({
-      className: "",
-      html: '<div class="user-dot"></div>',
-      iconSize: [20, 20],
-      iconAnchor: [10, 10],
-    });
-
-    state.userMarker = L.marker(latlng, { icon }).addTo(state.map);
+    state.userMarker = L.circleMarker(latlng, {
+      radius: 8,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: ROUTE_BLUE,
+      fillOpacity: 1
+    }).addTo(state.map);
   } else {
     state.userMarker.setLatLng(latlng);
   }
 
   if (!state.accuracyCircle) {
     state.accuracyCircle = L.circle(latlng, {
-      radius: point.accuracy || 20,
-      color: "#4bb3ff",
-      opacity: 0.35,
-      fillColor: "#4bb3ff",
-      fillOpacity: 0.06,
+      radius: accuracy,
+      color: ROUTE_BLUE,
       weight: 1,
+      opacity: 0.35,
+      fillColor: ROUTE_BLUE,
+      fillOpacity: 0.08
     }).addTo(state.map);
   } else {
     state.accuracyCircle.setLatLng(latlng);
-    state.accuracyCircle.setRadius(point.accuracy || 20);
+    state.accuracyCircle.setRadius(accuracy);
+  }
+
+  if (state.driveActive) {
+    state.map.panTo(latlng, {
+      animate: true,
+      duration: 0.3
+    });
   }
 }
 
-function updateStats() {
-  const lifetimeUnlocked = Object.keys(state.savedSegments).length;
-  const australiaPercent = (lifetimeUnlocked / AU_TOTAL_UNLOCKS_ESTIMATE) * 100;
+function addTrailPoint(latlng, accuracy) {
+  if (accuracy > MAX_GPS_ACCURACY_M) return;
 
-  els.areaProgress.textContent = `${formatAustraliaPercent(australiaPercent)}%`;
-  els.todayKm.textContent = `${sumTripUnlockedKm().toFixed(2)} km`;
-  els.unlockedCount.textContent =
-    `${formatUnlockedNumber(lifetimeUnlocked)} / ${formatCompactNumber(AU_TOTAL_UNLOCKS_ESTIMATE)}`;
-}
-
-function formatAustraliaPercent(percent) {
-  if (percent > 0 && percent < 0.0001) {
-    return "<0.0001";
+  if (state.lastTrailPoint) {
+    const moved = distanceMeters(state.lastTrailPoint, latlng);
+    if (moved < 8) return;
   }
 
-  return percent.toFixed(4);
+  state.driveTrail.push([latlng.lat, latlng.lng]);
+  state.lastTrailPoint = latlng;
+
+  state.driveTrailLayer?.clearLayers();
+
+  if (state.driveTrail.length >= 2) {
+    L.polyline(state.driveTrail, {
+      color: ROUTE_BLUE,
+      weight: 4,
+      opacity: 0.8,
+      lineCap: "round",
+      lineJoin: "round"
+    }).addTo(state.driveTrailLayer);
+  }
 }
 
-function formatUnlockedNumber(value) {
-  if (value < 10000) {
-    return value.toLocaleString();
+/* ---------- Roads / discovery ---------- */
+
+function maybeFetchRoadsForMap() {
+  if (!state.map) return;
+
+  const center = state.map.getCenter();
+
+  if (state.map.getZoom() < 13) return;
+
+  if (state.lastRoadFetchCenter) {
+    const moved = distanceMeters(state.lastRoadFetchCenter, center);
+    const recently = Date.now() - state.lastRoadFetchAt < 25000;
+    if (moved < 450 && recently) return;
   }
 
-  return formatCompactNumber(value);
+  fetchRoadsForBounds(state.map.getBounds());
 }
 
-function formatCompactNumber(value) {
-  if (value >= 1000000) {
-    const millions = value / 1000000;
-    return `${trimDecimal(millions)}M`;
+function maybeFetchRoadsForPosition(latlng) {
+  if (!state.map) return;
+
+  if (state.lastRoadFetchCenter) {
+    const moved = distanceMeters(state.lastRoadFetchCenter, latlng);
+    const recently = Date.now() - state.lastRoadFetchAt < 20000;
+    if (moved < 350 && recently) return;
   }
 
-  if (value >= 1000) {
-    const thousands = value / 1000;
-    return `${trimDecimal(thousands)}K`;
-  }
-
-  return value.toLocaleString();
+  fetchRoadsForBounds(state.map.getBounds());
 }
 
-function trimDecimal(value) {
-  if (Number.isInteger(value)) {
-    return String(value);
-  }
+async function fetchRoadsForBounds(bounds) {
+  if (!bounds || state.fetchingRoads) return;
 
-  return value.toFixed(1).replace(".0", "");
+  state.fetchingRoads = true;
+  state.lastRoadFetchAt = Date.now();
+  state.lastRoadFetchCenter = bounds.getCenter();
+
+  const south = bounds.getSouth();
+  const west = bounds.getWest();
+  const north = bounds.getNorth();
+  const east = bounds.getEast();
+
+  const query = `
+    [out:json][timeout:15];
+    (
+      way["highway"]
+      ["highway"!~"footway|path|steps|cycleway|bridleway|corridor|elevator|escalator|platform|proposed|construction"]
+      (${south},${west},${north},${east});
+    );
+    out geom;
+  `;
+
+  const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Road request failed");
+
+    const data = await response.json();
+    addRoadsFromOverpass(data);
+  } catch (error) {
+    showToast("Could not load nearby roads");
+  } finally {
+    state.fetchingRoads = false;
+  }
 }
 
-function sumTripUnlockedKm() {
-  let meters = 0;
+function addRoadsFromOverpass(data) {
+  if (!data || !Array.isArray(data.elements)) return;
 
-  for (const seg of state.roadSegments) {
-    if (state.tripUnlocked.has(seg.id)) {
-      meters += seg.lengthM;
+  let added = 0;
+
+  data.elements.forEach((element) => {
+    if (!element.geometry || element.geometry.length < 2) return;
+
+    for (let i = 0; i < element.geometry.length - 1; i++) {
+      const a = element.geometry[i];
+      const b = element.geometry[i + 1];
+
+      const from = L.latLng(a.lat, a.lon);
+      const to = L.latLng(b.lat, b.lon);
+
+      const pieces = splitSegmentIntoPieces(from, to, SEGMENT_SIZE_M);
+
+      pieces.forEach((piece) => {
+        const key = makeSegmentKey(piece[0], piece[1]);
+
+        if (state.roadSegments.has(key)) return;
+
+        state.roadSegments.set(key, {
+          key,
+          from: piece[0],
+          to: piece[1]
+        });
+
+        drawRoadSegment(key);
+        added++;
+      });
+    }
+  });
+
+  if (added > 0) {
+    unlockVisibleAlreadySaved();
+  }
+}
+
+function splitSegmentIntoPieces(from, to, sizeMeters) {
+  const distance = distanceMeters(from, to);
+
+  if (!Number.isFinite(distance) || distance <= 0) {
+    return [];
+  }
+
+  const count = Math.max(1, Math.ceil(distance / sizeMeters));
+  const pieces = [];
+
+  for (let i = 0; i < count; i++) {
+    const t1 = i / count;
+    const t2 = (i + 1) / count;
+
+    pieces.push([
+      L.latLng(
+        lerp(from.lat, to.lat, t1),
+        lerp(from.lng, to.lng, t1)
+      ),
+      L.latLng(
+        lerp(from.lat, to.lat, t2),
+        lerp(from.lng, to.lng, t2)
+      )
+    ]);
+  }
+
+  return pieces;
+}
+
+function drawRoadSegment(key) {
+  if (!state.roadSegments.has(key) || state.roadLayers.has(key)) return;
+
+  const segment = state.roadSegments.get(key);
+  const discovered = !!state.savedSegments[key];
+
+  const layer = L.polyline(
+    [
+      [segment.from.lat, segment.from.lng],
+      [segment.to.lat, segment.to.lng]
+    ],
+    {
+      color: discovered ? ROAD_ORANGE : ROAD_GREY,
+      weight: discovered ? 6 : 4,
+      opacity: discovered ? 0.95 : 0.38,
+      lineCap: "round",
+      lineJoin: "round"
+    }
+  );
+
+  layer.addTo(discovered ? state.discoveredLayer : state.roadLayer);
+  state.roadLayers.set(key, layer);
+}
+
+function unlockVisibleAlreadySaved() {
+  for (const key of state.roadLayers.keys()) {
+    if (state.savedSegments[key]) {
+      moveSegmentToDiscovered(key);
+    }
+  }
+}
+
+function unlockNearbyRoads(latlng) {
+  let unlockedCount = 0;
+
+  for (const [key, segment] of state.roadSegments.entries()) {
+    if (state.savedSegments[key]) continue;
+
+    const distance = pointToSegmentDistanceMeters(latlng, segment.from, segment.to);
+
+    if (distance <= UNLOCK_RADIUS_M) {
+      state.savedSegments[key] = {
+        at: Date.now()
+      };
+
+      state.todayUnlocks.keys[key] = true;
+
+      moveSegmentToDiscovered(key);
+      unlockedCount++;
     }
   }
 
-  return meters / 1000;
+  if (unlockedCount > 0) {
+    saveSegments();
+    saveTodayUnlocks();
+    renderAllStats();
+
+    if (unlockedCount === 1) {
+      showToast("Road painted orange");
+    } else {
+      showToast(`${unlockedCount} roads painted orange`);
+    }
+  }
 }
 
-function resetVisited() {
-  const ok = confirm("Reset all discovered roads saved on this device?");
+function moveSegmentToDiscovered(key) {
+  const existing = state.roadLayers.get(key);
 
+  if (existing) {
+    state.roadLayer?.removeLayer(existing);
+    state.discoveredLayer?.removeLayer(existing);
+    state.roadLayers.delete(key);
+  }
+
+  const segment = state.roadSegments.get(key);
+  if (!segment) return;
+
+  const layer = L.polyline(
+    [
+      [segment.from.lat, segment.from.lng],
+      [segment.to.lat, segment.to.lng]
+    ],
+    {
+      color: ROAD_ORANGE,
+      weight: 6,
+      opacity: 0.95,
+      lineCap: "round",
+      lineJoin: "round"
+    }
+  ).addTo(state.discoveredLayer);
+
+  state.roadLayers.set(key, layer);
+}
+
+function resetDiscoveredRoads() {
+  const ok = confirm("Reset all discovered roads saved on this device?");
   if (!ok) return;
 
-  state.visited = {};
   state.savedSegments = {};
-  state.savedSegmentIds.clear();
-  state.savedDrawnIds.clear();
-  state.savedLayer.clearLayers();
+  state.todayUnlocks = {
+    date: getTodayKey(),
+    keys: {}
+  };
 
-  saveVisited();
-  saveSavedSegments();
+  saveSegments();
+  saveTodayUnlocks();
 
-  for (const seg of state.roadSegments) {
-    seg.visited = false;
-    seg.currentTrip = false;
-    styleSegment(seg);
+  state.discoveredLayer?.clearLayers();
+  state.roadLayer?.clearLayers();
+  state.roadLayers.clear();
+
+  for (const key of state.roadSegments.keys()) {
+    drawRoadSegment(key);
   }
 
-  state.tripUnlocked.clear();
-  updateStats();
-  setStatus("Discovered roads reset.");
+  renderAllStats();
+  showToast("Discovered roads reset");
 }
 
-function setMainButton(text, disabled = false) {
-  els.loadRoadsBtn.textContent = text;
-  els.loadRoadsBtn.disabled = disabled;
+/* ---------- Waypoint ---------- */
+
+function setWaypoint(latlng) {
+  if (!state.map) return;
+
+  clearWaypoint(false);
+
+  state.waypoint = {
+    lat: latlng.lat,
+    lng: latlng.lng
+  };
+
+  state.waypointMarker = L.marker(latlng).addTo(state.map);
+
+  els.clearWaypointBtn?.classList.remove("hidden");
+
+  showToast("Waypoint set");
+
+  if (state.currentPosition) {
+    routeToWaypoint();
+  } else {
+    showToast("Start GPS to route there");
+  }
 }
 
-function showFailure(title, text) {
-  if (!els.failureSheet) return;
+function clearWaypoint(showMessage = true) {
+  state.waypoint = null;
+  state.lastRouteAt = 0;
+  state.lastRouteFrom = null;
 
-  els.failureTitle.textContent = title;
-  els.failureText.textContent = text;
-  els.failureSheet.classList.remove("hidden");
+  if (state.waypointMarker && state.map) {
+    state.map.removeLayer(state.waypointMarker);
+  }
+
+  state.waypointMarker = null;
+  state.routeLayer?.clearLayers();
+
+  els.clearWaypointBtn?.classList.add("hidden");
+
+  if (showMessage) showToast("Waypoint cleared");
 }
 
-function hideFailure() {
-  if (!els.failureSheet) return;
+function maybeUpdateWaypointRoute(currentLatLng) {
+  if (!state.waypoint) return;
 
-  els.failureSheet.classList.add("hidden");
+  const target = L.latLng(state.waypoint.lat, state.waypoint.lng);
+  const distanceToTarget = distanceMeters(currentLatLng, target);
+
+  if (distanceToTarget <= 35) {
+    clearWaypoint(false);
+    showToast("Arrived at waypoint");
+    return;
+  }
+
+  if (!state.lastRouteFrom) {
+    routeToWaypoint();
+    return;
+  }
+
+  const movedFromLastRoute = distanceMeters(currentLatLng, state.lastRouteFrom);
+  const oldRoute = Date.now() - state.lastRouteAt > 45000;
+
+  if (movedFromLastRoute > 90 || oldRoute) {
+    routeToWaypoint();
+  }
 }
 
-function showLoading(percent) {
-  clearLoadingTimer();
-  els.loadingSheet.classList.remove("hidden");
-  updateLoading(percent);
-}
+async function routeToWaypoint() {
+  if (!state.currentPosition || !state.waypoint) return;
 
-function hideLoading() {
-  clearLoadingTimer();
-  els.loadingSheet.classList.add("hidden");
-}
+  const from = L.latLng(state.currentPosition.lat, state.currentPosition.lng);
+  const to = L.latLng(state.waypoint.lat, state.waypoint.lng);
 
-function updateLoading(percent) {
-  const safe = Math.max(0, Math.min(100, Math.round(percent)));
+  state.lastRouteAt = Date.now();
+  state.lastRouteFrom = from;
 
-  els.progressBar.style.width = `${safe}%`;
-  els.progressText.textContent = `${safe}%`;
-}
+  const url =
+    "https://router.project-osrm.org/route/v1/driving/" +
+    `${from.lng},${from.lat};${to.lng},${to.lat}` +
+    "?overview=full&geometries=geojson&steps=false";
 
-function animateLoadingTo(target) {
-  clearLoadingTimer();
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Route request failed");
 
-  state.loadingTimer = setInterval(() => {
-    const current = Number(els.progressText.textContent.replace("%", "")) || 0;
+    const data = await response.json();
+    const coords = data?.routes?.[0]?.geometry?.coordinates;
 
-    if (current >= target) {
-      clearLoadingTimer();
-      return;
+    if (!Array.isArray(coords) || coords.length < 2) {
+      throw new Error("No route");
     }
 
-    const next = Math.min(
-      target,
-      current + Math.max(1, Math.round((target - current) * 0.12))
+    const latlngs = coords.map((point) => [point[1], point[0]]);
+    drawRoute(latlngs, false);
+  } catch (error) {
+    drawRoute(
+      [
+        [from.lat, from.lng],
+        [to.lat, to.lng]
+      ],
+      true
     );
-
-    updateLoading(next);
-  }, 120);
-}
-
-function clearLoadingTimer() {
-  if (state.loadingTimer) {
-    clearInterval(state.loadingTimer);
-    state.loadingTimer = null;
+    showToast("Showing straight-line waypoint");
   }
 }
 
-function setStatus(text) {
-  els.status.textContent = text;
+function drawRoute(latlngs, dashed) {
+  state.routeLayer?.clearLayers();
+
+  L.polyline(latlngs, {
+    color: ROUTE_BLUE,
+    weight: 5,
+    opacity: 0.88,
+    lineCap: "round",
+    lineJoin: "round",
+    dashArray: dashed ? "8 10" : null
+  }).addTo(state.routeLayer);
 }
 
-function positionToPoint(position) {
-  return {
-    lat: position.coords.latitude,
-    lng: position.coords.longitude,
-    accuracy: position.coords.accuracy || 999,
-    speed: position.coords.speed,
-    heading: position.coords.heading,
-    timestamp: position.timestamp || Date.now(),
-  };
+/* ---------- Friends ---------- */
+
+function renderFriendsList() {
+  if (!els.friendsList) return;
+
+  els.friendsList.innerHTML = "";
+
+  DEMO_FRIENDS.forEach((friend) => {
+    const row = document.createElement("button");
+    row.className = "friend-row";
+    row.type = "button";
+    row.dataset.friendId = friend.id;
+
+    row.innerHTML = `
+      <div class="friend-avatar">${escapeHtml(friend.avatar)}</div>
+
+      <div class="friend-main">
+        <div class="friend-name">${escapeHtml(friend.name)}</div>
+        <div class="friend-sub">Australia ${escapeHtml(friend.australiaPercent)}</div>
+      </div>
+
+      <div class="friend-score">
+        <strong>${formatNumber(friend.unlocked)}</strong>
+        <span>/ 18M</span>
+      </div>
+    `;
+
+    row.addEventListener("click", () => openFriendProfile(friend.id));
+
+    els.friendsList.appendChild(row);
+  });
+
+  if (els.friendRequestsList) {
+    els.friendRequestsList.innerHTML = `<div class="empty-state">No pending requests</div>`;
+  }
 }
 
-function haversine(a, b) {
-  const R = 6371000;
+function openFriendProfile(friendId) {
+  const friend = DEMO_FRIENDS.find((item) => item.id === friendId) || DEMO_FRIENDS[0];
+  state.activeFriendId = friend.id;
 
+  if (els.friendProfileAvatar) els.friendProfileAvatar.textContent = friend.avatar;
+  if (els.friendProfileName) els.friendProfileName.textContent = friend.name;
+  if (els.friendProfileHandle) els.friendProfileHandle.textContent = friend.handle;
+  if (els.friendAustraliaStat) els.friendAustraliaStat.textContent = friend.australiaPercent;
+  if (els.friendUnlockedStat) els.friendUnlockedStat.textContent = `${formatNumber(friend.unlocked)} / 18M`;
+  if (els.friendTodayStat) els.friendTodayStat.textContent = `${friend.todayKm.toFixed(2)} km`;
+  if (els.friendWeekStat) els.friendWeekStat.textContent = `${friend.weekKm.toFixed(1)} km`;
+
+  renderFriendPreviewSvg(friend);
+  renderFriendFullMapSvg(friend);
+
+  showFriendProfileView();
+}
+
+function renderFriendPreviewSvg(friend) {
+  if (!els.friendMapPreviewSvg) return;
+
+  els.friendMapPreviewSvg.innerHTML = "";
+
+  friend.previewPaths.forEach((pathData) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    els.friendMapPreviewSvg.appendChild(path);
+  });
+}
+
+function renderFriendFullMapSvg(friend) {
+  if (!els.friendFullMapSvg) return;
+
+  els.friendFullMapSvg.innerHTML = "";
+
+  friend.fullPaths.forEach((pathData) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    els.friendFullMapSvg.appendChild(path);
+  });
+}
+
+function openFriendFullMap() {
+  const friend = getActiveFriend();
+
+  if (els.friendMapTitle) {
+    els.friendMapTitle.textContent = `${friend.name}’s Map`;
+  }
+
+  renderFriendFullMapSvg(friend);
+
+  els.friendMapOverlay?.classList.remove("hidden");
+  els.friendMapOverlay?.setAttribute("aria-hidden", "false");
+}
+
+function closeFriendFullMap() {
+  els.friendMapOverlay?.classList.add("hidden");
+  els.friendMapOverlay?.setAttribute("aria-hidden", "true");
+}
+
+function getActiveFriend() {
+  return DEMO_FRIENDS.find((friend) => friend.id === state.activeFriendId) || DEMO_FRIENDS[0];
+}
+
+function applyFriendSettingsToUI() {
+  if (els.friendProfileToggle) {
+    els.friendProfileToggle.checked = !!state.friendSettings.showProfile;
+  }
+
+  if (els.friendMapToggle) {
+    els.friendMapToggle.checked = !!state.friendSettings.showMap;
+  }
+}
+
+/* ---------- Stats ---------- */
+
+function renderAllStats() {
+  fixTodayIfNeeded();
+
+  const unlockedCount = Object.keys(state.savedSegments).length;
+  const todayCount = Object.keys(state.todayUnlocks.keys).length;
+
+  const australiaPercent = (unlockedCount / AU_TOTAL_UNLOCKS_ESTIMATE) * 100;
+  const todayKm = (todayCount * SEGMENT_SIZE_M) / 1000;
+
+  if (els.australiaStat) {
+    els.australiaStat.textContent = `${australiaPercent.toFixed(4)}%`;
+  }
+
+  if (els.todayStat) {
+    els.todayStat.textContent = `${todayKm.toFixed(2)} km`;
+  }
+
+  if (els.unlockedStat) {
+    els.unlockedStat.textContent = `${formatNumber(unlockedCount)} / 18M`;
+  }
+}
+
+function fixTodayIfNeeded() {
+  const today = getTodayKey();
+
+  if (state.todayUnlocks.date !== today) {
+    state.todayUnlocks = {
+      date: today,
+      keys: {}
+    };
+    saveTodayUnlocks();
+  }
+}
+
+/* ---------- UI helpers ---------- */
+
+function setDriveStatus(text) {
+  if (els.driveStatus) els.driveStatus.textContent = text;
+}
+
+function setGpsStatus(text) {
+  if (els.gpsStatus) els.gpsStatus.textContent = text;
+}
+
+function setAccuracyStatus(text) {
+  if (els.accuracyStatus) els.accuracyStatus.textContent = text;
+}
+
+function showToast(message) {
+  if (!els.toast) return;
+
+  els.toast.textContent = message;
+  els.toast.classList.remove("hidden");
+
+  clearTimeout(state.toastTimer);
+
+  state.toastTimer = setTimeout(() => {
+    els.toast.classList.add("hidden");
+  }, 2200);
+}
+
+/* ---------- Math / geo ---------- */
+
+function distanceMeters(a, b) {
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
   const dLat = toRad(b.lat - a.lat);
   const dLng = toRad(b.lng - a.lng);
 
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
 
-  const x =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  const h =
+    sinLat * sinLat +
+    Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
 
-  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-function interpolate(a, b, t) {
-  return {
-    lat: a.lat + (b.lat - a.lat) * t,
-    lng: a.lng + (b.lng - a.lng) * t,
-  };
-}
+function pointToSegmentDistanceMeters(point, a, b) {
+  const originLat = point.lat;
+  const metersPerDegLat = 111320;
+  const metersPerDegLng = 111320 * Math.cos(toRad(originLat));
 
-function pointToSegmentDistance(point, segA, segB) {
-  const lat0 = toRad(point.lat);
+  const px = point.lng * metersPerDegLng;
+  const py = point.lat * metersPerDegLat;
 
-  const mPerLat = 111320;
-  const mPerLng = 111320 * Math.cos(lat0);
+  const ax = a.lng * metersPerDegLng;
+  const ay = a.lat * metersPerDegLat;
 
-  const px = 0;
-  const py = 0;
-
-  const ax = (segA[1] - point.lng) * mPerLng;
-  const ay = (segA[0] - point.lat) * mPerLat;
-
-  const bx = (segB[1] - point.lng) * mPerLng;
-  const by = (segB[0] - point.lat) * mPerLat;
+  const bx = b.lng * metersPerDegLng;
+  const by = b.lat * metersPerDegLat;
 
   const dx = bx - ax;
   const dy = by - ay;
 
-  const len2 = dx * dx + dy * dy;
-
-  if (len2 === 0) {
-    return Math.sqrt(ax * ax + ay * ay);
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(px - ax, py - ay);
   }
 
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  const t = Math.max(
+    0,
+    Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy))
+  );
 
-  const x = ax + t * dx;
-  const y = ay + t * dy;
+  const closestX = ax + t * dx;
+  const closestY = ay + t * dy;
 
-  return Math.sqrt(x * x + y * y);
+  return Math.hypot(px - closestX, py - closestY);
 }
 
-function metersToKm(m) {
-  return (m / 1000).toFixed(2);
+function makeSegmentKey(a, b) {
+  const p1 = `${roundCoord(a.lat)},${roundCoord(a.lng)}`;
+  const p2 = `${roundCoord(b.lat)},${roundCoord(b.lng)}`;
+
+  return p1 < p2 ? `${p1}|${p2}` : `${p2}|${p1}`;
 }
 
-function toRad(deg) {
-  return (deg * Math.PI) / 180;
+function roundCoord(value) {
+  return Number(value).toFixed(5);
 }
 
-function loadVisited() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-  } catch {
-    return {};
-  }
+function lerp(a, b, t) {
+  return a + (b - a) * t;
 }
 
-function saveVisited() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.visited));
+function toRad(value) {
+  return (value * Math.PI) / 180;
 }
 
-function loadSavedSegments() {
-  try {
-    return JSON.parse(localStorage.getItem(SAVED_SEGMENTS_KEY)) || {};
-  } catch {
-    return {};
-  }
+/* ---------- Formatting ---------- */
+
+function getTodayKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-function saveSavedSegments() {
-  try {
-    localStorage.setItem(SAVED_SEGMENTS_KEY, JSON.stringify(state.savedSegments));
-  } catch (err) {
-    console.error(err);
-    setStatus("Storage is full. Some saved orange roads may not be kept.");
-  }
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString("en-AU");
 }
 
-function registerServiceWorker() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
-  }
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
