@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v36 service worker */
+/* Road Discovery AU v37 service worker */
 
 const CACHE_NAME = "road-discovery-au-v37";
 
