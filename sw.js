@@ -2,13 +2,13 @@
 
 /* Road Discovery AU v36 service worker */
 
-const CACHE_NAME = "road-discovery-au-v36";
+const CACHE_NAME = "road-discovery-au-v37";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./style.css?v=33",
-  "./app.js?v=36",
+  "./app.js?v=37",
   "./manifest.json",
   "./icon.svg"
 ];
