@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v33
+/* Road Discovery AU v34
    - restores the stable v29 road/GPS engine
    - keeps existing v29 progress keys and saved coordinates
    - safely migrates v30 coordinate-key progress where possible
@@ -8,6 +8,7 @@
    - preloads nearby grey roads before Start Drive
    - keeps the v30 Friends, Settings and Waypoint UI
    - adds Checkpoint 1 Supabase Road Profile auth/profile support
+   - adds Checkpoint 2 friend-code requests and incoming requests
 */
 
 const STORAGE_KEY = "roadDiscoveryAU.visited.v1";
@@ -161,6 +162,12 @@ const state = {
     checkingSession: false,
     submitting: false,
     passwordRecovery: false
+  },
+
+  friends: {
+    incomingRequests: [],
+    loadingRequests: false,
+    sendingRequest: false
   },
 
   toastTimer: null
@@ -688,15 +695,12 @@ function bindEvents() {
     showToast("Username search comes in a later checkpoint. Use friend codes next.");
   });
 
-  els.addFriendCodeBtn?.addEventListener("click", () => {
-    const value = els.friendCodeInput?.value.trim();
+  els.addFriendCodeBtn?.addEventListener("click", sendFriendRequestByCode);
 
-    if (!value) {
-      showToast("Enter a friend code");
-      return;
+  els.friendCodeInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      sendFriendRequestByCode();
     }
-
-    showToast("Add by friend code comes in Checkpoint 2");
   });
 
   els.backToFriendsBtn?.addEventListener(
@@ -777,6 +781,10 @@ function openFriendsPanel() {
   renderFriendsList();
   showFriendsListView();
   openPanel("friendsPanel");
+
+  if (state.auth.user) {
+    loadIncomingFriendRequests({ quiet: true });
+  }
 }
 
 function showFriendsListView() {
@@ -2334,9 +2342,11 @@ function initSupabase() {
 
       if (state.auth.user) {
         await ensureRoadProfile({ quiet: true });
+        await loadIncomingFriendRequests({ quiet: true });
       } else {
         state.auth.profile = null;
         state.auth.loading = false;
+        state.friends.incomingRequests = [];
       }
 
       renderAuthState();
@@ -2374,9 +2384,11 @@ async function loadInitialAuthSession() {
 
   if (state.auth.user) {
     await ensureRoadProfile({ quiet: true });
+    await loadIncomingFriendRequests({ quiet: true });
   } else {
     state.auth.profile = null;
     state.auth.loading = false;
+    state.friends.incomingRequests = [];
   }
 
   state.auth.checkingSession = false;
@@ -2548,6 +2560,7 @@ async function signInRoadProfile() {
 
   if (state.auth.user) {
     await ensureRoadProfile({ quiet: false });
+    await loadIncomingFriendRequests({ quiet: true });
     state.auth.loading = false;
     state.auth.submitting = false;
     setAuthMessage("Signed in.", "success");
@@ -2581,6 +2594,9 @@ async function signOutRoadProfile() {
   state.auth.user = null;
   state.auth.profile = null;
   state.auth.loading = false;
+  state.friends.incomingRequests = [];
+  state.friends.loadingRequests = false;
+  state.friends.sendingRequest = false;
 
   renderAuthState();
   showToast("Signed out");
@@ -2864,30 +2880,249 @@ function setAuthMessage(message, type = "info") {
 /* ---------- Friends ---------- */
 
 function renderFriendsList() {
-  const signedIn = Boolean(state.auth.user);
+  const signedIn = Boolean(state.auth.user && state.auth.profile);
+  const busy =
+    Boolean(state.auth.loading) ||
+    Boolean(state.auth.submitting) ||
+    Boolean(state.friends.sendingRequest);
 
   if (els.showAddFriendBtn) {
-    els.showAddFriendBtn.disabled = true;
+    els.showAddFriendBtn.disabled = !signedIn || busy;
     els.showAddFriendBtn.textContent = signedIn
-      ? "+ Add Friend (Checkpoint 2)"
+      ? "+ Add Friend"
       : "+ Add Friend (sign in first)";
   }
 
-  if (els.addFriendBox) {
+  if (els.addFriendBox && !signedIn) {
     els.addFriendBox.classList.add("hidden");
   }
 
-  if (els.friendRequestsList) {
-    els.friendRequestsList.innerHTML = signedIn
-      ? '<div class="empty-state">Friend requests come in Checkpoint 2.</div>'
-      : '<div class="empty-state">Create or sign in to a Road Profile before friend requests.</div>';
+  if (els.friendCodeInput) {
+    els.friendCodeInput.disabled = !signedIn || busy;
   }
+
+  if (els.addFriendCodeBtn) {
+    els.addFriendCodeBtn.disabled = !signedIn || busy;
+    els.addFriendCodeBtn.textContent = state.friends.sendingRequest
+      ? "Sending..."
+      : "Add";
+  }
+
+  if (els.searchFriendBtn) {
+    els.searchFriendBtn.disabled = true;
+  }
+
+  renderIncomingFriendRequests(signedIn);
 
   if (!els.friendsList) return;
 
   els.friendsList.innerHTML = signedIn
     ? '<div class="empty-state">Real friends list comes in Checkpoint 3. Josh and Dad are no longer used as real friends.</div>'
     : '<div class="empty-state">Sign in to use real friends. The app still works locally without an account.</div>';
+}
+
+async function sendFriendRequestByCode() {
+  if (!state.auth.client) {
+    showToast("Supabase is not connected");
+    return;
+  }
+
+  if (!state.auth.user || !state.auth.profile) {
+    showToast("Sign in to add friends");
+    return;
+  }
+
+  if (state.friends.sendingRequest) {
+    return;
+  }
+
+  const rawCode = els.friendCodeInput?.value || "";
+  const friendCode = normaliseFriendCodeInput(rawCode);
+
+  if (!friendCode) {
+    showToast("Enter a friend code");
+    return;
+  }
+
+  const ownCode = normaliseFriendCodeInput(state.auth.profile.friend_code || "");
+
+  if (ownCode && friendCode === ownCode) {
+    showToast("That is your own friend code");
+    return;
+  }
+
+  state.friends.sendingRequest = true;
+  renderFriendsList();
+
+  const { data, error } = await state.auth.client.rpc(
+    "send_friend_request_by_code",
+    {
+      target_friend_code: friendCode
+    }
+  );
+
+  state.friends.sendingRequest = false;
+
+  if (error) {
+    console.error(error);
+    showToast(friendRequestErrorMessage(error));
+    renderFriendsList();
+    return;
+  }
+
+  const result = normaliseFriendRequestRpcResult(data);
+
+  if (result.status === "already_sent") {
+    showToast("Friend request already sent");
+  } else if (result.status === "already_received") {
+    showToast("They already sent you a request");
+  } else {
+    showToast("Friend request sent");
+  }
+
+  if (els.friendCodeInput) {
+    els.friendCodeInput.value = "";
+  }
+
+  await loadIncomingFriendRequests({ quiet: true });
+  renderFriendsList();
+}
+
+async function loadIncomingFriendRequests(options = {}) {
+  const { quiet = false } = options;
+
+  if (!state.auth.client || !state.auth.user) {
+    state.friends.incomingRequests = [];
+    renderFriendsList();
+    return [];
+  }
+
+  if (state.friends.loadingRequests) {
+    return state.friends.incomingRequests;
+  }
+
+  state.friends.loadingRequests = true;
+
+  if (!quiet) {
+    renderFriendsList();
+  }
+
+  const { data, error } = await state.auth.client.rpc(
+    "get_incoming_friend_requests"
+  );
+
+  state.friends.loadingRequests = false;
+
+  if (error) {
+    console.error(error);
+
+    if (!quiet) {
+      showToast("Could not load friend requests");
+    }
+
+    renderFriendsList();
+    return state.friends.incomingRequests;
+  }
+
+  state.friends.incomingRequests = Array.isArray(data) ? data : [];
+
+  renderFriendsList();
+  return state.friends.incomingRequests;
+}
+
+function renderIncomingFriendRequests(signedIn) {
+  if (!els.friendRequestsList) return;
+
+  if (!signedIn) {
+    els.friendRequestsList.innerHTML =
+      '<div class="empty-state">Create or sign in to a Road Profile before friend requests.</div>';
+    return;
+  }
+
+  if (state.friends.loadingRequests) {
+    els.friendRequestsList.innerHTML =
+      '<div class="empty-state">Loading friend requests...</div>';
+    return;
+  }
+
+  const requests = state.friends.incomingRequests || [];
+
+  if (requests.length === 0) {
+    els.friendRequestsList.innerHTML =
+      '<div class="empty-state">No incoming friend requests yet.</div>';
+    return;
+  }
+
+  els.friendRequestsList.innerHTML = requests
+    .map((request) => renderIncomingFriendRequestRow(request))
+    .join("");
+}
+
+function renderIncomingFriendRequestRow(request) {
+  const username = request.requester_username || "Road Profile";
+  const friendCode = request.requester_friend_code || "Friend code hidden";
+  const initial = username.slice(0, 1).toUpperCase() || "R";
+
+  return `
+    <div class="friend-row" data-request-id="${escapeHtml(request.request_id || "")}">
+      <div class="friend-avatar">${escapeHtml(initial)}</div>
+
+      <div class="friend-main">
+        <div class="friend-name">${escapeHtml(username)}</div>
+        <div class="friend-sub">${escapeHtml(friendCode)} sent a request</div>
+      </div>
+
+      <div class="friend-score">
+        <strong>Pending</strong>
+        <span>Checkpoint 3</span>
+      </div>
+    </div>
+  `;
+}
+
+function normaliseFriendCodeInput(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+}
+
+function normaliseFriendRequestRpcResult(data) {
+  if (Array.isArray(data)) {
+    return data[0] || {};
+  }
+
+  if (data && typeof data === "object") {
+    return data;
+  }
+
+  return {};
+}
+
+function friendRequestErrorMessage(error) {
+  const message = String(error?.message || "").toLowerCase();
+
+  if (message.includes("friend code not found")) {
+    return "Friend code not found";
+  }
+
+  if (message.includes("own friend code")) {
+    return "That is your own friend code";
+  }
+
+  if (message.includes("already sent")) {
+    return "Friend request already sent";
+  }
+
+  if (message.includes("already sent you")) {
+    return "They already sent you a request";
+  }
+
+  if (message.includes("function") && message.includes("does not exist")) {
+    return "Checkpoint 2 SQL has not been installed yet";
+  }
+
+  return error?.message || "Could not send friend request";
 }
 
 function openFriendProfile(
