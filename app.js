@@ -1,15 +1,9 @@
 "use strict";
 
-/* Road Discovery AU v35
-   - restores the stable v29 road/GPS engine
-   - keeps existing v29 progress keys and saved coordinates
-   - safely migrates v30 coordinate-key progress where possible
-   - restores the My Location button
-   - preloads nearby grey roads before Start Drive
-   - keeps the v30 Friends, Settings and Waypoint UI
-   - adds Checkpoint 1 Supabase Road Profile auth/profile support
-   - adds Checkpoint 2 friend-code requests and incoming requests
-   - adds Checkpoint 3 accept/decline requests and accepted friends list
+/* Road Discovery AU v36
+   Checkpoint 4: safe aggregate friend stats only.
+   This keeps the road/GPS/Overpass/waypoint/localStorage engine local.
+   It does not upload live GPS, current drive paths, segment IDs, coordinates, road geometry, speed, heading, blue marker, start point, or finish point.
 */
 
 const STORAGE_KEY = "roadDiscoveryAU.visited.v1";
@@ -18,7 +12,6 @@ const FRIEND_SETTINGS_KEY = "roadDiscoveryAU.friendSettings.v1";
 const TODAY_UNLOCKS_KEY = "roadDiscoveryAU.todayUnlocks.v1";
 const ROAD_PROFILE_CACHE_KEY = "roadDiscoveryAU.roadProfile.v1";
 
-/* Supabase Checkpoint 1 config */
 const SUPABASE_URL = "https://tancfzqmzvaalqotmvks.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_LnMT-vhl4xvj4idb91dNdA_EdQMJutI";
 
@@ -36,6 +29,9 @@ const ROUTE_ARRIVAL_RADIUS_M = 35;
 const ROUTE_REROUTE_DISTANCE_M = 120;
 const ROUTE_MIN_REROUTE_TIME_MS = 45000;
 
+const PROFILE_STATS_SYNC_MIN_MS = 60000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const DEFAULT_CENTER = [-33.8688, 151.2093];
 const DEFAULT_ZOOM = 14;
 
@@ -50,10 +46,10 @@ const els = {};
 const state = {
   map: null,
 
-  roadsLayer: L.layerGroup(),
-  savedLayer: L.layerGroup(),
-  tripLayer: L.layerGroup(),
-  routeLayer: L.layerGroup(),
+  roadsLayer: null,
+  savedLayer: null,
+  tripLayer: null,
+  routeLayer: null,
 
   userMarker: null,
   accuracyCircle: null,
@@ -99,6 +95,7 @@ const state = {
   routeRequestId: 0,
 
   activeFriendId: null,
+
   friendSettings: {
     showProfile: false,
     showMap: false
@@ -123,6 +120,12 @@ const state = {
     sendingRequest: false,
     respondingRequestId: null,
     respondingAction: null
+  },
+
+  statsSync: {
+    syncing: false,
+    lastSyncAt: 0,
+    lastPayloadKey: ""
   },
 
   toastTimer: null
@@ -178,7 +181,7 @@ function ensureLocateButton() {
 }
 
 function cacheEls() {
-  const ids = [
+  [
     "map",
     "driveStatus",
     "gpsStatus",
@@ -267,9 +270,7 @@ function cacheEls() {
     "closeFriendMapBtn",
 
     "toast"
-  ];
-
-  ids.forEach((id) => {
+  ].forEach((id) => {
     els[id] = $(id);
   });
 }
@@ -279,6 +280,11 @@ function initMap() {
     showToast("Map library did not load");
     return;
   }
+
+  state.roadsLayer = L.layerGroup();
+  state.savedLayer = L.layerGroup();
+  state.tripLayer = L.layerGroup();
+  state.routeLayer = L.layerGroup();
 
   state.map = L.map(els.map, {
     zoomControl: false,
@@ -306,13 +312,8 @@ function initMap() {
     state.followUser = false;
   });
 
-  setTimeout(() => {
-    state.map?.invalidateSize(true);
-  }, 250);
-
-  setTimeout(() => {
-    state.map?.invalidateSize(true);
-  }, 1000);
+  setTimeout(() => state.map?.invalidateSize(true), 250);
+  setTimeout(() => state.map?.invalidateSize(true), 1000);
 
   window.addEventListener("resize", () => {
     state.map?.invalidateSize(true);
@@ -534,14 +535,8 @@ function writeJson(key, value) {
 /* ---------- Events ---------- */
 
 function bindEvents() {
-  els.settingsBtn?.addEventListener("click", () => {
-    openPanel("settingsPanel");
-  });
-
-  els.waypointBtn?.addEventListener("click", () => {
-    openPanel("waypointPanel");
-  });
-
+  els.settingsBtn?.addEventListener("click", () => openPanel("settingsPanel"));
+  els.waypointBtn?.addEventListener("click", () => openPanel("waypointPanel"));
   els.friendsBtn?.addEventListener("click", openFriendsPanel);
 
   els.locateBtn?.addEventListener("click", () => {
@@ -555,18 +550,12 @@ function bindEvents() {
   });
 
   els.panelBackdrop?.addEventListener("click", closePanels);
-
   els.closeSettingsBtn?.addEventListener("click", closePanels);
   els.closeWaypointBtn?.addEventListener("click", closePanels);
   els.closeFriendsBtn?.addEventListener("click", closePanels);
 
-  els.authCreateModeBtn?.addEventListener("click", () => {
-    setAuthMode("create");
-  });
-
-  els.authSignInModeBtn?.addEventListener("click", () => {
-    setAuthMode("signin");
-  });
+  els.authCreateModeBtn?.addEventListener("click", () => setAuthMode("create"));
+  els.authSignInModeBtn?.addEventListener("click", () => setAuthMode("signin"));
 
   els.createProfileBtn?.addEventListener("click", createRoadProfileAccount);
   els.signInBtn?.addEventListener("click", signInRoadProfile);
@@ -576,15 +565,11 @@ function bindEvents() {
   els.signOutBtn?.addEventListener("click", signOutRoadProfile);
 
   els.createPasswordInput?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      createRoadProfileAccount();
-    }
+    if (event.key === "Enter") createRoadProfileAccount();
   });
 
   els.signInPasswordInput?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      signInRoadProfile();
-    }
+    if (event.key === "Enter") signInRoadProfile();
   });
 
   els.profileProfileToggle?.addEventListener("change", () => {
@@ -601,11 +586,6 @@ function bindEvents() {
     );
   });
 
-  els.startBtn?.addEventListener("click", startDrive);
-  els.finishBtn?.addEventListener("click", finishDrive);
-
-  els.resetBtn?.addEventListener("click", resetDiscoveredRoads);
-
   els.friendProfileToggle?.addEventListener("change", () => {
     handleProfilePrivacyToggle(
       "show_profile",
@@ -619,6 +599,10 @@ function bindEvents() {
       Boolean(els.friendMapToggle.checked)
     );
   });
+
+  els.startBtn?.addEventListener("click", startDrive);
+  els.finishBtn?.addEventListener("click", finishDrive);
+  els.resetBtn?.addEventListener("click", resetDiscoveredRoads);
 
   els.setWaypointBtn?.addEventListener("click", () => {
     state.awaitingWaypointClick = true;
@@ -653,17 +637,13 @@ function bindEvents() {
   els.addFriendCodeBtn?.addEventListener("click", sendFriendRequestByCode);
 
   els.friendCodeInput?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      sendFriendRequestByCode();
-    }
+    if (event.key === "Enter") sendFriendRequestByCode();
   });
 
   els.friendRequestsList?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-request-action]");
 
-    if (!button || !els.friendRequestsList.contains(button)) {
-      return;
-    }
+    if (!button || !els.friendRequestsList.contains(button)) return;
 
     const requestId = button.dataset.requestId || "";
     const action = button.dataset.requestAction || "";
@@ -678,49 +658,27 @@ function bindEvents() {
   els.friendsList?.addEventListener("click", (event) => {
     const row = event.target.closest("[data-friend-id]");
 
-    if (!row || !els.friendsList.contains(row)) {
-      return;
-    }
+    if (!row || !els.friendsList.contains(row)) return;
 
     openFriendProfile(row.dataset.friendId || "");
   });
 
-  els.backToFriendsBtn?.addEventListener(
-    "click",
-    showFriendsListView
-  );
-
-  els.openFriendMapBtn?.addEventListener(
-    "click",
-    openFriendFullMap
-  );
-
-  els.closeFriendMapBtn?.addEventListener(
-    "click",
-    closeFriendFullMap
-  );
+  els.backToFriendsBtn?.addEventListener("click", showFriendsListView);
+  els.openFriendMapBtn?.addEventListener("click", openFriendFullMap);
+  els.closeFriendMapBtn?.addEventListener("click", closeFriendFullMap);
 
   els.removeFriendBtn?.addEventListener("click", () => {
     const friend = getActiveFriend();
-    const name = friend?.username || "Friend";
-
-    showToast(`${name} remove button comes in a later checkpoint`);
+    showToast(`${friend?.username || "Friend"} remove button comes in a later checkpoint`);
   });
 
   els.blockFriendBtn?.addEventListener("click", () => {
     const friend = getActiveFriend();
-    const name = friend?.username || "Friend";
-
-    showToast(`${name} block button comes in a later checkpoint`);
+    showToast(`${friend?.username || "Friend"} block button comes in a later checkpoint`);
   });
 
-  window.addEventListener("online", () => {
-    showToast("Online");
-  });
-
-  window.addEventListener("offline", () => {
-    showToast("Offline");
-  });
+  window.addEventListener("online", () => showToast("Online"));
+  window.addEventListener("offline", () => showToast("Offline"));
 }
 
 /* ---------- Panels ---------- */
@@ -788,14 +746,10 @@ async function locateUser(options = {}) {
 
   if (!navigator.geolocation) {
     setGpsStatus("GPS unavailable");
-    setAccuracyStatus(
-      "This browser cannot access location"
-    );
+    setAccuracyStatus("This browser cannot access location");
 
     if (!quiet) {
-      showToast(
-        "GPS is not available in this browser"
-      );
+      showToast("GPS is not available in this browser");
     }
 
     return null;
@@ -814,9 +768,7 @@ async function locateUser(options = {}) {
 
   if (!position) {
     setGpsStatus("GPS unavailable");
-    setAccuracyStatus(
-      "Location permission blocked or unavailable"
-    );
+    setAccuracyStatus("Location permission blocked or unavailable");
 
     if (!quiet) {
       showToast("Could not get your location");
@@ -833,17 +785,11 @@ async function locateUser(options = {}) {
 
   if (state.map) {
     if (zoom) {
-      state.map.setView(
-        [point.lat, point.lng],
-        16
-      );
+      state.map.setView([point.lat, point.lng], 16);
     } else {
       state.map.setView(
         [point.lat, point.lng],
-        Math.max(
-          state.map.getZoom(),
-          DEFAULT_ZOOM
-        )
+        Math.max(state.map.getZoom(), DEFAULT_ZOOM)
       );
     }
   }
@@ -854,9 +800,7 @@ async function locateUser(options = {}) {
       : "GPS weak"
   );
 
-  setAccuracyStatus(
-    `Accuracy ${Math.round(point.accuracy)} m`
-  );
+  setAccuracyStatus(`Accuracy ${Math.round(point.accuracy)} m`);
 
   if (!state.isRecording) {
     setDriveStatus("Ready to drive");
@@ -898,9 +842,7 @@ async function startDrive() {
   setDriveButtons("loading");
   setDriveStatus("Finding GPS");
   setGpsStatus("GPS starting");
-  setAccuracyStatus(
-    "Getting a clean location"
-  );
+  setAccuracyStatus("Getting a clean location");
 
   const position = await getCurrentPosition({
     enableHighAccuracy: true,
@@ -912,14 +854,8 @@ async function startDrive() {
     setDriveButtons("idle");
     setDriveStatus("Could not start");
     setGpsStatus("GPS unavailable");
-    setAccuracyStatus(
-      "Move outside and check location permission"
-    );
-
-    showToast(
-      "Could not get GPS. Tap Start Drive to try again"
-    );
-
+    setAccuracyStatus("Move outside and check location permission");
+    showToast("Could not get GPS. Tap Start Drive to try again");
     return;
   }
 
@@ -930,10 +866,7 @@ async function startDrive() {
 
   updateUserMarker(point);
 
-  state.map?.setView(
-    [point.lat, point.lng],
-    16
-  );
+  state.map?.setView([point.lat, point.lng], 16);
 
   setDriveStatus("Loading nearby roads");
 
@@ -943,29 +876,17 @@ async function startDrive() {
       : "GPS weak"
   );
 
-  setAccuracyStatus(
-    `Accuracy ${Math.round(point.accuracy)} m`
-  );
+  setAccuracyStatus(`Accuracy ${Math.round(point.accuracy)} m`);
 
-  const roadsReady = await ensureRoadsNearPoint(
-    point,
-    {
-      replaceIfFar: true,
-      quiet: false
-    }
-  );
+  const roadsReady = await ensureRoadsNearPoint(point, {
+    replaceIfFar: true,
+    quiet: false
+  });
 
-  if (
-    !roadsReady ||
-    state.roadSegments.length === 0
-  ) {
+  if (!roadsReady || state.roadSegments.length === 0) {
     setDriveButtons("idle");
     setDriveStatus("Roads did not load");
-
-    showToast(
-      "Could not load nearby roads. Check reception and try again"
-    );
-
+    showToast("Could not load nearby roads. Check reception and try again");
     return;
   }
 
@@ -983,25 +904,21 @@ function beginGpsWatch() {
   setDriveStatus("Driving");
   setGpsStatus("GPS active");
 
-  state.watchId =
-    navigator.geolocation.watchPosition(
-      onGpsPosition,
-      onGpsError,
-      {
-        enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 10000
-      }
-    );
+  state.watchId = navigator.geolocation.watchPosition(
+    onGpsPosition,
+    onGpsError,
+    {
+      enableHighAccuracy: true,
+      maximumAge: 1000,
+      timeout: 10000
+    }
+  );
 
   showToast("Drive started");
 }
 
 function finishDrive() {
-  if (
-    !state.isRecording &&
-    state.watchId === null
-  ) {
+  if (!state.isRecording && state.watchId === null) {
     showToast("No drive is running");
     return;
   }
@@ -1010,43 +927,29 @@ function finishDrive() {
 
   state.isRecording = false;
 
-  document.body.classList.remove(
-    "recording"
-  );
+  document.body.classList.remove("recording");
 
   setDriveButtons("idle");
 
-  const travelledKm =
-    metersToKm(state.tripDistanceM);
-
-  const discoveredKm =
-    sumTripUnlockedKm().toFixed(2);
-
-  const unlocked =
-    state.tripUnlocked.size.toLocaleString(
-      "en-AU"
-    );
+  const travelledKm = metersToKm(state.tripDistanceM);
+  const discoveredKm = sumTripUnlockedKm().toFixed(2);
+  const unlocked = state.tripUnlocked.size.toLocaleString("en-AU");
 
   setDriveStatus("Drive finished");
   setGpsStatus("GPS idle");
-
   setAccuracyStatus(
-    `${travelledKm} km travelled • ` +
-    `${discoveredKm} km discovered • ` +
-    `${unlocked} unlocks`
+    `${travelledKm} km travelled • ${discoveredKm} km discovered • ${unlocked} unlocks`
   );
 
   renderAllStats();
+  void maybeSyncProfileStats({ force: true, quiet: true });
 
   showToast("Drive saved on this device");
 }
 
 function stopGpsWatch() {
   if (state.watchId !== null) {
-    navigator.geolocation.clearWatch(
-      state.watchId
-    );
-
+    navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
   }
 }
@@ -1056,7 +959,7 @@ function resetTripState() {
   state.tripDistanceM = 0;
   state.lastPoint = null;
 
-  state.tripLayer.clearLayers();
+  state.tripLayer?.clearLayers();
 
   for (const segment of state.roadSegments) {
     segment.currentTrip = false;
@@ -1072,52 +975,33 @@ function onGpsPosition(position) {
   updateUserMarker(point);
 
   if (state.followUser) {
-    state.map?.panTo(
-      [point.lat, point.lng],
-      {
-        animate: true,
-        duration: 0.3
-      }
-    );
+    state.map?.panTo([point.lat, point.lng], {
+      animate: true,
+      duration: 0.3
+    });
   }
 
   maybeAutoLoadMoreRoads(point);
 
-  if (
-    point.accuracy >
-    MAX_GPS_ACCURACY_M
-  ) {
+  if (point.accuracy > MAX_GPS_ACCURACY_M) {
     setGpsStatus("GPS weak");
-
     setAccuracyStatus(
-      `Accuracy ${Math.round(
-        point.accuracy
-      )} m — waiting for a cleaner signal`
+      `Accuracy ${Math.round(point.accuracy)} m — waiting for a cleaner signal`
     );
-
     return;
   }
 
   setGpsStatus("GPS good");
-
-  setAccuracyStatus(
-    `Accuracy ${Math.round(point.accuracy)} m`
-  );
+  setAccuracyStatus(`Accuracy ${Math.round(point.accuracy)} m`);
 
   if (state.lastPoint) {
-    const distance = haversine(
-      state.lastPoint,
-      point
-    );
+    const distance = haversine(state.lastPoint, point);
 
     if (distance < 150) {
       state.tripDistanceM += distance;
     }
 
-    drawTripLine(
-      state.lastPoint,
-      point
-    );
+    drawTripLine(state.lastPoint, point);
   }
 
   state.lastPoint = point;
@@ -1126,10 +1010,7 @@ function onGpsPosition(position) {
   maybeUpdateWaypointRoute(point);
   renderAllStats();
 
-  if (
-    !state.isLoadingRoads &&
-    !state.isRouting
-  ) {
+  if (!state.isLoadingRoads && !state.isRouting) {
     setDriveStatus("Driving");
   }
 }
@@ -1153,58 +1034,40 @@ function onGpsError(error) {
 function updateUserMarker(point) {
   if (!state.map) return;
 
-  const latlng = [
-    point.lat,
-    point.lng
-  ];
+  const latlng = [point.lat, point.lng];
 
   if (!state.userMarker) {
-    state.userMarker = L.circleMarker(
-      latlng,
-      {
-        radius: 8,
-        color: "#eef7ff",
-        weight: 3,
-        fillColor: ROUTE_BLUE,
-        fillOpacity: 1,
-        interactive: false
-      }
-    ).addTo(state.map);
+    state.userMarker = L.circleMarker(latlng, {
+      radius: 8,
+      color: "#eef7ff",
+      weight: 3,
+      fillColor: ROUTE_BLUE,
+      fillOpacity: 1,
+      interactive: false
+    }).addTo(state.map);
   } else {
     state.userMarker.setLatLng(latlng);
   }
 
   if (!state.accuracyCircle) {
-    state.accuracyCircle = L.circle(
-      latlng,
-      {
-        radius:
-          point.accuracy || 20,
-        color: ROUTE_BLUE,
-        opacity: 0.35,
-        fillColor: ROUTE_BLUE,
-        fillOpacity: 0.06,
-        weight: 1,
-        interactive: false
-      }
-    ).addTo(state.map);
+    state.accuracyCircle = L.circle(latlng, {
+      radius: point.accuracy || 20,
+      color: ROUTE_BLUE,
+      opacity: 0.35,
+      fillColor: ROUTE_BLUE,
+      fillOpacity: 0.06,
+      weight: 1,
+      interactive: false
+    }).addTo(state.map);
   } else {
-    state.accuracyCircle.setLatLng(
-      latlng
-    );
-
-    state.accuracyCircle.setRadius(
-      point.accuracy || 20
-    );
+    state.accuracyCircle.setLatLng(latlng);
+    state.accuracyCircle.setRadius(point.accuracy || 20);
   }
 }
 
 /* ---------- Roads / discovery ---------- */
 
-async function ensureRoadsNearPoint(
-  point,
-  options = {}
-) {
+async function ensureRoadsNearPoint(point, options = {}) {
   const {
     replaceIfFar = true,
     quiet = false
@@ -1214,46 +1077,25 @@ async function ensureRoadsNearPoint(
     await state.roadLoadPromise;
   }
 
-  const needsRoads =
-    state.roadSegments.length === 0;
-
+  const needsRoads = state.roadSegments.length === 0;
   const tooFarFromLoadedArea =
     !state.lastRoadLoadCenter ||
-    haversine(
-      point,
-      state.lastRoadLoadCenter
-    ) > 1000;
+    haversine(point, state.lastRoadLoadCenter) > 1000;
 
   if (
     !needsRoads &&
-    (
-      !replaceIfFar ||
-      !tooFarFromLoadedArea
-    )
+    (!replaceIfFar || !tooFarFromLoadedArea)
   ) {
     return true;
   }
 
-  return loadRoads(
-    point.lat,
-    point.lng,
-    LOAD_RADIUS_M,
-    {
-      replace: true,
-      reason:
-        quiet
-          ? "preview"
-          : "initial"
-    }
-  );
+  return loadRoads(point.lat, point.lng, LOAD_RADIUS_M, {
+    replace: true,
+    reason: quiet ? "preview" : "initial"
+  });
 }
 
-function loadRoads(
-  lat,
-  lng,
-  radiusM,
-  options = {}
-) {
+function loadRoads(lat, lng, radiusM, options = {}) {
   if (state.roadLoadPromise) {
     return state.roadLoadPromise;
   }
@@ -1263,126 +1105,87 @@ function loadRoads(
     reason = "manual"
   } = options;
 
-  state.roadLoadPromise = (
-    async () => {
-      state.isLoadingRoads = true;
+  state.roadLoadPromise = (async () => {
+    state.isLoadingRoads = true;
 
-      if (replace) {
-        state.roadsLayer.clearLayers();
-        state.roadSegments = [];
-        state.roadSegmentIds.clear();
-        state.lastRoadLoadCenter = null;
+    if (replace) {
+      state.roadsLayer?.clearLayers();
+      state.roadSegments = [];
+      state.roadSegmentIds.clear();
+      state.lastRoadLoadCenter = null;
+    }
+
+    if (reason === "auto") {
+      setDriveStatus("Loading more roads ahead");
+    } else if (reason !== "preview") {
+      setDriveStatus("Loading nearby roads");
+    }
+
+    const query = `
+      [out:json][timeout:25];
+      way(around:${Math.round(radiusM)},${lat},${lng})
+        ["highway"]
+        ["highway"!~"footway|cycleway|path|steps|pedestrian|bridleway|corridor|elevator|platform|construction|proposed|raceway"];
+      out tags geom;
+    `;
+
+    try {
+      const response = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+        },
+        body: new URLSearchParams({
+          data: query
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Overpass returned ${response.status}`);
       }
+
+      const data = await response.json();
+      const ways = Array.isArray(data.elements) ? data.elements : [];
+      const before = state.roadSegments.length;
+
+      buildSegmentsFromWays(ways);
+      drawNewSegments(before);
+
+      if (state.needsSavedSegmentsSave) {
+        saveSavedSegments();
+        state.needsSavedSegmentsSave = false;
+      }
+
+      state.lastRoadLoadCenter = {
+        lat,
+        lng,
+        timestamp: Date.now()
+      };
+
+      renderAllStats();
 
       if (reason === "auto") {
-        setDriveStatus(
-          "Loading more roads ahead"
-        );
+        setDriveStatus("Driving");
+      } else if (reason !== "preview" && !state.isRecording) {
+        setDriveStatus("Ready to drive");
+      }
+
+      return state.roadSegments.length > 0;
+    } catch (error) {
+      console.error(error);
+
+      if (reason === "auto") {
+        showToast("Could not auto-load more roads");
+        setDriveStatus("Driving");
       } else if (reason !== "preview") {
-        setDriveStatus(
-          "Loading nearby roads"
-        );
+        showToast("Could not load nearby roads");
       }
 
-      const query = `
-        [out:json][timeout:25];
-        way(around:${Math.round(
-          radiusM
-        )},${lat},${lng})
-          ["highway"]
-          ["highway"!~"footway|cycleway|path|steps|pedestrian|bridleway|corridor|elevator|platform|construction|proposed|raceway"];
-        out tags geom;
-      `;
-
-      try {
-        const response = await fetch(
-          "https://overpass-api.de/api/interpreter",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/x-www-form-urlencoded;charset=UTF-8"
-            },
-            body: new URLSearchParams({
-              data: query
-            })
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(
-            `Overpass returned ${response.status}`
-          );
-        }
-
-        const data =
-          await response.json();
-
-        const ways =
-          Array.isArray(data.elements)
-            ? data.elements
-            : [];
-
-        const before =
-          state.roadSegments.length;
-
-        buildSegmentsFromWays(ways);
-        drawNewSegments(before);
-
-        if (
-          state.needsSavedSegmentsSave
-        ) {
-          saveSavedSegments();
-
-          state.needsSavedSegmentsSave =
-            false;
-        }
-
-        state.lastRoadLoadCenter = {
-          lat,
-          lng,
-          timestamp: Date.now()
-        };
-
-        renderAllStats();
-
-        if (reason === "auto") {
-          setDriveStatus("Driving");
-        } else if (
-          reason !== "preview" &&
-          !state.isRecording
-        ) {
-          setDriveStatus(
-            "Ready to drive"
-          );
-        }
-
-        return (
-          state.roadSegments.length > 0
-        );
-      } catch (error) {
-        console.error(error);
-
-        if (reason === "auto") {
-          showToast(
-            "Could not auto-load more roads"
-          );
-
-          setDriveStatus("Driving");
-        } else if (
-          reason !== "preview"
-        ) {
-          showToast(
-            "Could not load nearby roads"
-          );
-        }
-
-        return false;
-      } finally {
-        state.isLoadingRoads = false;
-      }
+      return false;
+    } finally {
+      state.isLoadingRoads = false;
     }
-  )().finally(() => {
+  })().finally(() => {
     state.roadLoadPromise = null;
   });
 
@@ -1391,24 +1194,14 @@ function loadRoads(
 
 function buildSegmentsFromWays(ways) {
   for (const way of ways) {
-    if (
-      !Array.isArray(way.geometry) ||
-      way.geometry.length < 2
-    ) {
+    if (!Array.isArray(way.geometry) || way.geometry.length < 2) {
       continue;
     }
 
-    const name =
-      way.tags?.name || "Unnamed road";
+    const name = way.tags?.name || "Unnamed road";
+    const highway = way.tags?.highway || "road";
 
-    const highway =
-      way.tags?.highway || "road";
-
-    for (
-      let i = 0;
-      i < way.geometry.length - 1;
-      i++
-    ) {
+    for (let i = 0; i < way.geometry.length - 1; i++) {
       const a = {
         lat: way.geometry[i].lat,
         lng: way.geometry[i].lon
@@ -1419,44 +1212,19 @@ function buildSegmentsFromWays(ways) {
         lng: way.geometry[i + 1].lon
       };
 
-      const distance =
-        haversine(a, b);
+      const distance = haversine(a, b);
 
       if (distance < 3) continue;
 
-      const pieces = Math.max(
-        1,
-        Math.ceil(
-          distance /
-          SEGMENT_SIZE_M
-        )
-      );
+      const pieces = Math.max(1, Math.ceil(distance / SEGMENT_SIZE_M));
 
-      for (
-        let pieceIndex = 0;
-        pieceIndex < pieces;
-        pieceIndex++
-      ) {
-        const start = interpolate(
-          a,
-          b,
-          pieceIndex / pieces
-        );
+      for (let pieceIndex = 0; pieceIndex < pieces; pieceIndex++) {
+        const start = interpolate(a, b, pieceIndex / pieces);
+        const end = interpolate(a, b, (pieceIndex + 1) / pieces);
 
-        const end = interpolate(
-          a,
-          b,
-          (pieceIndex + 1) / pieces
-        );
+        const id = `${way.id}:${i}:${pieceIndex}:${SEGMENT_SIZE_M}`;
 
-        const id =
-          `${way.id}:${i}:` +
-          `${pieceIndex}:` +
-          `${SEGMENT_SIZE_M}`;
-
-        if (
-          state.roadSegmentIds.has(id)
-        ) {
+        if (state.roadSegmentIds.has(id)) {
           continue;
         }
 
@@ -1470,65 +1238,40 @@ function buildSegmentsFromWays(ways) {
             [start.lat, start.lng],
             [end.lat, end.lng]
           ],
-          lengthM:
-            haversine(start, end),
+          lengthM: haversine(start, end),
           visited:
-            Boolean(
-              state.visited[id]
-            ) ||
-            Boolean(
-              state.savedSegments[id]
-            ),
+            Boolean(state.visited[id]) ||
+            Boolean(state.savedSegments[id]),
           currentTrip: false,
           layer: null
         };
 
-        state.roadSegments.push(
-          segment
-        );
+        state.roadSegments.push(segment);
 
         if (segment.visited) {
-          rememberSavedSegment(
-            segment,
-            false
-          );
+          rememberSavedSegment(segment, false);
         }
       }
     }
   }
 }
 
-function drawNewSegments(
-  startIndex = 0
-) {
-  for (
-    let index = startIndex;
-    index < state.roadSegments.length;
-    index++
-  ) {
-    const segment =
-      state.roadSegments[index];
+function drawNewSegments(startIndex = 0) {
+  if (!state.roadsLayer) return;
 
-    const layer = L.polyline(
-      segment.coords,
-      getSegmentStyle(segment)
-    );
+  for (let index = startIndex; index < state.roadSegments.length; index++) {
+    const segment = state.roadSegments[index];
+
+    const layer = L.polyline(segment.coords, getSegmentStyle(segment));
 
     layer.bindTooltip(
-      `${escapeHtml(
-        segment.name
-      )}<br>${
-        segment.visited
-          ? "Discovered"
-          : "Undiscovered"
-      }`,
+      `${escapeHtml(segment.name)}<br>${segment.visited ? "Discovered" : "Undiscovered"}`,
       {
         sticky: true
       }
     );
 
     layer.addTo(state.roadsLayer);
-
     segment.layer = layer;
   }
 }
@@ -1563,113 +1306,67 @@ function getSegmentStyle(segment) {
   };
 }
 
-function maybeAutoLoadMoreRoads(
-  point
-) {
-  if (
-    !state.isRecording ||
-    state.isLoadingRoads
-  ) {
+function maybeAutoLoadMoreRoads(point) {
+  if (!state.isRecording || state.isLoadingRoads) {
     return;
   }
 
   const now = Date.now();
 
-  if (
-    now -
-      state.lastAutoReloadAt <
-    MIN_AUTO_RELOAD_TIME_MS
-  ) {
+  if (now - state.lastAutoReloadAt < MIN_AUTO_RELOAD_TIME_MS) {
     return;
   }
 
   if (!state.lastRoadLoadCenter) {
     state.lastAutoReloadAt = now;
 
-    loadRoads(
-      point.lat,
-      point.lng,
-      LOAD_RADIUS_M,
-      {
-        replace: false,
-        reason: "auto"
-      }
-    );
+    loadRoads(point.lat, point.lng, LOAD_RADIUS_M, {
+      replace: false,
+      reason: "auto"
+    });
 
     return;
   }
 
-  const distanceFromLoadCenter =
-    haversine(
-      point,
-      state.lastRoadLoadCenter
-    );
+  const distanceFromLoadCenter = haversine(point, state.lastRoadLoadCenter);
 
-  if (
-    distanceFromLoadCenter >=
-    AUTO_RELOAD_DISTANCE_M
-  ) {
+  if (distanceFromLoadCenter >= AUTO_RELOAD_DISTANCE_M) {
     state.lastAutoReloadAt = now;
 
-    loadRoads(
-      point.lat,
-      point.lng,
-      LOAD_RADIUS_M,
-      {
-        replace: false,
-        reason: "auto"
-      }
-    );
+    loadRoads(point.lat, point.lng, LOAD_RADIUS_M, {
+      replace: false,
+      reason: "auto"
+    });
   }
 }
 
 function unlockNearbySegments(point) {
   let unlocked = 0;
 
-  for (
-    const segment of
-    state.roadSegments
-  ) {
+  for (const segment of state.roadSegments) {
     if (segment.visited) continue;
 
-    const distance =
-      pointToSegmentDistance(
-        point,
-        segment.coords[0],
-        segment.coords[1]
-      );
+    const distance = pointToSegmentDistance(
+      point,
+      segment.coords[0],
+      segment.coords[1]
+    );
 
-    if (
-      distance <=
-      UNLOCK_RADIUS_M
-    ) {
+    if (distance <= UNLOCK_RADIUS_M) {
       segment.visited = true;
       segment.currentTrip = true;
 
-      const unlockedAt =
-        Date.now();
+      const unlockedAt = Date.now();
 
-      state.visited[segment.id] =
-        unlockedAt;
+      state.visited[segment.id] = unlockedAt;
+      state.tripUnlocked.add(segment.id);
 
-      state.tripUnlocked.add(
-        segment.id
-      );
-
-      state.todayUnlocks.keys[
-        segment.id
-      ] = Math.max(
+      state.todayUnlocks.keys[segment.id] = Math.max(
         1,
-        Math.round(
-          segment.lengthM
-        )
+        Math.round(segment.lengthM)
       );
 
-      rememberSavedSegment(
-        segment,
-        false
-      );
-
+      rememberSavedSegment(segment, false);
       styleSegment(segment);
 
       unlocked++;
@@ -1681,28 +1378,22 @@ function unlockNearbySegments(point) {
     saveSavedSegments();
     saveTodayUnlocks();
 
-    state.needsSavedSegmentsSave =
-      false;
+    state.needsSavedSegmentsSave = false;
 
     showToast(
       unlocked === 1
         ? "Road painted orange"
         : `${unlocked} roads painted orange`
     );
+
+    void maybeSyncProfileStats({ quiet: true });
   }
 
   return unlocked;
 }
 
-function rememberSavedSegment(
-  segment,
-  saveNow = false
-) {
-  if (
-    state.savedSegmentIds.has(
-      segment.id
-    )
-  ) {
+function rememberSavedSegment(segment, saveNow = false) {
+  if (state.savedSegmentIds.has(segment.id)) {
     return;
   }
 
@@ -1710,90 +1401,63 @@ function rememberSavedSegment(
     id: segment.id,
     name: segment.name,
     highway: segment.highway,
-    coords: compactCoords(
-      segment.coords
-    ),
-    lengthM: Math.round(
-      segment.lengthM
-    ),
-    unlockedAt:
-      state.visited[segment.id] ||
-      Date.now()
+    coords: compactCoords(segment.coords),
+    lengthM: Math.round(segment.lengthM),
+    unlockedAt: state.visited[segment.id] || Date.now()
   };
 
-  state.savedSegments[
-    segment.id
-  ] = saved;
-
-  state.savedSegmentIds.add(
-    segment.id
-  );
-
-  state.needsSavedSegmentsSave =
-    true;
+  state.savedSegments[segment.id] = saved;
+  state.savedSegmentIds.add(segment.id);
+  state.needsSavedSegmentsSave = true;
 
   drawSavedSegment(saved);
 
   if (saveNow) {
     saveSavedSegments();
-
-    state.needsSavedSegmentsSave =
-      false;
+    state.needsSavedSegmentsSave = false;
   }
 }
 
 function drawSavedSegments() {
-  state.savedLayer.clearLayers();
+  state.savedLayer?.clearLayers();
   state.savedDrawnIds.clear();
 
-  for (
-    const segment of
-    Object.values(
-      state.savedSegments
-    )
-  ) {
+  for (const segment of Object.values(state.savedSegments)) {
     drawSavedSegment(segment);
   }
 }
 
 function drawSavedSegment(segment) {
   if (
+    !state.savedLayer ||
     !segment ||
     !segment.id ||
     !validCoords(segment.coords) ||
-    state.savedDrawnIds.has(
-      segment.id
-    )
+    state.savedDrawnIds.has(segment.id)
   ) {
     return;
   }
 
-  L.polyline(
-    segment.coords,
-    {
-      color: ROAD_ORANGE,
-      weight: 5,
-      opacity: 0.95,
-      lineCap: "round",
-      lineJoin: "round",
-      interactive: false
-    }
-  ).addTo(state.savedLayer);
+  L.polyline(segment.coords, {
+    color: ROAD_ORANGE,
+    weight: 5,
+    opacity: 0.95,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false
+  }).addTo(state.savedLayer);
 
-  state.savedDrawnIds.add(
-    segment.id
-  );
+  state.savedDrawnIds.add(segment.id);
 }
 
 function styleSegment(segment) {
   if (!segment.layer) return;
-
-  segment.layer.setStyle(
-    getSegmentStyle(segment)
-  );
+  segment.layer.setStyle(getSegmentStyle(segment));
 }
 
 function drawTripLine(a, b) {
+  if (!state.tripLayer) return;
+
   L.polyline(
     [
       [a.lat, a.lng],
@@ -1811,9 +1475,7 @@ function drawTripLine(a, b) {
 }
 
 function resetDiscoveredRoads() {
-  const confirmed = confirm(
-    "Reset all discovered roads saved on this device?"
-  );
+  const confirmed = confirm("Reset all discovered roads saved on this device?");
 
   if (!confirmed) return;
 
@@ -1822,7 +1484,7 @@ function resetDiscoveredRoads() {
 
   state.savedSegmentIds.clear();
   state.savedDrawnIds.clear();
-  state.savedLayer.clearLayers();
+  state.savedLayer?.clearLayers();
 
   state.todayUnlocks = {
     date: getTodayKey(),
@@ -1833,10 +1495,7 @@ function resetDiscoveredRoads() {
   saveSavedSegments();
   saveTodayUnlocks();
 
-  for (
-    const segment of
-    state.roadSegments
-  ) {
+  for (const segment of state.roadSegments) {
     segment.visited = false;
     segment.currentTrip = false;
     styleSegment(segment);
@@ -1845,25 +1504,17 @@ function resetDiscoveredRoads() {
   state.tripUnlocked.clear();
 
   renderAllStats();
+  void maybeSyncProfileStats({ force: true, quiet: true });
 
-  showToast(
-    "Discovered roads reset"
-  );
+  showToast("Discovered roads reset");
 }
 
 /* ---------- Waypoint ---------- */
 
-function onMapClickForWaypoint(
-  event
-) {
-  if (
-    !state.awaitingWaypointClick
-  ) {
-    return;
-  }
+function onMapClickForWaypoint(event) {
+  if (!state.awaitingWaypointClick) return;
 
-  state.awaitingWaypointClick =
-    false;
+  state.awaitingWaypointClick = false;
 
   setWaypoint({
     lat: event.latlng.lat,
@@ -1877,10 +1528,7 @@ async function setWaypoint(point) {
   drawWaypointMarker(point);
   updateWaypointButtons();
 
-  setDriveStatus(
-    "Finding waypoint route"
-  );
-
+  setDriveStatus("Finding waypoint route");
   showToast("Waypoint set");
 
   await routeToWaypoint({
@@ -1890,156 +1538,94 @@ async function setWaypoint(point) {
 }
 
 function drawWaypointMarker(point) {
-  const latlng = [
-    point.lat,
-    point.lng
-  ];
+  if (!state.routeLayer) return;
+
+  const latlng = [point.lat, point.lng];
 
   if (!state.waypointMarker) {
-    state.waypointMarker =
-      L.circleMarker(
-        latlng,
-        {
-          radius: 9,
-          color: "#eef7ff",
-          weight: 4,
-          fillColor: ROUTE_BLUE,
-          fillOpacity: 1
-        }
-      ).addTo(state.routeLayer);
+    state.waypointMarker = L.circleMarker(latlng, {
+      radius: 9,
+      color: "#eef7ff",
+      weight: 4,
+      fillColor: ROUTE_BLUE,
+      fillOpacity: 1
+    }).addTo(state.routeLayer);
 
-    state.waypointMarker.bindTooltip(
-      "Waypoint",
-      {
-        sticky: true
-      }
-    );
+    state.waypointMarker.bindTooltip("Waypoint", {
+      sticky: true
+    });
   } else {
-    state.waypointMarker.setLatLng(
-      latlng
-    );
+    state.waypointMarker.setLatLng(latlng);
   }
 }
 
-async function routeToWaypoint(
-  options = {}
-) {
+async function routeToWaypoint(options = {}) {
   const {
     fit = false,
     silent = false
   } = options;
 
-  if (
-    !state.waypointPoint ||
-    state.isRouting
-  ) {
+  if (!state.waypointPoint || state.isRouting) {
     return;
   }
 
-  const start =
-    await getFreshRouteStartPoint();
+  const start = await getFreshRouteStartPoint();
 
   if (!start) {
-    showToast(
-      "Need GPS before routing to waypoint"
-    );
-
+    showToast("Need GPS before routing to waypoint");
     return;
   }
 
-  const requestId =
-    ++state.routeRequestId;
+  const requestId = ++state.routeRequestId;
 
   state.isRouting = true;
 
   if (!silent) {
-    setDriveStatus(
-      "Finding waypoint route"
-    );
+    setDriveStatus("Finding waypoint route");
   }
 
   try {
-    const route =
-      await fetchRoadRoute(
-        start,
-        state.waypointPoint
-      );
+    const route = await fetchRoadRoute(start, state.waypointPoint);
 
-    if (
-      requestId !==
-      state.routeRequestId
-    ) {
+    if (requestId !== state.routeRequestId) {
       return;
     }
 
     drawRouteLine(route.coords);
 
-    state.routeDistanceM =
-      route.distanceM;
+    state.routeDistanceM = route.distanceM;
+    state.routeDurationS = route.durationS;
+    state.lastRouteStartPoint = start;
+    state.lastRouteAt = Date.now();
 
-    state.routeDurationS =
-      route.durationS;
-
-    state.lastRouteStartPoint =
-      start;
-
-    state.lastRouteAt =
-      Date.now();
-
-    if (
-      fit &&
-      route.coords.length > 1
-    ) {
-      state.map?.fitBounds(
-        L.latLngBounds(
-          route.coords
-        ),
-        {
-          padding: [70, 120],
-          maxZoom: 16
-        }
-      );
+    if (fit && route.coords.length > 1) {
+      state.map?.fitBounds(L.latLngBounds(route.coords), {
+        padding: [70, 120],
+        maxZoom: 16
+      });
 
       state.followUser = false;
     }
 
     setDriveStatus(
       state.isRecording
-        ? `Driving • waypoint ${metersToKm(
-            route.distanceM
-          )} km`
-        : `Waypoint ${metersToKm(
-            route.distanceM
-          )} km away`
+        ? `Driving • waypoint ${metersToKm(route.distanceM)} km`
+        : `Waypoint ${metersToKm(route.distanceM)} km away`
     );
   } catch (error) {
     console.error(error);
 
-    showToast(
-      "Could not find a road route to that waypoint"
-    );
+    showToast("Could not find a road route to that waypoint");
 
-    if (state.isRecording) {
-      setDriveStatus("Driving");
-    } else {
-      setDriveStatus(
-        "Ready to drive"
-      );
-    }
+    setDriveStatus(state.isRecording ? "Driving" : "Ready to drive");
   } finally {
     state.isRouting = false;
     updateWaypointButtons();
   }
 }
 
-async function fetchRoadRoute(
-  start,
-  end
-) {
-  const coords =
-    `${start.lng},${start.lat};` +
-    `${end.lng},${end.lat}`;
-
+async function fetchRoadRoute(start, end) {
+  const coords = `${start.lng},${start.lat};${end.lng},${end.lat}`;
   const url =
     `https://router.project-osrm.org/route/v1/driving/${coords}` +
     "?overview=full&geometries=geojson&steps=false";
@@ -2047,69 +1633,49 @@ async function fetchRoadRoute(
   const response = await fetch(url);
 
   if (!response.ok) {
-    throw new Error(
-      `Routing returned ${response.status}`
-    );
+    throw new Error(`Routing returned ${response.status}`);
   }
 
-  const data =
-    await response.json();
+  const data = await response.json();
 
-  if (
-    data.code !== "Ok" ||
-    !data.routes?.[0]
-  ) {
-    throw new Error(
-      data.message ||
-      "No route found"
-    );
+  if (data.code !== "Ok" || !data.routes?.[0]) {
+    throw new Error(data.message || "No route found");
   }
 
   const route = data.routes[0];
 
   return {
-    distanceM:
-      route.distance || 0,
-    durationS:
-      route.duration || 0,
-    coords:
-      route.geometry.coordinates.map(
-        (coord) => [
-          coord[1],
-          coord[0]
-        ]
-      )
+    distanceM: route.distance || 0,
+    durationS: route.duration || 0,
+    coords: route.geometry.coordinates.map((coord) => [
+      coord[1],
+      coord[0]
+    ])
   };
 }
 
 async function getFreshRouteStartPoint() {
   if (
     state.currentPoint &&
-    Date.now() -
-      state.currentPoint.timestamp <
-      30000 &&
-    state.currentPoint.accuracy <=
-      MAX_GPS_ACCURACY_M
+    Date.now() - state.currentPoint.timestamp < 30000 &&
+    state.currentPoint.accuracy <= MAX_GPS_ACCURACY_M
   ) {
     return state.currentPoint;
   }
 
-  const position =
-    await getCurrentPosition({
-      enableHighAccuracy: true,
-      timeout: 9000,
-      maximumAge: 5000
-    });
+  const position = await getCurrentPosition({
+    enableHighAccuracy: true,
+    timeout: 9000,
+    maximumAge: 5000
+  });
 
   if (!position) {
     return state.currentPoint;
   }
 
-  const point =
-    positionToPoint(position);
+  const point = positionToPoint(position);
 
   state.currentPoint = point;
-
   updateUserMarker(point);
 
   return point;
@@ -2119,35 +1685,30 @@ function drawRouteLine(coords) {
   clearRouteLine();
 
   if (
+    !state.routeLayer ||
     !Array.isArray(coords) ||
     coords.length < 2
   ) {
     return;
   }
 
-  state.routeHalo = L.polyline(
-    coords,
-    {
-      color: "#eef7ff",
-      weight: 9,
-      opacity: 0.72,
-      lineCap: "round",
-      lineJoin: "round",
-      interactive: false
-    }
-  ).addTo(state.routeLayer);
+  state.routeHalo = L.polyline(coords, {
+    color: "#eef7ff",
+    weight: 9,
+    opacity: 0.72,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false
+  }).addTo(state.routeLayer);
 
-  state.routeLine = L.polyline(
-    coords,
-    {
-      color: ROUTE_BLUE,
-      weight: 5,
-      opacity: 1,
-      lineCap: "round",
-      lineJoin: "round",
-      interactive: false
-    }
-  ).addTo(state.routeLayer);
+  state.routeLine = L.polyline(coords, {
+    color: ROUTE_BLUE,
+    weight: 5,
+    opacity: 1,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false
+  }).addTo(state.routeLayer);
 
   if (state.waypointMarker) {
     state.waypointMarker.bringToFront();
@@ -2155,28 +1716,19 @@ function drawRouteLine(coords) {
 }
 
 function clearRouteLine() {
-  if (state.routeHalo) {
-    state.routeLayer.removeLayer(
-      state.routeHalo
-    );
-
+  if (state.routeHalo && state.routeLayer) {
+    state.routeLayer.removeLayer(state.routeHalo);
     state.routeHalo = null;
   }
 
-  if (state.routeLine) {
-    state.routeLayer.removeLayer(
-      state.routeLine
-    );
-
+  if (state.routeLine && state.routeLayer) {
+    state.routeLayer.removeLayer(state.routeLine);
     state.routeLine = null;
   }
 }
 
-function clearWaypoint(
-  showMessage = true
-) {
-  state.awaitingWaypointClick =
-    false;
+function clearWaypoint(showMessage = true) {
+  state.awaitingWaypointClick = false;
 
   state.waypointPoint = null;
   state.routeDistanceM = 0;
@@ -2188,11 +1740,8 @@ function clearWaypoint(
 
   clearRouteLine();
 
-  if (state.waypointMarker) {
-    state.routeLayer.removeLayer(
-      state.waypointMarker
-    );
-
+  if (state.waypointMarker && state.routeLayer) {
+    state.routeLayer.removeLayer(state.waypointMarker);
     state.waypointMarker = null;
   }
 
@@ -2202,44 +1751,24 @@ function clearWaypoint(
     showToast("Waypoint cleared");
   }
 
-  setDriveStatus(
-    state.isRecording
-      ? "Driving"
-      : "Ready to drive"
-  );
+  setDriveStatus(state.isRecording ? "Driving" : "Ready to drive");
 }
 
 function updateWaypointButtons() {
   if (!els.clearWaypointBtn) return;
 
-  const hasWaypoint =
-    Boolean(state.waypointPoint);
+  const hasWaypoint = Boolean(state.waypointPoint);
+  const showClear = hasWaypoint || state.awaitingWaypointClick;
 
-  const showClear =
-    hasWaypoint ||
-    state.awaitingWaypointClick;
-
-  els.clearWaypointBtn.classList.toggle(
-    "hidden",
-    !showClear
-  );
+  els.clearWaypointBtn.classList.toggle("hidden", !showClear);
 }
 
-function maybeUpdateWaypointRoute(
-  point
-) {
+function maybeUpdateWaypointRoute(point) {
   if (!state.waypointPoint) return;
 
-  const distanceToWaypoint =
-    haversine(
-      point,
-      state.waypointPoint
-    );
+  const distanceToWaypoint = haversine(point, state.waypointPoint);
 
-  if (
-    distanceToWaypoint <=
-    ROUTE_ARRIVAL_RADIUS_M
-  ) {
+  if (distanceToWaypoint <= ROUTE_ARRIVAL_RADIUS_M) {
     clearWaypoint(false);
     showToast("Waypoint reached");
     return;
@@ -2255,24 +1784,13 @@ function maybeUpdateWaypointRoute(
 
   const now = Date.now();
 
-  if (
-    now -
-      state.lastRouteAt <
-    ROUTE_MIN_REROUTE_TIME_MS
-  ) {
+  if (now - state.lastRouteAt < ROUTE_MIN_REROUTE_TIME_MS) {
     return;
   }
 
-  const movedSinceRoute =
-    haversine(
-      point,
-      state.lastRouteStartPoint
-    );
+  const movedSinceRoute = haversine(point, state.lastRouteStartPoint);
 
-  if (
-    movedSinceRoute <
-    ROUTE_REROUTE_DISTANCE_M
-  ) {
+  if (movedSinceRoute < ROUTE_REROUTE_DISTANCE_M) {
     return;
   }
 
@@ -2281,7 +1799,6 @@ function maybeUpdateWaypointRoute(
     silent: true
   });
 }
-
 
 /* ---------- Supabase Road Profile / Auth ---------- */
 
@@ -2293,7 +1810,6 @@ function initSupabase() {
       "Supabase did not load. Map still works locally, but Road Profile is unavailable.",
       "error"
     );
-
     return;
   }
 
@@ -2309,29 +1825,28 @@ function initSupabase() {
     }
   );
 
-  state.auth.client.auth.onAuthStateChange(
-    async (event, session) => {
-      state.auth.session = session || null;
-      state.auth.user = session?.user || null;
+  state.auth.client.auth.onAuthStateChange(async (event, session) => {
+    state.auth.session = session || null;
+    state.auth.user = session?.user || null;
 
-      if (event === "PASSWORD_RECOVERY") {
-        state.auth.passwordRecovery = true;
-        showPasswordRecoveryBox();
-        setAuthMessage("Enter a new password to finish the reset.", "info");
-      }
-
-      if (state.auth.user) {
-        await ensureRoadProfile({ quiet: true });
-        await refreshFriendData({ quiet: true });
-      } else {
-        state.auth.profile = null;
-        state.auth.loading = false;
-        clearFriendData();
-      }
-
-      renderAuthState();
+    if (event === "PASSWORD_RECOVERY") {
+      state.auth.passwordRecovery = true;
+      showPasswordRecoveryBox();
+      setAuthMessage("Enter a new password to finish the reset.", "info");
     }
-  );
+
+    if (state.auth.user) {
+      await ensureRoadProfile({ quiet: true });
+      await maybeSyncProfileStats({ force: true, quiet: true });
+      await refreshFriendData({ quiet: true });
+    } else {
+      state.auth.profile = null;
+      state.auth.loading = false;
+      clearFriendData();
+    }
+
+    renderAuthState();
+  });
 
   loadInitialAuthSession();
 }
@@ -2339,12 +1854,6 @@ function initSupabase() {
 async function loadInitialAuthSession() {
   if (!state.auth.client) return;
 
-  /*
-    Do not disable the Create / Sign in buttons while Supabase checks
-    for an existing saved session. Some mobile browsers can leave that
-    check slow or stuck, which made the auth fields typeable but the
-    Create Road Profile button physically unclickable.
-  */
   state.auth.checkingSession = true;
   renderAuthState();
 
@@ -2364,6 +1873,7 @@ async function loadInitialAuthSession() {
 
   if (state.auth.user) {
     await ensureRoadProfile({ quiet: true });
+    await maybeSyncProfileStats({ force: true, quiet: true });
     await refreshFriendData({ quiet: true });
   } else {
     state.auth.profile = null;
@@ -2440,9 +1950,7 @@ async function createRoadProfileAccount() {
     return;
   }
 
-  if (state.auth.submitting) {
-    return;
-  }
+  if (state.auth.submitting) return;
 
   const email = els.createEmailInput?.value.trim();
   const password = els.createPasswordInput?.value || "";
@@ -2481,6 +1989,7 @@ async function createRoadProfileAccount() {
 
   if (state.auth.session && state.auth.user) {
     await ensureRoadProfile({ quiet: false });
+    await maybeSyncProfileStats({ force: true, quiet: true });
     state.auth.loading = false;
     state.auth.submitting = false;
     setAuthMessage("Road Profile created.", "success");
@@ -2504,9 +2013,7 @@ async function signInRoadProfile() {
     return;
   }
 
-  if (state.auth.submitting) {
-    return;
-  }
+  if (state.auth.submitting) return;
 
   const email = els.signInEmailInput?.value.trim();
   const password = els.signInPasswordInput?.value || "";
@@ -2540,6 +2047,7 @@ async function signInRoadProfile() {
 
   if (state.auth.user) {
     await ensureRoadProfile({ quiet: false });
+    await maybeSyncProfileStats({ force: true, quiet: true });
     await refreshFriendData({ quiet: true });
     state.auth.loading = false;
     state.auth.submitting = false;
@@ -2574,6 +2082,7 @@ async function signOutRoadProfile() {
   state.auth.user = null;
   state.auth.profile = null;
   state.auth.loading = false;
+
   clearFriendData();
 
   renderAuthState();
@@ -2646,9 +2155,7 @@ async function updateRecoveredPassword() {
 
   state.auth.passwordRecovery = false;
 
-  if (els.resetPasswordBox) {
-    els.resetPasswordBox.classList.add("hidden");
-  }
+  els.resetPasswordBox?.classList.add("hidden");
 
   if (els.newPasswordInput) {
     els.newPasswordInput.value = "";
@@ -2714,6 +2221,10 @@ async function handleProfilePrivacyToggle(field, checked) {
 
   saveFriendSettings();
   applyFriendSettingsToUI();
+
+  if (field === "show_profile" && checked) {
+    void maybeSyncProfileStats({ force: true, quiet: true });
+  }
 
   if (field === "show_profile") {
     showToast(checked ? "Road Profile sharing on" : "Road Profile sharing off");
@@ -2795,11 +2306,6 @@ function renderAuthState() {
     showPasswordRecoveryBox();
   }
 
-  /*
-    Keep the signed-out Create / Sign in buttons clickable during the
-    initial saved-session check. Only disable them after the user has
-    actually submitted an auth action.
-  */
   if (els.createProfileBtn) {
     els.createProfileBtn.disabled = signedIn || submitting;
   }
@@ -2829,7 +2335,10 @@ function renderAuthState() {
   });
 
   if (els.copyFriendCodeBtn) {
-    els.copyFriendCodeBtn.disabled = loading || submitting || !profile?.friend_code;
+    els.copyFriendCodeBtn.disabled =
+      loading ||
+      submitting ||
+      !profile?.friend_code;
   }
 
   applyFriendSettingsToUI();
@@ -2866,6 +2375,9 @@ function clearFriendData() {
   state.friends.respondingRequestId = null;
   state.friends.respondingAction = null;
   state.activeFriendId = null;
+  state.statsSync.syncing = false;
+  state.statsSync.lastSyncAt = 0;
+  state.statsSync.lastPayloadKey = "";
 }
 
 async function refreshFriendData(options = {}) {
@@ -2891,6 +2403,7 @@ async function refreshFriendData(options = {}) {
 
 function renderFriendsList() {
   const signedIn = Boolean(state.auth.user && state.auth.profile);
+
   const busy =
     Boolean(state.auth.loading) ||
     Boolean(state.auth.submitting) ||
@@ -3057,7 +2570,13 @@ async function loadFriends(options = {}) {
     renderFriendsList();
   }
 
-  const { data, error } = await state.auth.client.rpc("get_friends");
+  let { data, error } = await state.auth.client.rpc("get_friends_with_stats");
+
+  if (error && isMissingRpcError(error)) {
+    const fallback = await state.auth.client.rpc("get_friends");
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   state.friends.loadingFriends = false;
 
@@ -3101,20 +2620,18 @@ async function respondToIncomingFriendRequest(action, requestId) {
     return;
   }
 
-  const rpcName = action === "accept"
-    ? "accept_friend_request"
-    : "decline_friend_request";
+  const rpcName =
+    action === "accept"
+      ? "accept_friend_request"
+      : "decline_friend_request";
 
   state.friends.respondingRequestId = requestId;
   state.friends.respondingAction = action;
   renderFriendsList();
 
-  const { error } = await state.auth.client.rpc(
-    rpcName,
-    {
-      request_id: requestId
-    }
-  );
+  const { error } = await state.auth.client.rpc(rpcName, {
+    request_id: requestId
+  });
 
   state.friends.respondingRequestId = null;
   state.friends.respondingAction = null;
@@ -3126,7 +2643,12 @@ async function respondToIncomingFriendRequest(action, requestId) {
     return;
   }
 
-  showToast(action === "accept" ? "Friend request accepted" : "Friend request declined");
+  showToast(
+    action === "accept"
+      ? "Friend request accepted"
+      : "Friend request declined"
+  );
+
   await refreshFriendData({ quiet: true });
   renderFriendsList();
 }
@@ -3231,12 +2753,33 @@ function renderAcceptedFriendRow(friend) {
   const username = friend.username || "Road Profile";
   const friendCode = friend.friend_code || "Friend code hidden";
   const initial = username.slice(0, 1).toUpperCase() || "R";
+
   const profileStatus = friend.show_profile
     ? "Profile sharing on"
     : "Profile private";
+
   const mapStatus = friend.show_map
     ? "Map overview on"
     : "Map private";
+
+  const stats = normaliseFriendStats(friend);
+
+  const score = !friend.show_profile
+    ? "Private"
+    : stats.hasStats
+      ? `${formatAustraliaPercent(stats.australiaPercent)}%`
+      : "No stats";
+
+  const scoreSub = !friend.show_profile
+    ? "Profile"
+    : stats.hasStats
+      ? "Australia"
+      : "Waiting";
+
+  const syncedText =
+    friend.show_profile && stats.hasStats
+      ? ` • ${formatSyncedTime(stats.lastSyncedAt)}`
+      : "";
 
   return `
     <button class="friend-row real-friend-row" type="button" data-friend-id="${escapeHtml(friendId)}">
@@ -3244,12 +2787,12 @@ function renderAcceptedFriendRow(friend) {
 
       <div class="friend-main">
         <div class="friend-name">${escapeHtml(username)}</div>
-        <div class="friend-sub">${escapeHtml(friendCode)} • ${escapeHtml(profileStatus)} • ${escapeHtml(mapStatus)}</div>
+        <div class="friend-sub">${escapeHtml(friendCode)} • ${escapeHtml(profileStatus)} • ${escapeHtml(mapStatus)}${escapeHtml(syncedText)}</div>
       </div>
 
       <div class="friend-score">
-        <strong>Friend</strong>
-        <span>Open</span>
+        <strong>${escapeHtml(score)}</strong>
+        <span>${escapeHtml(scoreSub)}</span>
       </div>
     </button>
   `;
@@ -3272,6 +2815,11 @@ function normaliseFriendRequestRpcResult(data) {
   }
 
   return {};
+}
+
+function isMissingRpcError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("function") && message.includes("does not exist");
 }
 
 function friendRequestErrorMessage(error) {
@@ -3302,7 +2850,7 @@ function friendRequestErrorMessage(error) {
   }
 
   if (message.includes("function") && message.includes("does not exist")) {
-    return "Checkpoint 3 SQL has not been installed yet";
+    return "Checkpoint SQL has not been installed yet";
   }
 
   return error?.message || "Friend action failed";
@@ -3324,6 +2872,7 @@ function openFriendProfile(friendId) {
   const initial = username.slice(0, 1).toUpperCase() || "R";
   const profileShared = Boolean(friend.show_profile);
   const mapShared = Boolean(friend.show_map);
+  const stats = normaliseFriendStats(friend);
 
   if (els.friendProfileAvatar) {
     els.friendProfileAvatar.textContent = initial;
@@ -3334,27 +2883,45 @@ function openFriendProfile(friendId) {
   }
 
   if (els.friendProfileHandle) {
-    els.friendProfileHandle.textContent = friendCode;
+    if (!profileShared) {
+      els.friendProfileHandle.textContent = `${friendCode} • profile private`;
+    } else if (stats.hasStats) {
+      els.friendProfileHandle.textContent = `${friendCode} • ${formatSyncedTime(stats.lastSyncedAt)}`;
+    } else {
+      els.friendProfileHandle.textContent = `${friendCode} • not synced yet`;
+    }
   }
 
-  if (els.friendAustraliaStat) {
-    els.friendAustraliaStat.textContent = profileShared
-      ? "Not synced yet"
-      : "Private";
-  }
+  if (!profileShared) {
+    setText(els.friendAustraliaStat, "Private");
+    setText(els.friendUnlockedStat, "Private");
+    setText(els.friendTodayStat, "Private");
+    setText(els.friendWeekStat, "Private");
+  } else if (!stats.hasStats) {
+    setText(els.friendAustraliaStat, "Not synced yet");
+    setText(els.friendUnlockedStat, "Road sync off");
+    setText(els.friendTodayStat, "Not synced yet");
+    setText(els.friendWeekStat, "Not synced yet");
+  } else {
+    setText(
+      els.friendAustraliaStat,
+      `${formatAustraliaPercent(stats.australiaPercent)}%`
+    );
 
-  if (els.friendUnlockedStat) {
-    els.friendUnlockedStat.textContent = profileShared
-      ? "Road sync off"
-      : "Private";
-  }
+    setText(
+      els.friendUnlockedStat,
+      `${formatUnlockedNumber(stats.unlockedCount)} • ${stats.unlockedKm.toFixed(2)} km`
+    );
 
-  if (els.friendTodayStat) {
-    els.friendTodayStat.textContent = "Private";
-  }
+    setText(
+      els.friendTodayStat,
+      `${stats.todayKm.toFixed(2)} km`
+    );
 
-  if (els.friendWeekStat) {
-    els.friendWeekStat.textContent = "Private";
+    setText(
+      els.friendWeekStat,
+      `${stats.weekKm.toFixed(2)} km`
+    );
   }
 
   if (els.openFriendMapBtn) {
@@ -3367,9 +2934,7 @@ function openFriendProfile(friendId) {
 }
 
 function renderFriendPreviewSvg(friend) {
-  if (!els.friendMapPreviewSvg) {
-    return;
-  }
+  if (!els.friendMapPreviewSvg) return;
 
   els.friendMapPreviewSvg.innerHTML = "";
 
@@ -3393,9 +2958,7 @@ function renderFriendPreviewSvg(friend) {
 }
 
 function renderFriendFullMapSvg(friend) {
-  if (!els.friendFullMapSvg) {
-    return;
-  }
+  if (!els.friendFullMapSvg) return;
 
   els.friendFullMapSvg.innerHTML = "";
 
@@ -3489,54 +3052,237 @@ function applyFriendSettingsToUI() {
   }
 }
 
+/* ---------- Checkpoint 4 safe profile stats sync ---------- */
+
+async function maybeSyncProfileStats(options = {}) {
+  const {
+    force = false,
+    quiet = true
+  } = options;
+
+  if (!state.auth.client || !state.auth.user || !state.auth.profile) {
+    return false;
+  }
+
+  if (state.statsSync.syncing) {
+    return false;
+  }
+
+  fixTodayIfNeeded();
+
+  const stats = calculateLocalProfileStats();
+
+  const payloadKey = JSON.stringify({
+    unlockedCount: stats.unlockedCount,
+    unlockedKm: stats.unlockedKm,
+    todayKm: stats.todayKm,
+    weekKm: stats.weekKm,
+    australiaPercent: stats.australiaPercent
+  });
+
+  const now = Date.now();
+
+  if (
+    !force &&
+    state.statsSync.lastPayloadKey === payloadKey &&
+    now - state.statsSync.lastSyncAt < PROFILE_STATS_SYNC_MIN_MS
+  ) {
+    return false;
+  }
+
+  state.statsSync.syncing = true;
+
+  const syncedAt = new Date().toISOString();
+
+  const payload = {
+    user_id: state.auth.user.id,
+    unlocked_count: stats.unlockedCount,
+    unlocked_km: stats.unlockedKm,
+    today_km: stats.todayKm,
+    week_km: stats.weekKm,
+    australia_percent: stats.australiaPercent,
+    last_synced_at: syncedAt,
+    updated_at: syncedAt
+  };
+
+  const { error } = await state.auth.client
+    .from("profile_stats")
+    .upsert(payload, {
+      onConflict: "user_id"
+    });
+
+  state.statsSync.syncing = false;
+
+  if (error) {
+    console.error(error);
+
+    if (!quiet) {
+      showToast(checkpoint4ErrorMessage(error));
+    }
+
+    return false;
+  }
+
+  state.statsSync.lastSyncAt = now;
+  state.statsSync.lastPayloadKey = payloadKey;
+
+  if (!quiet) {
+    showToast("Safe Road Profile stats synced");
+  }
+
+  return true;
+}
+
+function calculateLocalProfileStats() {
+  const unlockedCount = Object.keys(state.savedSegments).length;
+  const unlockedKm = roundKm(sumSavedSegmentsMeters() / 1000);
+  const todayKm = roundKm(sumTodayUnlockedKm());
+  const weekKm = roundKm(
+    sumSavedSegmentsMetersSince(Date.now() - 7 * DAY_MS) / 1000
+  );
+
+  const australiaPercent = Number(
+    ((unlockedCount / AU_TOTAL_UNLOCKS_ESTIMATE) * 100).toFixed(6)
+  );
+
+  return {
+    unlockedCount,
+    unlockedKm,
+    todayKm,
+    weekKm,
+    australiaPercent
+  };
+}
+
+function sumSavedSegmentsMeters() {
+  let meters = 0;
+
+  for (const segment of Object.values(state.savedSegments)) {
+    meters += safeSegmentLengthM(segment);
+  }
+
+  return meters;
+}
+
+function sumSavedSegmentsMetersSince(timestamp) {
+  let meters = 0;
+
+  for (const segment of Object.values(state.savedSegments)) {
+    const unlockedAt = Number(segment?.unlockedAt) || 0;
+
+    if (unlockedAt >= timestamp) {
+      meters += safeSegmentLengthM(segment);
+    }
+  }
+
+  return meters;
+}
+
+function safeSegmentLengthM(segment) {
+  const length = Number(segment?.lengthM);
+
+  return Number.isFinite(length) && length > 0
+    ? length
+    : SEGMENT_SIZE_M;
+}
+
+function roundKm(value) {
+  return Number((Number(value) || 0).toFixed(2));
+}
+
+function normaliseFriendStats(friend) {
+  const lastSyncedAt =
+    friend?.last_synced_at ||
+    friend?.stats_last_synced_at ||
+    null;
+
+  return {
+    hasStats: Boolean(lastSyncedAt),
+    unlockedCount: Math.max(0, Math.round(Number(friend?.unlocked_count) || 0)),
+    unlockedKm: Math.max(0, Number(friend?.unlocked_km) || 0),
+    todayKm: Math.max(0, Number(friend?.today_km) || 0),
+    weekKm: Math.max(0, Number(friend?.week_km) || 0),
+    australiaPercent: Math.max(0, Number(friend?.australia_percent) || 0),
+    lastSyncedAt
+  };
+}
+
+function formatSyncedTime(value) {
+  if (!value) {
+    return "not synced yet";
+  }
+
+  const time = new Date(value).getTime();
+
+  if (!Number.isFinite(time)) {
+    return "synced recently";
+  }
+
+  const ageSeconds = Math.max(0, Math.round((Date.now() - time) / 1000));
+
+  if (ageSeconds < 60) {
+    return "synced just now";
+  }
+
+  const ageMinutes = Math.round(ageSeconds / 60);
+
+  if (ageMinutes < 60) {
+    return `synced ${ageMinutes} min ago`;
+  }
+
+  const ageHours = Math.round(ageMinutes / 60);
+
+  if (ageHours < 24) {
+    return `synced ${ageHours} hr ago`;
+  }
+
+  const ageDays = Math.round(ageHours / 24);
+
+  if (ageDays < 8) {
+    return `synced ${ageDays} day${ageDays === 1 ? "" : "s"} ago`;
+  }
+
+  return `synced ${new Date(value).toLocaleDateString("en-AU")}`;
+}
+
+function checkpoint4ErrorMessage(error) {
+  const message = String(error?.message || "").toLowerCase();
+
+  if (message.includes("profile_stats") || message.includes("does not exist")) {
+    return "Checkpoint 4 SQL has not been installed yet";
+  }
+
+  return error?.message || "Could not sync safe stats";
+}
+
 /* ---------- Stats ---------- */
 
 function renderAllStats() {
   fixTodayIfNeeded();
 
-  const lifetimeUnlocked =
-    Object.keys(
-      state.savedSegments
-    ).length;
-
+  const lifetimeUnlocked = Object.keys(state.savedSegments).length;
   const australiaPercent =
-    (
-      lifetimeUnlocked /
-      AU_TOTAL_UNLOCKS_ESTIMATE
-    ) * 100;
+    (lifetimeUnlocked / AU_TOTAL_UNLOCKS_ESTIMATE) * 100;
 
   if (els.australiaStat) {
-    els.australiaStat.textContent =
-      `${formatAustraliaPercent(
-        australiaPercent
-      )}%`;
+    els.australiaStat.textContent = `${formatAustraliaPercent(australiaPercent)}%`;
   }
 
   if (els.todayStat) {
-    els.todayStat.textContent =
-      `${sumTodayUnlockedKm().toFixed(
-        2
-      )} km`;
+    els.todayStat.textContent = `${sumTodayUnlockedKm().toFixed(2)} km`;
   }
 
   if (els.unlockedStat) {
     els.unlockedStat.textContent =
-      `${formatUnlockedNumber(
-        lifetimeUnlocked
-      )} / ` +
-      `${formatCompactNumber(
-        AU_TOTAL_UNLOCKS_ESTIMATE
-      )}`;
+      `${formatUnlockedNumber(lifetimeUnlocked)} / ` +
+      `${formatCompactNumber(AU_TOTAL_UNLOCKS_ESTIMATE)}`;
   }
 }
 
 function fixTodayIfNeeded() {
   const today = getTodayKey();
 
-  if (
-    state.todayUnlocks.date !==
-    today
-  ) {
+  if (state.todayUnlocks.date !== today) {
     state.todayUnlocks = {
       date: today,
       keys: {}
@@ -3549,16 +3295,8 @@ function fixTodayIfNeeded() {
 function sumTodayUnlockedKm() {
   let meters = 0;
 
-  for (
-    const value of
-    Object.values(
-      state.todayUnlocks.keys
-    )
-  ) {
-    if (
-      typeof value === "number" &&
-      Number.isFinite(value)
-    ) {
+  for (const value of Object.values(state.todayUnlocks.keys)) {
+    if (typeof value === "number" && Number.isFinite(value)) {
       meters += value;
     } else {
       meters += SEGMENT_SIZE_M;
@@ -3571,15 +3309,8 @@ function sumTodayUnlockedKm() {
 function sumTripUnlockedKm() {
   let meters = 0;
 
-  for (
-    const segment of
-    state.roadSegments
-  ) {
-    if (
-      state.tripUnlocked.has(
-        segment.id
-      )
-    ) {
+  for (const segment of state.roadSegments) {
+    if (state.tripUnlocked.has(segment.id)) {
       meters += segment.lengthM;
     }
   }
@@ -3587,49 +3318,34 @@ function sumTripUnlockedKm() {
   return meters / 1000;
 }
 
-function formatAustraliaPercent(
-  percent
-) {
-  if (
-    percent > 0 &&
-    percent < 0.0001
-  ) {
+function formatAustraliaPercent(percent) {
+  const value = Number(percent) || 0;
+
+  if (value > 0 && value < 0.0001) {
     return "<0.0001";
   }
 
-  return percent.toFixed(4);
+  return value.toFixed(4);
 }
 
-function formatUnlockedNumber(
-  value
-) {
+function formatUnlockedNumber(value) {
   if (value < 10000) {
-    return Number(
-      value
-    ).toLocaleString("en-AU");
+    return Number(value).toLocaleString("en-AU");
   }
 
   return formatCompactNumber(value);
 }
 
-function formatCompactNumber(
-  value
-) {
+function formatCompactNumber(value) {
   if (value >= 1000000) {
-    return `${trimDecimal(
-      value / 1000000
-    )}M`;
+    return `${trimDecimal(value / 1000000)}M`;
   }
 
   if (value >= 1000) {
-    return `${trimDecimal(
-      value / 1000
-    )}K`;
+    return `${trimDecimal(value / 1000)}K`;
   }
 
-  return Number(
-    value
-  ).toLocaleString("en-AU");
+  return Number(value).toLocaleString("en-AU");
 }
 
 function trimDecimal(value) {
@@ -3637,52 +3353,27 @@ function trimDecimal(value) {
     return String(value);
   }
 
-  return value
-    .toFixed(1)
-    .replace(".0", "");
+  return value.toFixed(1).replace(".0", "");
 }
 
 /* ---------- UI helpers ---------- */
 
 function setDriveButtons(mode) {
-  if (
-    !els.startBtn ||
-    !els.finishBtn
-  ) {
-    return;
-  }
+  if (!els.startBtn || !els.finishBtn) return;
 
-  els.startBtn.style.gridColumn =
-    "1 / -1";
-
-  els.finishBtn.style.gridColumn =
-    "1 / -1";
+  els.startBtn.style.gridColumn = "1 / -1";
+  els.finishBtn.style.gridColumn = "1 / -1";
 
   if (mode === "recording") {
-    els.startBtn.classList.add(
-      "hidden"
-    );
-
-    els.finishBtn.classList.remove(
-      "hidden"
-    );
-
+    els.startBtn.classList.add("hidden");
+    els.finishBtn.classList.remove("hidden");
     els.finishBtn.disabled = false;
-
     return;
   }
 
-  els.finishBtn.classList.add(
-    "hidden"
-  );
-
-  els.startBtn.classList.remove(
-    "hidden"
-  );
-
-  els.startBtn.disabled =
-    mode === "loading";
-
+  els.finishBtn.classList.add("hidden");
+  els.startBtn.classList.remove("hidden");
+  els.startBtn.disabled = mode === "loading";
   els.startBtn.textContent =
     mode === "loading"
       ? "Starting Drive..."
@@ -3691,22 +3382,19 @@ function setDriveButtons(mode) {
 
 function setDriveStatus(text) {
   if (els.driveStatus) {
-    els.driveStatus.textContent =
-      text;
+    els.driveStatus.textContent = text;
   }
 }
 
 function setGpsStatus(text) {
   if (els.gpsStatus) {
-    els.gpsStatus.textContent =
-      text;
+    els.gpsStatus.textContent = text;
   }
 }
 
 function setAccuracyStatus(text) {
   if (els.accuracyStatus) {
-    els.accuracyStatus.textContent =
-      text;
+    els.accuracyStatus.textContent = text;
   }
 }
 
@@ -3714,59 +3402,36 @@ function showToast(message) {
   if (!els.toast) return;
 
   els.toast.textContent = message;
+  els.toast.classList.remove("hidden");
 
-  els.toast.classList.remove(
-    "hidden"
-  );
+  clearTimeout(state.toastTimer);
 
-  clearTimeout(
-    state.toastTimer
-  );
-
-  state.toastTimer =
-    setTimeout(() => {
-      els.toast.classList.add(
-        "hidden"
-      );
-    }, 2200);
+  state.toastTimer = setTimeout(() => {
+    els.toast.classList.add("hidden");
+  }, 2200);
 }
 
 /* ---------- Math / geo ---------- */
 
 function positionToPoint(position) {
   return {
-    lat:
-      position.coords.latitude,
-    lng:
-      position.coords.longitude,
-    accuracy:
-      position.coords.accuracy ||
-      999,
-    speed:
-      position.coords.speed,
-    heading:
-      position.coords.heading,
-    timestamp:
-      position.timestamp ||
-      Date.now()
+    lat: position.coords.latitude,
+    lng: position.coords.longitude,
+    accuracy: position.coords.accuracy || 999,
+    speed: position.coords.speed,
+    heading: position.coords.heading,
+    timestamp: position.timestamp || Date.now()
   };
 }
 
 function haversine(a, b) {
-  const earthRadiusM =
-    6371000;
+  const earthRadiusM = 6371000;
 
-  const dLat =
-    toRad(b.lat - a.lat);
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
 
-  const dLng =
-    toRad(b.lng - a.lng);
-
-  const lat1 =
-    toRad(a.lat);
-
-  const lat2 =
-    toRad(b.lat);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
 
   const value =
     Math.sin(dLat / 2) ** 2 +
@@ -3784,87 +3449,55 @@ function haversine(a, b) {
   );
 }
 
-function interpolate(
-  a,
-  b,
-  amount
-) {
+function interpolate(a, b, amount) {
   return {
-    lat:
-      a.lat +
-      (b.lat - a.lat) *
-        amount,
-    lng:
-      a.lng +
-      (b.lng - a.lng) *
-        amount
+    lat: a.lat + (b.lat - a.lat) * amount,
+    lng: a.lng + (b.lng - a.lng) * amount
   };
 }
 
-function pointToSegmentDistance(
-  point,
-  segmentA,
-  segmentB
-) {
-  const latitudeRadians =
-    toRad(point.lat);
+function pointToSegmentDistance(point, segmentA, segmentB) {
+  const latitudeRadians = toRad(point.lat);
 
-  const metersPerLatitudeDegree =
-    111320;
-
+  const metersPerLatitudeDegree = 111320;
   const metersPerLongitudeDegree =
-    111320 *
-    Math.cos(latitudeRadians);
+    111320 * Math.cos(latitudeRadians);
 
   const ax =
-    (segmentA[1] -
-      point.lng) *
+    (segmentA[1] - point.lng) *
     metersPerLongitudeDegree;
 
   const ay =
-    (segmentA[0] -
-      point.lat) *
+    (segmentA[0] - point.lat) *
     metersPerLatitudeDegree;
 
   const bx =
-    (segmentB[1] -
-      point.lng) *
+    (segmentB[1] - point.lng) *
     metersPerLongitudeDegree;
 
   const by =
-    (segmentB[0] -
-      point.lat) *
+    (segmentB[0] - point.lat) *
     metersPerLatitudeDegree;
 
   const dx = bx - ax;
   const dy = by - ay;
 
-  const lengthSquared =
-    dx * dx + dy * dy;
+  const lengthSquared = dx * dx + dy * dy;
 
   if (lengthSquared === 0) {
-    return Math.sqrt(
-      ax * ax +
-      ay * ay
-    );
+    return Math.sqrt(ax * ax + ay * ay);
   }
 
   const amount = Math.max(
     0,
     Math.min(
       1,
-      -(
-        ax * dx +
-        ay * dy
-      ) / lengthSquared
+      -((ax * dx + ay * dy) / lengthSquared)
     )
   );
 
-  const closestX =
-    ax + amount * dx;
-
-  const closestY =
-    ay + amount * dy;
+  const closestX = ax + amount * dx;
+  const closestY = ay + amount * dy;
 
   return Math.sqrt(
     closestX * closestX +
@@ -3873,16 +3506,10 @@ function pointToSegmentDistance(
 }
 
 function compactCoords(coords) {
-  return coords.map(
-    (coord) => [
-      Number(
-        Number(coord[0]).toFixed(6)
-      ),
-      Number(
-        Number(coord[1]).toFixed(6)
-      )
-    ]
-  );
+  return coords.map((coord) => [
+    Number(Number(coord[0]).toFixed(6)),
+    Number(Number(coord[1]).toFixed(6))
+  ]);
 }
 
 function coordToPoint(coord) {
@@ -3893,16 +3520,11 @@ function coordToPoint(coord) {
 }
 
 function metersToKm(meters) {
-  return (
-    meters / 1000
-  ).toFixed(2);
+  return (meters / 1000).toFixed(2);
 }
 
 function toRad(degrees) {
-  return (
-    degrees *
-    Math.PI
-  ) / 180;
+  return (degrees * Math.PI) / 180;
 }
 
 /* ---------- Formatting ---------- */
@@ -3910,8 +3532,7 @@ function toRad(degrees) {
 function getTodayKey() {
   const now = new Date();
 
-  const year =
-    now.getFullYear();
+  const year = now.getFullYear();
 
   const month = String(
     now.getMonth() + 1
@@ -3925,9 +3546,7 @@ function getTodayKey() {
 }
 
 function formatNumber(value) {
-  return Number(
-    value || 0
-  ).toLocaleString("en-AU");
+  return Number(value || 0).toLocaleString("en-AU");
 }
 
 function escapeHtml(value) {
