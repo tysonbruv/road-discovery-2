@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v36
+/* Road Discovery AU v37
    Checkpoint 4: safe aggregate friend stats only.
    This keeps the road/GPS/Overpass/waypoint/localStorage engine local.
    It does not upload live GPS, current drive paths, segment IDs, coordinates, road geometry, speed, heading, blue marker, start point, or finish point.
