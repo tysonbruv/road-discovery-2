@@ -58,7 +58,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=31"
+    href="style.css?v=32"
   />
 </head>
 
@@ -428,7 +428,7 @@
           <h2>Friends</h2>
 
           <p>
-            Compare road-discovery profiles.
+            Road Profile and friends.
           </p>
         </div>
 
@@ -448,12 +448,300 @@
           id="friendsListView"
           class="friends-view"
         >
+          <section class="road-profile-section">
+            <div
+              id="signedOutProfileCard"
+              class="auth-card"
+            >
+              <div class="auth-card-heading">
+                <h3>Road Profile</h3>
+
+                <p>
+                  You can keep using the map without an account. Friends
+                  features need a Road Profile.
+                </p>
+              </div>
+
+              <div class="auth-mode-tabs">
+                <button
+                  id="authCreateModeBtn"
+                  class="auth-mode-btn active"
+                  type="button"
+                >
+                  Create Road Profile
+                </button>
+
+                <button
+                  id="authSignInModeBtn"
+                  class="auth-mode-btn"
+                  type="button"
+                >
+                  Sign in
+                </button>
+              </div>
+
+              <div
+                id="createAuthForm"
+                class="auth-form"
+              >
+                <label
+                  class="field-label"
+                  for="createEmailInput"
+                >
+                  Email
+                </label>
+
+                <input
+                  id="createEmailInput"
+                  class="text-field"
+                  type="email"
+                  inputmode="email"
+                  autocomplete="email"
+                  placeholder="you@example.com"
+                />
+
+                <label
+                  class="field-label"
+                  for="createPasswordInput"
+                >
+                  Password
+                </label>
+
+                <input
+                  id="createPasswordInput"
+                  class="text-field"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="At least 6 characters"
+                />
+
+                <button
+                  id="createProfileBtn"
+                  class="wide-btn auth-submit-btn"
+                  type="button"
+                >
+                  Create Road Profile
+                </button>
+              </div>
+
+              <div
+                id="signInAuthForm"
+                class="auth-form hidden"
+              >
+                <label
+                  class="field-label"
+                  for="signInEmailInput"
+                >
+                  Email
+                </label>
+
+                <input
+                  id="signInEmailInput"
+                  class="text-field"
+                  type="email"
+                  inputmode="email"
+                  autocomplete="email"
+                  placeholder="you@example.com"
+                />
+
+                <label
+                  class="field-label"
+                  for="signInPasswordInput"
+                >
+                  Password
+                </label>
+
+                <input
+                  id="signInPasswordInput"
+                  class="text-field"
+                  type="password"
+                  autocomplete="current-password"
+                  placeholder="Your password"
+                />
+
+                <button
+                  id="signInBtn"
+                  class="wide-btn auth-submit-btn"
+                  type="button"
+                >
+                  Sign in
+                </button>
+
+                <button
+                  id="forgotPasswordBtn"
+                  class="ghost-btn wide-btn"
+                  type="button"
+                >
+                  Forgot password
+                </button>
+              </div>
+
+              <div
+                id="resetPasswordBox"
+                class="reset-password-box hidden"
+              >
+                <label
+                  class="field-label"
+                  for="newPasswordInput"
+                >
+                  New password
+                </label>
+
+                <input
+                  id="newPasswordInput"
+                  class="text-field"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="New password"
+                />
+
+                <button
+                  id="updatePasswordBtn"
+                  class="wide-btn auth-submit-btn"
+                  type="button"
+                >
+                  Update password
+                </button>
+              </div>
+
+              <div
+                id="authMessage"
+                class="auth-message hidden"
+              ></div>
+
+              <div class="privacy-note">
+                Friends cannot see your live location, current drive,
+                blue location marker, start point, finish point, speed,
+                heading or live position.
+              </div>
+            </div>
+
+            <div
+              id="signedInProfileCard"
+              class="road-profile-card hidden"
+            >
+              <div class="road-profile-topline">
+                <div>
+                  <h3>Your Road Profile</h3>
+
+                  <p id="profileEmailValue">
+                    Signed in
+                  </p>
+                </div>
+
+                <span class="profile-status-pill">
+                  Checkpoint 1
+                </span>
+              </div>
+
+              <div class="profile-detail-list">
+                <div class="profile-detail-row">
+                  <span>Username</span>
+
+                  <strong id="profileUsernameValue">
+                    road_user_loading
+                  </strong>
+                </div>
+
+                <div class="profile-detail-row friend-code-row">
+                  <span>Friend code</span>
+
+                  <strong id="profileFriendCodeValue">
+                    RD-0000-0000
+                  </strong>
+                </div>
+              </div>
+
+              <button
+                id="copyFriendCodeBtn"
+                class="wide-btn"
+                type="button"
+              >
+                Copy Friend Code
+              </button>
+
+              <div class="profile-toggle-group">
+                <label
+                  class="toggle-row"
+                  for="profileProfileToggle"
+                >
+                  <div class="toggle-text">
+                    <strong>
+                      Show my Road Profile
+                    </strong>
+
+                    <span>
+                      Off by default. Later, approved friends can see your
+                      shared stats only if this is on.
+                    </span>
+                  </div>
+
+                  <input
+                    id="profileProfileToggle"
+                    class="toggle-input"
+                    type="checkbox"
+                  />
+
+                  <span
+                    class="toggle-switch"
+                    aria-hidden="true"
+                  >
+                    <span class="toggle-knob"></span>
+                  </span>
+                </label>
+
+                <label
+                  class="toggle-row"
+                  for="profileMapToggle"
+                >
+                  <div class="toggle-text">
+                    <strong>
+                      Show my map overview
+                    </strong>
+
+                    <span>
+                      Off by default. Later, approved friends can see orange
+                      discovered roads only if this is on.
+                    </span>
+                  </div>
+
+                  <input
+                    id="profileMapToggle"
+                    class="toggle-input"
+                    type="checkbox"
+                  />
+
+                  <span
+                    class="toggle-switch"
+                    aria-hidden="true"
+                  >
+                    <span class="toggle-knob"></span>
+                  </span>
+                </label>
+              </div>
+
+              <div class="privacy-note">
+                Checkpoint 1 does not sync road segments. Your orange roads
+                still save locally on this device first.
+              </div>
+
+              <button
+                id="signOutBtn"
+                class="ghost-btn wide-btn sign-out-btn"
+                type="button"
+              >
+                Sign out
+              </button>
+            </div>
+          </section>
+
           <button
             id="showAddFriendBtn"
             class="wide-btn add-friend-main-btn"
             type="button"
+            disabled
           >
-            + Add Friend
+            + Add Friend (Checkpoint 2)
           </button>
 
           <div
@@ -474,7 +762,7 @@
                 type="text"
                 inputmode="text"
                 autocomplete="off"
-                placeholder="@joshroads"
+                placeholder="road_user_k7p9x2m4q8"
               />
 
               <button
@@ -500,7 +788,7 @@
                 type="text"
                 inputmode="text"
                 autocomplete="off"
-                placeholder="JR7K-42P"
+                placeholder="RD-7K4P-92QX"
               />
 
               <button
@@ -523,7 +811,7 @@
               class="requests-list"
             >
               <div class="empty-state">
-                No pending requests
+                Friend requests come in Checkpoint 2.
               </div>
             </div>
           </section>
@@ -537,60 +825,14 @@
               id="friendsList"
               class="friends-list"
             >
-              <button
-                class="friend-row"
-                type="button"
-                data-friend-id="josh"
-              >
-                <div class="friend-avatar">
-                  J
-                </div>
-
-                <div class="friend-main">
-                  <div class="friend-name">
-                    Josh
-                  </div>
-
-                  <div class="friend-sub">
-                    Australia 0.0012%
-                  </div>
-                </div>
-
-                <div class="friend-score">
-                  <strong>210</strong>
-                  <span>/ 18M</span>
-                </div>
-              </button>
-
-              <button
-                class="friend-row"
-                type="button"
-                data-friend-id="dad"
-              >
-                <div class="friend-avatar">
-                  D
-                </div>
-
-                <div class="friend-main">
-                  <div class="friend-name">
-                    Dad
-                  </div>
-
-                  <div class="friend-sub">
-                    Australia 0.0008%
-                  </div>
-                </div>
-
-                <div class="friend-score">
-                  <strong>144</strong>
-                  <span>/ 18M</span>
-                </div>
-              </button>
+              <div class="empty-state">
+                Real friends list comes in Checkpoint 3.
+              </div>
             </div>
           </section>
         </section>
 
-        <!-- Friend profile -->
+        <!-- Friend profile retained for later checkpoints -->
         <section
           id="friendProfileView"
           class="friends-view hidden"
@@ -614,11 +856,11 @@
 
               <div>
                 <h2 id="friendProfileName">
-                  Josh
+                  Friend
                 </h2>
 
                 <p id="friendProfileHandle">
-                  @joshroads
+                  Road Profile
                 </p>
               </div>
             </div>
@@ -633,7 +875,7 @@
                   id="friendAustraliaStat"
                   class="friend-stat-value"
                 >
-                  0.0012%
+                  Private
                 </div>
               </article>
 
@@ -646,7 +888,7 @@
                   id="friendUnlockedStat"
                   class="friend-stat-value"
                 >
-                  210 / 18M
+                  Private
                 </div>
               </article>
 
@@ -659,7 +901,7 @@
                   id="friendTodayStat"
                   class="friend-stat-value"
                 >
-                  2.31 km
+                  Private
                 </div>
               </article>
 
@@ -672,7 +914,7 @@
                   id="friendWeekStat"
                   class="friend-stat-value"
                 >
-                  18.4 km
+                  Private
                 </div>
               </article>
             </div>
@@ -702,23 +944,7 @@
                   viewBox="0 0 320 190"
                   role="img"
                   aria-label="Friend discovered roads preview"
-                >
-                  <path
-                    d="M28 150 C70 105, 110 120, 148 82 S235 42, 292 62"
-                  ></path>
-
-                  <path
-                    d="M64 42 C92 66, 92 96, 122 116 S174 140, 216 126"
-                  ></path>
-
-                  <path
-                    d="M112 168 C150 146, 168 104, 195 76 S244 36, 286 28"
-                  ></path>
-
-                  <path
-                    d="M34 92 C72 94, 112 76, 150 56 S226 48, 286 96"
-                  ></path>
-                </svg>
+                ></svg>
               </div>
             </button>
 
@@ -767,7 +993,7 @@
 
         <div>
           <h2 id="friendMapTitle">
-            Josh’s Map
+            Friend Map
           </h2>
 
           <p>
@@ -786,31 +1012,7 @@
           viewBox="0 0 900 620"
           role="img"
           aria-label="Friend painted roads"
-        >
-          <path
-            d="M74 492 C150 388, 260 412, 338 310 S542 166, 806 210"
-          ></path>
-
-          <path
-            d="M188 118 C270 184, 248 260, 334 336 S462 446, 610 398"
-          ></path>
-
-          <path
-            d="M318 554 C422 482, 460 356, 522 258 S660 104, 798 88"
-          ></path>
-
-          <path
-            d="M96 298 C214 300, 290 230, 400 176 S620 148, 792 312"
-          ></path>
-
-          <path
-            d="M138 420 C242 364, 304 362, 392 392 S580 476, 730 430"
-          ></path>
-
-          <path
-            d="M440 72 C430 172, 454 240, 528 318 S622 458, 656 554"
-          ></path>
-        </svg>
+        ></svg>
       </div>
     </section>
 
@@ -828,7 +1030,9 @@
     crossorigin=""
   ></script>
 
-  <script src="app.js?v=31"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script src="app.js?v=32"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
