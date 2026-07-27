@@ -1,14 +1,14 @@
 "use strict";
 
-/* Road Discovery AU v35 service worker */
+/* Road Discovery AU v36 service worker */
 
-const CACHE_NAME = "road-discovery-au-v35";
+const CACHE_NAME = "road-discovery-au-v36";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./style.css?v=33",
-  "./app.js?v=35",
+  "./app.js?v=36",
   "./manifest.json",
   "./icon.svg"
 ];
@@ -117,7 +117,7 @@ self.addEventListener("fetch", (event) => {
         }
 
         if (url.pathname.endsWith("/app.js")) {
-          return caches.match("./app.js?v=35");
+          return caches.match("./app.js?v=36");
         }
 
         return Response.error();
