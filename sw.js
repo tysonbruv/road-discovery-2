@@ -1,19 +1,24 @@
-const CACHE_NAME = "road-discovery-au-v29";
+"use strict";
 
-const ASSETS = [
+/* Road Discovery AU v30 service worker */
+
+const CACHE_NAME = "road-discovery-au-v30";
+
+const APP_SHELL = [
   "./",
   "./index.html",
-  "./style.css?v=29",
-  "./app.js?v=29",
+  "./style.css",
+  "./app.js",
   "./manifest.json",
-  "./icon.svg",
+  "./icon.svg"
 ];
 
 self.addEventListener("install", (event) => {
-  self.skipWaiting();
-
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -21,35 +26,65 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key !== CACHE_NAME)
-            .map((key) => caches.delete(key))
-        )
-      )
+      .then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            if (cacheName !== CACHE_NAME) {
+              return caches.delete(cacheName);
+            }
+
+            return null;
+          })
+        );
+      })
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
+  const request = event.request;
 
-  if (url.origin !== location.origin) {
+  if (request.method !== "GET") {
+    return;
+  }
+
+  const url = new URL(request.url);
+
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put("./index.html", copy);
+          });
+
+          return response;
+        })
+        .catch(() => caches.match("./index.html"))
+    );
+
     return;
   }
 
   event.respondWith(
-    fetch(event.request)
-      .then((networkResponse) => {
-        const copy = networkResponse.clone();
+    fetch(request)
+      .then((response) => {
+        const copy = response.clone();
 
         caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, copy);
+          cache.put(request, copy);
         });
 
-        return networkResponse;
+        return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => {
+        return caches.match(request);
+      })
   );
 });
