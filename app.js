@@ -119,7 +119,8 @@ const state = {
     loadingFriends: false,
     sendingRequest: false,
     respondingRequestId: null,
-    respondingAction: null
+    respondingAction: null,
+    removingFriendId: null
   },
 
   statsSync: {
@@ -262,7 +263,6 @@ function cacheEls() {
     "friendMapPreviewSvg",
     "openFriendMapBtn",
     "removeFriendBtn",
-    "blockFriendBtn",
 
     "friendMapOverlay",
     "friendMapTitle",
@@ -667,15 +667,7 @@ function bindEvents() {
   els.openFriendMapBtn?.addEventListener("click", openFriendFullMap);
   els.closeFriendMapBtn?.addEventListener("click", closeFriendFullMap);
 
-  els.removeFriendBtn?.addEventListener("click", () => {
-    const friend = getActiveFriend();
-    showToast(`${friend?.username || "Friend"} remove button comes in a later checkpoint`);
-  });
-
-  els.blockFriendBtn?.addEventListener("click", () => {
-    const friend = getActiveFriend();
-    showToast(`${friend?.username || "Friend"} block button comes in a later checkpoint`);
-  });
+    els.removeFriendBtn?.addEventListener("click", removeActiveFriend);
 
   window.addEventListener("online", () => showToast("Online"));
   window.addEventListener("offline", () => showToast("Offline"));
@@ -2374,6 +2366,7 @@ function clearFriendData() {
   state.friends.sendingRequest = false;
   state.friends.respondingRequestId = null;
   state.friends.respondingAction = null;
+  state.friends.removingFriendId = null;
   state.activeFriendId = null;
   state.statsSync.syncing = false;
   state.statsSync.lastSyncAt = 0;
@@ -2404,11 +2397,12 @@ async function refreshFriendData(options = {}) {
 function renderFriendsList() {
   const signedIn = Boolean(state.auth.user && state.auth.profile);
 
-  const busy =
+    const busy =
     Boolean(state.auth.loading) ||
     Boolean(state.auth.submitting) ||
     Boolean(state.friends.sendingRequest) ||
-    Boolean(state.friends.respondingRequestId);
+    Boolean(state.friends.respondingRequestId) ||
+    Boolean(state.friends.removingFriendId);
 
   if (els.showAddFriendBtn) {
     els.showAddFriendBtn.disabled = !signedIn || busy;
@@ -2924,8 +2918,19 @@ function openFriendProfile(friendId) {
     );
   }
 
-  if (els.openFriendMapBtn) {
+    if (els.openFriendMapBtn) {
     els.openFriendMapBtn.disabled = !mapShared;
+  }
+
+  if (els.removeFriendBtn) {
+    const isRemoving =
+      state.friends.removingFriendId === state.activeFriendId;
+
+    els.removeFriendBtn.disabled = isRemoving;
+
+    els.removeFriendBtn.textContent = isRemoving
+      ? "Removing..."
+      : "Remove friend";
   }
 
   renderFriendPreviewSvg(friend);
@@ -3021,6 +3026,101 @@ function getFriendById(friendId) {
 
 function getActiveFriend() {
   return getFriendById(state.activeFriendId);
+}
+
+async function removeActiveFriend() {
+  if (!state.auth.client || !state.auth.user) {
+    showToast("Sign in to remove a friend");
+    return;
+  }
+
+  const friend = getActiveFriend();
+
+  if (!friend) {
+    showToast("Friend could not be found");
+    showFriendsListView();
+    return;
+  }
+
+  const friendId = String(
+    friend.friend_id ||
+    friend.id ||
+    ""
+  );
+
+  const username = friend.username || "this friend";
+
+  if (!friendId) {
+    showToast("Friend ID is missing");
+    return;
+  }
+
+  if (state.friends.removingFriendId) {
+    return;
+  }
+
+  const confirmed = confirm(
+    `Remove ${username} from your friends? Their profile and road progress will not be deleted.`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  state.friends.removingFriendId = friendId;
+
+  if (els.removeFriendBtn) {
+    els.removeFriendBtn.disabled = true;
+    els.removeFriendBtn.textContent = "Removing...";
+  }
+
+  renderFriendsList();
+
+  const { error } = await state.auth.client.rpc(
+    "remove_friend",
+    {
+      friend_id: friendId
+    }
+  );
+
+  if (error) {
+    console.error(error);
+
+    state.friends.removingFriendId = null;
+
+    if (els.removeFriendBtn) {
+      els.removeFriendBtn.disabled = false;
+      els.removeFriendBtn.textContent = "Remove friend";
+    }
+
+    showToast(friendRequestErrorMessage(error));
+    renderFriendsList();
+    return;
+  }
+
+  state.friends.acceptedFriends =
+    state.friends.acceptedFriends.filter((item) => {
+      const itemFriendId = String(
+        item.friend_id ||
+        item.id ||
+        ""
+      );
+
+      return itemFriendId !== friendId;
+    });
+
+  state.friends.removingFriendId = null;
+  state.activeFriendId = null;
+
+  closeFriendFullMap();
+  showFriendsListView();
+  renderFriendsList();
+
+  await refreshFriendData({
+    quiet: true
+  });
+
+  showToast(`${username} removed`);
 }
 
 function applyFriendSettingsToUI() {
