@@ -3094,22 +3094,13 @@ async function maybeSyncProfileStats(options = {}) {
 
   const syncedAt = new Date().toISOString();
 
-  const payload = {
-    user_id: state.auth.user.id,
-    unlocked_count: stats.unlockedCount,
-    unlocked_km: stats.unlockedKm,
-    today_km: stats.todayKm,
-    week_km: stats.weekKm,
-    australia_percent: stats.australiaPercent,
-    last_synced_at: syncedAt,
-    updated_at: syncedAt
-  };
-
-  const { error } = await state.auth.client
-    .from("profile_stats")
-    .upsert(payload, {
-      onConflict: "user_id"
-    });
+  const { error } = await state.auth.client.rpc("sync_my_profile_stats", {
+  p_unlocked_count: stats.unlockedCount,
+  p_unlocked_km: stats.unlockedKm,
+  p_today_km: stats.todayKm,
+  p_week_km: stats.weekKm,
+  p_australia_percent: stats.australiaPercent
+});
 
   state.statsSync.syncing = false;
 
