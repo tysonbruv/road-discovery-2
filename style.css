@@ -1760,3 +1760,123 @@ button:disabled.add-friend-main-btn {
     min-width: 0;
   }
 }
+
+/* -------------------------------------------------- */
+/* Checkpoint 7 exact friend maps and confirmation    */
+/* -------------------------------------------------- */
+
+.friend-full-map-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #05070a;
+}
+
+.friend-full-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #05070a;
+}
+
+.friend-full-map .leaflet-control-zoom {
+  display: block;
+  margin-top: 14px;
+  margin-left: 14px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+
+.friend-full-map .leaflet-control-zoom a {
+  width: 38px;
+  height: 38px;
+  line-height: 38px;
+  border: 0;
+  background: rgba(5, 7, 10, 0.9);
+  color: var(--text);
+}
+
+.friend-full-map .leaflet-control-zoom a + a {
+  border-top: 1px solid var(--line);
+}
+
+.friend-full-map-status {
+  position: absolute;
+  z-index: 900;
+  left: 50%;
+  top: 50%;
+  max-width: calc(100% - 40px);
+  transform: translate(-50%, -50%);
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(5, 7, 10, 0.9);
+  box-shadow: var(--shadow-soft);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+  text-align: center;
+  pointer-events: none;
+}
+
+.confirm-overlay {
+  position: absolute;
+  z-index: 5000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding:
+    calc(18px + var(--safe-top))
+    calc(18px + var(--safe-right))
+    calc(18px + var(--safe-bottom))
+    calc(18px + var(--safe-left));
+  background: rgba(0, 0, 0, 0.72);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.confirm-card {
+  width: min(440px, 100%);
+  padding: 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  background: rgba(10, 15, 21, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.confirm-card h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.confirm-card p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.confirm-actions .wide-btn {
+  margin: 0;
+}
+
+@media (max-width: 420px) {
+  .confirm-actions {
+    grid-template-columns: 1fr;
+  }
+}
