@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v37
+/* Road Discovery AU v39
    Checkpoint 4: safe aggregate friend stats only.
    This keeps the road/GPS/Overpass/waypoint/localStorage engine local.
    It does not upload live GPS, current drive paths, segment IDs, coordinates, road geometry, speed, heading, blue marker, start point, or finish point.
@@ -245,8 +245,6 @@ function cacheEls() {
 
     "showAddFriendBtn",
     "addFriendBox",
-    "friendSearchInput",
-    "searchFriendBtn",
     "friendCodeInput",
     "addFriendCodeBtn",
     "friendRequestsList",
@@ -621,17 +619,6 @@ function bindEvents() {
 
   els.showAddFriendBtn?.addEventListener("click", () => {
     els.addFriendBox?.classList.toggle("hidden");
-  });
-
-  els.searchFriendBtn?.addEventListener("click", () => {
-    const value = els.friendSearchInput?.value.trim();
-
-    if (!value) {
-      showToast("Enter an exact username");
-      return;
-    }
-
-    showToast("Username search comes in a later checkpoint. Use friend codes next.");
   });
 
   els.addFriendCodeBtn?.addEventListener("click", sendFriendRequestByCode);
@@ -2424,10 +2411,6 @@ function renderFriendsList() {
     els.addFriendCodeBtn.textContent = state.friends.sendingRequest
       ? "Sending..."
       : "Add";
-  }
-
-  if (els.searchFriendBtn) {
-    els.searchFriendBtn.disabled = true;
   }
 
   renderIncomingFriendRequests(signedIn);
