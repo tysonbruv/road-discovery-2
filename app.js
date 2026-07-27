@@ -1,9 +1,10 @@
 "use strict";
 
-/* Road Discovery AU v40
-   Checkpoint 4: safe aggregate friend stats only.
-   This keeps the road/GPS/Overpass/waypoint/localStorage engine local.
-   It does not upload live GPS, current drive paths, segment IDs, coordinates, road geometry, speed, heading, blue marker, start point, or finish point.
+/* Road Discovery AU v41
+   Checkpoint 7: exact historical discovered-road sharing between accepted friends.
+   The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
+   Only deliberately shared historical orange-road endpoint geometry is uploaded.
+   Live GPS, current drives, markers, accuracy, speed, heading, waypoints and routes are never uploaded.
 */
 
 const STORAGE_KEY = "roadDiscoveryAU.visited.v1";
@@ -11,6 +12,11 @@ const SAVED_SEGMENTS_KEY = "roadDiscoveryAU.savedSegments.v1";
 const FRIEND_SETTINGS_KEY = "roadDiscoveryAU.friendSettings.v1";
 const TODAY_UNLOCKS_KEY = "roadDiscoveryAU.todayUnlocks.v1";
 const ROAD_PROFILE_CACHE_KEY = "roadDiscoveryAU.roadProfile.v1";
+const SHARED_ROAD_SYNC_STATE_KEY = "roadDiscoveryAU.sharedRoadSync.v1";
+
+const SHARED_ROAD_UPLOAD_BATCH_SIZE = 300;
+const SHARED_ROAD_DOWNLOAD_PAGE_SIZE = 500;
+const SHARED_ROAD_MAX_DOWNLOAD_PAGES = 200;
 
 const SUPABASE_URL = "https://tancfzqmzvaalqotmvks.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_LnMT-vhl4xvj4idb91dNdA_EdQMJutI";
@@ -113,27 +119,48 @@ const state = {
   },
 
   friends: {
-  incomingRequests: [],
-  outgoingRequests: [],
-  acceptedFriends: [],
+    incomingRequests: [],
+    outgoingRequests: [],
+    acceptedFriends: [],
 
-  loadingRequests: false,
-  loadingOutgoingRequests: false,
-  loadingFriends: false,
+    loadingRequests: false,
+    loadingOutgoingRequests: false,
+    loadingFriends: false,
 
-  sendingRequest: false,
+    sendingRequest: false,
 
-  respondingRequestId: null,
-  respondingAction: null,
+    respondingRequestId: null,
+    respondingAction: null,
 
-  cancellingOutgoingRequestId: null,
-  removingFriendId: null
-},
+    cancellingOutgoingRequestId: null,
+    removingFriendId: null
+  },
 
   statsSync: {
     syncing: false,
     lastSyncAt: 0,
     lastPayloadKey: ""
+  },
+
+  sharedRoadSync: {
+    syncing: false,
+    clearing: false,
+    activeUserId: null,
+    privateCleanupChecked: false,
+    hashCache: new Map(),
+    confirmationResolve: null
+  },
+
+  friendMap: {
+    friendId: null,
+    roads: [],
+    loading: false,
+    loaded: false,
+    error: "",
+    requestId: 0,
+    fullMap: null,
+    fullRoadLayer: null,
+    fullRenderer: null
   },
 
   toastTimer: null
@@ -268,12 +295,18 @@ function cacheEls() {
     "friendWeekStat",
     "friendMapPreviewSvg",
     "openFriendMapBtn",
+    "friendMapOpenLabel",
     "removeFriendBtn",
 
     "friendMapOverlay",
     "friendMapTitle",
-    "friendFullMapSvg",
+    "friendFullMap",
+    "friendFullMapStatus",
     "closeFriendMapBtn",
+
+    "mapShareConfirmOverlay",
+    "cancelMapShareBtn",
+    "confirmMapShareBtn",
 
     "toast"
   ].forEach((id) => {
@@ -650,20 +683,20 @@ function bindEvents() {
     }
   });
 
-   els.outgoingRequestsList?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-outgoing-action]");
+  els.outgoingRequestsList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-outgoing-action]");
 
-  if (!button || !els.outgoingRequestsList.contains(button)) {
-    return;
-  }
+    if (!button || !els.outgoingRequestsList.contains(button)) {
+      return;
+    }
 
-  const requestId = button.dataset.requestId || "";
-  const action = button.dataset.outgoingAction || "";
+    const requestId = button.dataset.requestId || "";
+    const action = button.dataset.outgoingAction || "";
 
-  if (action === "cancel") {
-    cancelOutgoingFriendRequest(requestId);
-  }
-});
+    if (action === "cancel") {
+      cancelOutgoingFriendRequest(requestId);
+    }
+  });
 
   els.friendsList?.addEventListener("click", (event) => {
     const row = event.target.closest("[data-friend-id]");
@@ -677,10 +710,34 @@ function bindEvents() {
   els.openFriendMapBtn?.addEventListener("click", openFriendFullMap);
   els.closeFriendMapBtn?.addEventListener("click", closeFriendFullMap);
 
-    els.removeFriendBtn?.addEventListener("click", removeActiveFriend);
+  els.cancelMapShareBtn?.addEventListener("click", () => {
+    resolveMapShareConfirmation(false);
+  });
 
-  window.addEventListener("online", () => showToast("Online"));
+  els.confirmMapShareBtn?.addEventListener("click", () => {
+    resolveMapShareConfirmation(true);
+  });
+
+  els.mapShareConfirmOverlay?.addEventListener("click", (event) => {
+    if (event.target === els.mapShareConfirmOverlay) {
+      resolveMapShareConfirmation(false);
+    }
+  });
+
+  els.removeFriendBtn?.addEventListener("click", removeActiveFriend);
+
+  window.addEventListener("online", handleOnlineReconnect);
   window.addEventListener("offline", () => showToast("Offline"));
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      if (!els.mapShareConfirmOverlay?.classList.contains("hidden")) {
+        resolveMapShareConfirmation(false);
+      } else if (!els.friendMapOverlay?.classList.contains("hidden")) {
+        closeFriendFullMap();
+      }
+    }
+  });
 }
 
 /* ---------- Panels ---------- */
@@ -699,6 +756,10 @@ function openPanel(panelId) {
 }
 
 function closePanels(hideBackdrop = true) {
+  const friendsWasOpen =
+    Boolean(els.friendsPanel) &&
+    !els.friendsPanel.classList.contains("hidden");
+
   [
     "settingsPanel",
     "waypointPanel",
@@ -711,6 +772,11 @@ function closePanels(hideBackdrop = true) {
     panel.classList.add("hidden");
     panel.setAttribute("aria-hidden", "true");
   });
+
+  if (friendsWasOpen) {
+    closeFriendFullMap();
+    clearActiveFriendMapData({ keepActiveFriend: false });
+  }
 
   if (hideBackdrop) {
     els.panelBackdrop?.classList.add("hidden");
@@ -728,6 +794,9 @@ function openFriendsPanel() {
 }
 
 function showFriendsListView() {
+  closeFriendFullMap();
+  clearActiveFriendMapData({ keepActiveFriend: false });
+
   els.friendProfileView?.classList.add("hidden");
   els.friendsListView?.classList.remove("hidden");
 }
@@ -945,6 +1014,16 @@ function finishDrive() {
 
   renderAllStats();
   void maybeSyncProfileStats({ force: true, quiet: true });
+
+  const newlyDiscoveredSegments = Array.from(state.tripUnlocked)
+    .map((segmentId) => state.savedSegments[segmentId])
+    .filter(Boolean);
+
+  void syncMySharedRoads({
+    segments: newlyDiscoveredSegments,
+    quiet: true,
+    reason: "finish-drive"
+  });
 
   showToast("Drive saved on this device");
 }
@@ -1477,7 +1556,9 @@ function drawTripLine(a, b) {
 }
 
 function resetDiscoveredRoads() {
-  const confirmed = confirm("Reset all discovered roads saved on this device?");
+  const confirmed = confirm(
+    "Reset all discovered roads saved on this device? Any shared friend-map copy will also be removed, but your account and friends will stay unchanged."
+  );
 
   if (!confirmed) return;
 
@@ -1507,6 +1588,10 @@ function resetDiscoveredRoads() {
 
   renderAllStats();
   void maybeSyncProfileStats({ force: true, quiet: true });
+
+  state.sharedRoadSync.hashCache.clear();
+  removeSharedRoadSyncMetaForCurrentUser();
+  void clearMySharedRoads({ quiet: true, reason: "reset" });
 
   showToast("Discovered roads reset");
 }
@@ -1840,6 +1925,7 @@ function initSupabase() {
     if (state.auth.user) {
       await ensureRoadProfile({ quiet: true });
       await maybeSyncProfileStats({ force: true, quiet: true });
+      await reconcileMySharedRoads({ quiet: true });
       await refreshFriendData({ quiet: true });
     } else {
       state.auth.profile = null;
@@ -1876,6 +1962,7 @@ async function loadInitialAuthSession() {
   if (state.auth.user) {
     await ensureRoadProfile({ quiet: true });
     await maybeSyncProfileStats({ force: true, quiet: true });
+    await reconcileMySharedRoads({ quiet: true });
     await refreshFriendData({ quiet: true });
   } else {
     state.auth.profile = null;
@@ -1992,6 +2079,7 @@ async function createRoadProfileAccount() {
   if (state.auth.session && state.auth.user) {
     await ensureRoadProfile({ quiet: false });
     await maybeSyncProfileStats({ force: true, quiet: true });
+    await reconcileMySharedRoads({ quiet: true });
     state.auth.loading = false;
     state.auth.submitting = false;
     setAuthMessage("Road Profile created.", "success");
@@ -2050,6 +2138,7 @@ async function signInRoadProfile() {
   if (state.auth.user) {
     await ensureRoadProfile({ quiet: false });
     await maybeSyncProfileStats({ force: true, quiet: true });
+    await reconcileMySharedRoads({ quiet: true });
     await refreshFriendData({ quiet: true });
     state.auth.loading = false;
     state.auth.submitting = false;
@@ -2174,19 +2263,33 @@ async function handleProfilePrivacyToggle(field, checked) {
       ? "showProfile"
       : "showMap";
 
-  state.friendSettings[localKey] = checked;
-
-  if (state.auth.profile) {
-    state.auth.profile[field] = checked;
-  }
-
-  applyFriendSettingsToUI();
+  const previousValue = state.auth.profile
+    ? Boolean(state.auth.profile[field])
+    : Boolean(state.friendSettings[localKey]);
 
   if (!state.auth.client || !state.auth.user || !state.auth.profile) {
-    saveFriendSettings();
+    state.friendSettings[localKey] = previousValue;
+    applyFriendSettingsToUI();
     showToast("Create a Road Profile before sharing");
     return;
   }
+
+  if (field === "show_map" && checked && !previousValue) {
+    state.friendSettings.showMap = false;
+    state.auth.profile.show_map = false;
+    applyFriendSettingsToUI();
+
+    const confirmed = await showMapShareConfirmation();
+
+    if (!confirmed) {
+      applyFriendSettingsToUI();
+      return;
+    }
+  }
+
+  state.friendSettings[localKey] = checked;
+  state.auth.profile[field] = checked;
+  applyFriendSettingsToUI();
 
   const update = {};
   update[field] = checked;
@@ -2201,11 +2304,8 @@ async function handleProfilePrivacyToggle(field, checked) {
   if (error) {
     console.error(error);
 
-    state.friendSettings[localKey] = !checked;
-
-    if (state.auth.profile) {
-      state.auth.profile[field] = !checked;
-    }
+    state.friendSettings[localKey] = previousValue;
+    state.auth.profile[field] = previousValue;
 
     applyFriendSettingsToUI();
     showToast("Could not update privacy");
@@ -2228,10 +2328,76 @@ async function handleProfilePrivacyToggle(field, checked) {
     void maybeSyncProfileStats({ force: true, quiet: true });
   }
 
-  if (field === "show_profile") {
-    showToast(checked ? "Road Profile sharing on" : "Road Profile sharing off");
-  } else {
-    showToast(checked ? "Map overview sharing on" : "Map overview sharing off");
+  if (field === "show_map") {
+    if (checked) {
+      const previousMeta = getSharedRoadSyncMetaForCurrentUser() || {};
+
+      setSharedRoadSyncMetaForCurrentUser({
+        ...previousMeta,
+        pendingReplace: true
+      });
+
+      const synced = await syncMySharedRoads({
+        replace: true,
+        force: true,
+        quiet: true,
+        reason: "sharing-enabled"
+      });
+
+      showToast(
+        synced
+          ? "Map sharing on"
+          : "Map sharing is on. Road sync will retry when online"
+      );
+    } else {
+      const cleared = await clearMySharedRoads({
+        quiet: true,
+        reason: "sharing-disabled"
+      });
+
+      showToast(
+        cleared
+          ? "Map sharing off"
+          : "Map sharing is off. Server cleanup will retry"
+      );
+    }
+
+    return;
+  }
+
+  showToast(checked ? "Road Profile sharing on" : "Road Profile sharing off");
+}
+
+function showMapShareConfirmation() {
+  if (!els.mapShareConfirmOverlay) {
+    return Promise.resolve(false);
+  }
+
+  if (state.sharedRoadSync.confirmationResolve) {
+    state.sharedRoadSync.confirmationResolve(false);
+  }
+
+  els.mapShareConfirmOverlay.classList.remove("hidden");
+  els.mapShareConfirmOverlay.setAttribute("aria-hidden", "false");
+
+  setTimeout(() => {
+    els.confirmMapShareBtn?.focus();
+  }, 0);
+
+  return new Promise((resolve) => {
+    state.sharedRoadSync.confirmationResolve = resolve;
+  });
+}
+
+function resolveMapShareConfirmation(confirmed) {
+  els.mapShareConfirmOverlay?.classList.add("hidden");
+  els.mapShareConfirmOverlay?.setAttribute("aria-hidden", "true");
+
+  const resolve = state.sharedRoadSync.confirmationResolve;
+  state.sharedRoadSync.confirmationResolve = null;
+
+  if (resolve) {
+    resolve(Boolean(confirmed));
   }
 }
 
@@ -2294,6 +2460,9 @@ function renderAuthState() {
   const loading = Boolean(state.auth.loading);
   const submitting = Boolean(state.auth.submitting);
   const profile = state.auth.profile;
+  const sharingBusy =
+    Boolean(state.sharedRoadSync.syncing) ||
+    Boolean(state.sharedRoadSync.clearing);
 
   els.signedOutProfileCard?.classList.toggle("hidden", signedIn);
   els.signedInProfileCard?.classList.toggle("hidden", !signedIn);
@@ -2332,7 +2501,7 @@ function renderAuthState() {
     els.friendMapToggle
   ].forEach((element) => {
     if (element) {
-      element.disabled = loading || submitting;
+      element.disabled = loading || submitting || sharingBusy;
     }
   });
 
@@ -2385,10 +2554,18 @@ function clearFriendData() {
   state.friends.cancellingOutgoingRequestId = null;
   state.friends.removingFriendId = null;
 
-  state.activeFriendId = null;
+  closeFriendFullMap();
+  clearActiveFriendMapData({ keepActiveFriend: false });
+
   state.statsSync.syncing = false;
   state.statsSync.lastSyncAt = 0;
   state.statsSync.lastPayloadKey = "";
+
+  state.sharedRoadSync.syncing = false;
+  state.sharedRoadSync.clearing = false;
+  state.sharedRoadSync.activeUserId = null;
+  state.sharedRoadSync.privateCleanupChecked = false;
+  state.sharedRoadSync.hashCache.clear();
 }
 
 async function refreshFriendData(options = {}) {
@@ -2401,10 +2578,10 @@ async function refreshFriendData(options = {}) {
   }
 
   await Promise.all([
-  loadIncomingFriendRequests({ quiet: true }),
-  loadOutgoingFriendRequests({ quiet: true }),
-  loadFriends({ quiet: true })
-]);
+    loadIncomingFriendRequests({ quiet: true }),
+    loadOutgoingFriendRequests({ quiet: true }),
+    loadFriends({ quiet: true })
+  ]);
 
   if (!quiet) {
     showToast("Friends updated");
@@ -2416,13 +2593,13 @@ async function refreshFriendData(options = {}) {
 function renderFriendsList() {
   const signedIn = Boolean(state.auth.user && state.auth.profile);
 
-    const busy =
-  Boolean(state.auth.loading) ||
-  Boolean(state.auth.submitting) ||
-  Boolean(state.friends.sendingRequest) ||
-  Boolean(state.friends.respondingRequestId) ||
-  Boolean(state.friends.cancellingOutgoingRequestId) ||
-  Boolean(state.friends.removingFriendId);
+  const busy =
+    Boolean(state.auth.loading) ||
+    Boolean(state.auth.submitting) ||
+    Boolean(state.friends.sendingRequest) ||
+    Boolean(state.friends.respondingRequestId) ||
+    Boolean(state.friends.cancellingOutgoingRequestId) ||
+    Boolean(state.friends.removingFriendId);
 
   if (els.showAddFriendBtn) {
     els.showAddFriendBtn.disabled = !signedIn || busy;
@@ -2447,8 +2624,8 @@ function renderFriendsList() {
   }
 
   renderIncomingFriendRequests(signedIn);
-renderOutgoingFriendRequests(signedIn);
-renderAcceptedFriends(signedIn);
+  renderOutgoingFriendRequests(signedIn);
+  renderAcceptedFriends(signedIn);
 }
 
 async function sendFriendRequestByCode() {
@@ -2555,8 +2732,6 @@ async function loadIncomingFriendRequests(options = {}) {
     renderFriendsList();
     return state.friends.incomingRequests;
   }
-
-   
 
   state.friends.incomingRequests = Array.isArray(data) ? data : [];
 
@@ -2851,6 +3026,7 @@ function renderIncomingFriendRequestRow(request) {
     </div>
   `;
 }
+
 function renderOutgoingFriendRequests(signedIn) {
   if (!els.outgoingRequestsList) {
     return;
@@ -2934,6 +3110,7 @@ function renderOutgoingFriendRequestRow(request) {
     </div>
   `;
 }
+
 function renderAcceptedFriends(signedIn) {
   if (!els.friendsList) return;
 
@@ -3079,14 +3256,29 @@ function openFriendProfile(friendId) {
     return;
   }
 
-  state.activeFriendId = String(friend.friend_id || friend.id || "");
+  clearActiveFriendMapData({ keepActiveFriend: false });
 
+  state.activeFriendId = String(friend.friend_id || friend.id || "");
+  state.friendMap.friendId = state.activeFriendId;
+
+  renderFriendProfile(friend);
+  showFriendProfileView();
+
+  void refreshActiveFriendProfileAndMap(state.activeFriendId);
+}
+
+function renderFriendProfile(friend) {
+  if (!friend) return;
+
+  const friendId = String(friend.friend_id || friend.id || "");
   const username = friend.username || "Road Profile";
   const friendCode = friend.friend_code || "Friend code hidden";
   const initial = username.slice(0, 1).toUpperCase() || "R";
   const profileShared = Boolean(friend.show_profile);
   const mapShared = Boolean(friend.show_map);
   const stats = normaliseFriendStats(friend);
+  const mapStateMatches = state.friendMap.friendId === friendId;
+  const mapLoading = mapStateMatches && state.friendMap.loading;
 
   if (els.friendProfileAvatar) {
     els.friendProfileAvatar.textContent = initial;
@@ -3138,8 +3330,20 @@ function openFriendProfile(friendId) {
     );
   }
 
-    if (els.openFriendMapBtn) {
-    els.openFriendMapBtn.disabled = !mapShared;
+  if (els.openFriendMapBtn) {
+    els.openFriendMapBtn.disabled = !mapShared || mapLoading;
+  }
+
+  if (els.friendMapOpenLabel) {
+    if (!mapShared) {
+      els.friendMapOpenLabel.textContent = "Private";
+    } else if (mapLoading) {
+      els.friendMapOpenLabel.textContent = "Loading…";
+    } else if (mapStateMatches && state.friendMap.error) {
+      els.friendMapOpenLabel.textContent = "Retry →";
+    } else {
+      els.friendMapOpenLabel.textContent = "Open →";
+    }
   }
 
   if (els.removeFriendBtn) {
@@ -3147,15 +3351,160 @@ function openFriendProfile(friendId) {
       state.friends.removingFriendId === state.activeFriendId;
 
     els.removeFriendBtn.disabled = isRemoving;
-
     els.removeFriendBtn.textContent = isRemoving
       ? "Removing..."
       : "Remove friend";
   }
 
   renderFriendPreviewSvg(friend);
-  renderFriendFullMapSvg(friend);
-  showFriendProfileView();
+}
+
+async function refreshActiveFriendProfileAndMap(friendId) {
+  const expectedFriendId = String(friendId || "");
+
+  await loadFriends({ quiet: true });
+
+  if (state.activeFriendId !== expectedFriendId) {
+    return;
+  }
+
+  const friend = getFriendById(expectedFriendId);
+
+  if (!friend) {
+    showToast("That friendship is no longer available");
+    showFriendsListView();
+    return;
+  }
+
+  renderFriendProfile(friend);
+
+  if (!friend.show_map) {
+    clearActiveFriendMapData({ keepActiveFriend: true });
+    state.friendMap.friendId = expectedFriendId;
+    renderFriendProfile(friend);
+    return;
+  }
+
+  await loadFriendSharedRoads(expectedFriendId, { force: true });
+}
+
+async function loadFriendSharedRoads(friendId, options = {}) {
+  const { force = false } = options;
+  const id = String(friendId || "");
+  const friend = getFriendById(id);
+
+  if (!state.auth.client || !state.auth.user || !friend || !friend.show_map) {
+    clearActiveFriendMapData({ keepActiveFriend: true });
+    state.friendMap.friendId = id;
+    renderFriendProfile(friend);
+    return false;
+  }
+
+  if (
+    !force &&
+    state.friendMap.friendId === id &&
+    state.friendMap.loaded &&
+    !state.friendMap.error
+  ) {
+    return true;
+  }
+
+  const requestId = ++state.friendMap.requestId;
+
+  state.friendMap.friendId = id;
+  state.friendMap.roads = [];
+  state.friendMap.loading = true;
+  state.friendMap.loaded = false;
+  state.friendMap.error = "";
+
+  renderFriendProfile(friend);
+
+  const roads = [];
+  let afterHash = null;
+
+  try {
+    for (let page = 0; page < SHARED_ROAD_MAX_DOWNLOAD_PAGES; page++) {
+      const { data, error } = await state.auth.client.rpc(
+        "get_friend_shared_roads",
+        {
+          p_friend_id: id,
+          p_after_hash: afterHash,
+          p_limit: SHARED_ROAD_DOWNLOAD_PAGE_SIZE
+        }
+      );
+
+      if (
+        requestId !== state.friendMap.requestId ||
+        state.activeFriendId !== id
+      ) {
+        return false;
+      }
+
+      if (error) {
+        throw error;
+      }
+
+      const pageRows = (Array.isArray(data) ? data : [])
+        .map(normaliseDownloadedSharedRoad)
+        .filter(Boolean);
+
+      roads.push(...pageRows);
+
+      if (pageRows.length < SHARED_ROAD_DOWNLOAD_PAGE_SIZE) {
+        break;
+      }
+
+      afterHash = pageRows[pageRows.length - 1]?.shared_road_hash || null;
+
+      if (!afterHash) {
+        break;
+      }
+
+      if (page === SHARED_ROAD_MAX_DOWNLOAD_PAGES - 1) {
+        throw new Error("Friend map is too large to load safely");
+      }
+    }
+
+    state.friendMap.roads = roads;
+    state.friendMap.loading = false;
+    state.friendMap.loaded = true;
+    state.friendMap.error = "";
+
+    renderFriendProfile(getFriendById(id));
+    return true;
+  } catch (error) {
+    console.error(error);
+
+    if (
+      requestId !== state.friendMap.requestId ||
+      state.activeFriendId !== id
+    ) {
+      return false;
+    }
+
+    state.friendMap.roads = [];
+    state.friendMap.loading = false;
+    state.friendMap.loaded = false;
+    state.friendMap.error =
+      error?.message || "Could not load this friend map";
+
+    renderFriendProfile(getFriendById(id));
+    return false;
+  }
+}
+
+function normaliseDownloadedSharedRoad(row) {
+  const hash = String(row?.shared_road_hash || "").toLowerCase();
+  const coords = normaliseSharedRoadCoords(row?.coordinates);
+
+  if (!/^[0-9a-f]{64}$/.test(hash) || !coords) {
+    return null;
+  }
+
+  return {
+    shared_road_hash: hash,
+    coordinates: coords
+  };
 }
 
 function renderFriendPreviewSvg(friend) {
@@ -3163,6 +3512,56 @@ function renderFriendPreviewSvg(friend) {
 
   els.friendMapPreviewSvg.innerHTML = "";
 
+  if (!friend?.show_map) {
+    appendFriendPreviewStatus("Map overview private");
+    return;
+  }
+
+  if (state.friendMap.friendId !== state.activeFriendId) {
+    appendFriendPreviewStatus("Preparing map…");
+    return;
+  }
+
+  if (state.friendMap.loading) {
+    appendFriendPreviewStatus("Loading discovered roads…");
+    return;
+  }
+
+  if (state.friendMap.error) {
+    appendFriendPreviewStatus("Could not load map");
+    return;
+  }
+
+  if (!state.friendMap.loaded) {
+    appendFriendPreviewStatus("Preparing map…");
+    return;
+  }
+
+  if (state.friendMap.roads.length === 0) {
+    appendFriendPreviewStatus("No shared roads yet");
+    return;
+  }
+
+  const pathData = buildFriendPreviewPath(state.friendMap.roads, 320, 190, 14);
+
+  if (!pathData) {
+    appendFriendPreviewStatus("No shared roads yet");
+    return;
+  }
+
+  const path = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "path"
+  );
+
+  path.setAttribute("d", pathData);
+  path.setAttribute("vector-effect", "non-scaling-stroke");
+  path.setAttribute("aria-hidden", "true");
+
+  els.friendMapPreviewSvg.appendChild(path);
+}
+
+function appendFriendPreviewStatus(message) {
   const text = document.createElementNS(
     "http://www.w3.org/2000/svg",
     "text"
@@ -3174,47 +3573,88 @@ function renderFriendPreviewSvg(friend) {
   text.setAttribute("fill", "rgba(244, 247, 251, 0.58)");
   text.setAttribute("font-size", "14");
   text.setAttribute("font-weight", "800");
-
-  text.textContent = friend?.show_map
-    ? "Map sync comes later"
-    : "Map overview private";
+  text.textContent = message;
 
   els.friendMapPreviewSvg.appendChild(text);
 }
 
-function renderFriendFullMapSvg(friend) {
-  if (!els.friendFullMapSvg) return;
+function buildFriendPreviewPath(roads, width, height, padding) {
+  const validRoads = roads
+    .map((road) => normaliseSharedRoadCoords(road?.coordinates))
+    .filter(Boolean);
 
-  els.friendFullMapSvg.innerHTML = "";
+  if (validRoads.length === 0) return "";
 
-  const text = document.createElementNS(
-    "http://www.w3.org/2000/svg",
-    "text"
-  );
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
 
-  text.setAttribute("x", "450");
-  text.setAttribute("y", "310");
-  text.setAttribute("text-anchor", "middle");
-  text.setAttribute("fill", "rgba(244, 247, 251, 0.58)");
-  text.setAttribute("font-size", "28");
-  text.setAttribute("font-weight", "900");
+  for (const coords of validRoads) {
+    for (const [lat, lng] of coords) {
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+      minLng = Math.min(minLng, lng);
+      maxLng = Math.max(maxLng, lng);
+    }
+  }
 
-  text.textContent = friend?.show_map
-    ? "Road syncing is not built yet"
-    : "Map overview is private";
+  if (maxLat - minLat < 0.000001) {
+    minLat -= 0.0005;
+    maxLat += 0.0005;
+  }
 
-  els.friendFullMapSvg.appendChild(text);
+  if (maxLng - minLng < 0.000001) {
+    minLng -= 0.0005;
+    maxLng += 0.0005;
+  }
+
+  const innerWidth = Math.max(1, width - padding * 2);
+  const innerHeight = Math.max(1, height - padding * 2);
+
+  const project = ([lat, lng]) => {
+    const x = padding + ((lng - minLng) / (maxLng - minLng)) * innerWidth;
+    const y = height - padding - ((lat - minLat) / (maxLat - minLat)) * innerHeight;
+
+    return [x.toFixed(2), y.toFixed(2)];
+  };
+
+  return validRoads
+    .map((coords) => {
+      const [a, b] = coords;
+      const [x1, y1] = project(a);
+      const [x2, y2] = project(b);
+      return `M${x1} ${y1}L${x2} ${y2}`;
+    })
+    .join(" ");
 }
 
-function openFriendFullMap() {
-  const friend = getActiveFriend();
+async function openFriendFullMap() {
+  const activeFriendId = String(state.activeFriendId || "");
 
-  if (!friend) {
+  if (!activeFriendId) {
     showToast("Open an accepted friend first");
     return;
   }
 
+  await loadFriends({ quiet: true });
+
+  if (state.activeFriendId !== activeFriendId) {
+    return;
+  }
+
+  const friend = getFriendById(activeFriendId);
+
+  if (!friend) {
+    showToast("That friendship is no longer available");
+    showFriendsListView();
+    return;
+  }
+
   if (!friend.show_map) {
+    clearActiveFriendMapData({ keepActiveFriend: true });
+    state.friendMap.friendId = activeFriendId;
+    renderFriendProfile(friend);
     showToast("This friend has map overview sharing off");
     return;
   }
@@ -3223,15 +3663,145 @@ function openFriendFullMap() {
     els.friendMapTitle.textContent = `${friend.username || "Friend"}’s Map`;
   }
 
-  renderFriendFullMapSvg(friend);
-
   els.friendMapOverlay?.classList.remove("hidden");
   els.friendMapOverlay?.setAttribute("aria-hidden", "false");
+  setFriendFullMapStatus("Loading discovered roads…");
+
+  const loaded = await loadFriendSharedRoads(activeFriendId, { force: true });
+
+  if (
+    !loaded ||
+    state.activeFriendId !== activeFriendId ||
+    els.friendMapOverlay?.classList.contains("hidden")
+  ) {
+    if (state.friendMap.error) {
+      setFriendFullMapStatus("Could not load this friend map");
+    }
+    return;
+  }
+
+  ensureFriendFullMap();
+  drawFriendFullMapRoads(state.friendMap.roads);
+}
+
+function ensureFriendFullMap() {
+  if (state.friendMap.fullMap || !window.L || !els.friendFullMap) {
+    return;
+  }
+
+  state.friendMap.fullMap = L.map(els.friendFullMap, {
+    zoomControl: true,
+    preferCanvas: true,
+    attributionControl: false,
+    tap: true
+  }).setView(DEFAULT_CENTER, 4);
+
+  L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    {
+      maxZoom: 20,
+      crossOrigin: true,
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+    }
+  ).addTo(state.friendMap.fullMap);
+
+  state.friendMap.fullRenderer = L.canvas({ padding: 0.5 });
+
+  setTimeout(() => {
+    state.friendMap.fullMap?.invalidateSize(true);
+  }, 80);
+}
+
+function drawFriendFullMapRoads(roads) {
+  const map = state.friendMap.fullMap;
+
+  if (!map) return;
+
+  if (state.friendMap.fullRoadLayer) {
+    map.removeLayer(state.friendMap.fullRoadLayer);
+    state.friendMap.fullRoadLayer = null;
+  }
+
+  const latLngs = roads
+    .map((road) => normaliseSharedRoadCoords(road?.coordinates))
+    .filter(Boolean);
+
+  if (latLngs.length === 0) {
+    map.setView(DEFAULT_CENTER, 4);
+    setFriendFullMapStatus("No shared roads yet");
+    return;
+  }
+
+  state.friendMap.fullRoadLayer = L.polyline(latLngs, {
+    renderer: state.friendMap.fullRenderer,
+    color: ROAD_ORANGE,
+    weight: 5,
+    opacity: 1,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false
+  }).addTo(map);
+
+  const bounds = state.friendMap.fullRoadLayer.getBounds();
+
+  if (bounds.isValid()) {
+    map.fitBounds(bounds, {
+      padding: [28, 28],
+      maxZoom: 17
+    });
+  }
+
+  setFriendFullMapStatus("");
+}
+
+function setFriendFullMapStatus(message) {
+  if (!els.friendFullMapStatus) return;
+
+  if (!message) {
+    els.friendFullMapStatus.textContent = "";
+    els.friendFullMapStatus.classList.add("hidden");
+    return;
+  }
+
+  els.friendFullMapStatus.textContent = message;
+  els.friendFullMapStatus.classList.remove("hidden");
+}
+
+function destroyFriendFullMap() {
+  if (state.friendMap.fullMap) {
+    state.friendMap.fullMap.remove();
+  }
+
+  state.friendMap.fullMap = null;
+  state.friendMap.fullRoadLayer = null;
+  state.friendMap.fullRenderer = null;
+  setFriendFullMapStatus("");
 }
 
 function closeFriendFullMap() {
+  destroyFriendFullMap();
+
   els.friendMapOverlay?.classList.add("hidden");
   els.friendMapOverlay?.setAttribute("aria-hidden", "true");
+}
+
+function clearActiveFriendMapData(options = {}) {
+  const { keepActiveFriend = true } = options;
+
+  state.friendMap.requestId++;
+  state.friendMap.friendId = keepActiveFriend
+    ? String(state.activeFriendId || "")
+    : null;
+  state.friendMap.roads = [];
+  state.friendMap.loading = false;
+  state.friendMap.loaded = false;
+  state.friendMap.error = "";
+
+  destroyFriendFullMap();
+
+  if (!keepActiveFriend) {
+    state.activeFriendId = null;
+  }
 }
 
 function getFriendById(friendId) {
@@ -3372,6 +3942,436 @@ function applyFriendSettingsToUI() {
   }
 }
 
+/* ---------- Checkpoint 7 shared historical roads ---------- */
+
+async function handleOnlineReconnect() {
+  showToast("Online");
+
+  if (!state.isRecording) {
+    await reconcileMySharedRoads({ quiet: true });
+  }
+}
+
+async function reconcileMySharedRoads(options = {}) {
+  const { quiet = true } = options;
+
+  if (!state.auth.client || !state.auth.user || !state.auth.profile) {
+    return false;
+  }
+
+  if (state.isRecording) {
+    return false;
+  }
+
+  const userId = String(state.auth.user.id || "");
+
+  if (state.sharedRoadSync.activeUserId !== userId) {
+    state.sharedRoadSync.activeUserId = userId;
+    state.sharedRoadSync.privateCleanupChecked = false;
+    state.sharedRoadSync.hashCache.clear();
+  }
+
+  if (state.auth.profile.show_map) {
+    return syncMySharedRoads({
+      force: false,
+      quiet,
+      reason: "reconcile"
+    });
+  }
+
+  const meta = getSharedRoadSyncMetaForCurrentUser();
+
+  if (
+    meta?.pendingClear ||
+    !state.sharedRoadSync.privateCleanupChecked
+  ) {
+    state.sharedRoadSync.privateCleanupChecked = true;
+
+    return clearMySharedRoads({
+      quiet,
+      reason: "private-reconcile"
+    });
+  }
+
+  return true;
+}
+
+async function syncMySharedRoads(options = {}) {
+  const {
+    segments = null,
+    replace = false,
+    force = false,
+    quiet = true,
+    reason = "manual"
+  } = options;
+
+  if (!state.auth.client || !state.auth.user || !state.auth.profile) {
+    return false;
+  }
+
+  if (!state.auth.profile.show_map || state.isRecording) {
+    return false;
+  }
+
+  if (!navigator.onLine) {
+    return false;
+  }
+
+  if (state.sharedRoadSync.syncing || state.sharedRoadSync.clearing) {
+    return false;
+  }
+
+  const meta = getSharedRoadSyncMetaForCurrentUser();
+  const mustReplace = Boolean(
+    replace ||
+    !meta ||
+    meta.pendingReplace ||
+    meta.pendingClear
+  );
+
+  const isFullSync = !Array.isArray(segments) || mustReplace;
+  const sourceSegments = isFullSync
+    ? Object.values(state.savedSegments)
+    : segments.filter(Boolean);
+
+  if (!isFullSync && sourceSegments.length === 0) {
+    return true;
+  }
+
+  let localFingerprint = null;
+
+  if (isFullSync) {
+    localFingerprint = await computeLocalRoadDatasetFingerprint();
+
+    if (
+      !force &&
+      !mustReplace &&
+      meta?.fingerprint === localFingerprint &&
+      Number(meta?.count) === Object.keys(state.savedSegments).length
+    ) {
+      return true;
+    }
+  }
+
+  state.sharedRoadSync.syncing = true;
+  renderAuthState();
+
+  try {
+    if (mustReplace) {
+      const cleared = await clearMySharedRoads({
+        quiet: true,
+        reason: `${reason}-replace`,
+        preserveMeta: true,
+        allowWhileSyncing: true
+      });
+
+      if (!cleared) {
+        throw new Error("Could not replace the previous shared map");
+      }
+    }
+
+    const seenHashes = new Set();
+    let uploadedCount = 0;
+
+    for (
+      let startIndex = 0;
+      startIndex < sourceSegments.length;
+      startIndex += SHARED_ROAD_UPLOAD_BATCH_SIZE
+    ) {
+      const sourceBatch = sourceSegments.slice(
+        startIndex,
+        startIndex + SHARED_ROAD_UPLOAD_BATCH_SIZE
+      );
+
+      const builtBatch = await Promise.all(
+        sourceBatch.map(buildSharedRoadRecord)
+      );
+
+      const uploadBatch = builtBatch.filter((record) => {
+        if (!record || seenHashes.has(record.shared_road_hash)) {
+          return false;
+        }
+
+        seenHashes.add(record.shared_road_hash);
+        return true;
+      });
+
+      if (uploadBatch.length === 0) {
+        continue;
+      }
+
+      const { data, error } = await state.auth.client.rpc(
+        "sync_my_shared_roads",
+        {
+          roads: uploadBatch
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      uploadedCount += Number(data) || uploadBatch.length;
+    }
+
+    localFingerprint =
+      localFingerprint ||
+      await computeLocalRoadDatasetFingerprint();
+
+    setSharedRoadSyncMetaForCurrentUser({
+      fingerprint: localFingerprint,
+      count: Object.keys(state.savedSegments).length,
+      pendingClear: false,
+      pendingReplace: false,
+      serverMayHaveRoads: Object.keys(state.savedSegments).length > 0,
+      lastSyncAt: new Date().toISOString()
+    });
+
+    if (!quiet) {
+      showToast(
+        uploadedCount > 0
+          ? `${uploadedCount.toLocaleString("en-AU")} shared roads synced`
+          : "Shared map is up to date"
+      );
+    }
+
+    return true;
+  } catch (error) {
+    console.error(error);
+
+    if (!quiet) {
+      showToast(sharedRoadErrorMessage(error));
+    }
+
+    return false;
+  } finally {
+    state.sharedRoadSync.syncing = false;
+    renderAuthState();
+  }
+}
+
+async function clearMySharedRoads(options = {}) {
+  const {
+    quiet = true,
+    reason = "manual",
+    preserveMeta = false,
+    allowWhileSyncing = false
+  } = options;
+
+  if (!state.auth.client || !state.auth.user) {
+    return false;
+  }
+
+  if (
+    state.sharedRoadSync.clearing ||
+    (state.sharedRoadSync.syncing && !allowWhileSyncing)
+  ) {
+    return false;
+  }
+
+  state.sharedRoadSync.clearing = true;
+  renderAuthState();
+
+  try {
+    const { error } = await state.auth.client.rpc(
+      "clear_my_shared_roads"
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    if (!preserveMeta) {
+      removeSharedRoadSyncMetaForCurrentUser();
+    }
+
+    if (!quiet) {
+      showToast("Shared road copy cleared");
+    }
+
+    return true;
+  } catch (error) {
+    console.error(error);
+
+    const previous = getSharedRoadSyncMetaForCurrentUser() || {};
+
+    setSharedRoadSyncMetaForCurrentUser({
+      ...previous,
+      pendingClear: true,
+      clearReason: reason
+    });
+
+    if (!quiet) {
+      showToast(sharedRoadErrorMessage(error));
+    }
+
+    return false;
+  } finally {
+    state.sharedRoadSync.clearing = false;
+    renderAuthState();
+  }
+}
+
+async function buildSharedRoadRecord(segment) {
+  const coordinates = normaliseSharedRoadCoords(segment?.coords);
+
+  if (!coordinates) {
+    return null;
+  }
+
+  const canonical = coordinates
+    .map(([lat, lng]) => `${lat.toFixed(6)},${lng.toFixed(6)}`)
+    .join("|");
+
+  let sharedRoadHash = state.sharedRoadSync.hashCache.get(canonical);
+
+  if (!sharedRoadHash) {
+    sharedRoadHash = await sha256Hex(canonical);
+    state.sharedRoadSync.hashCache.set(canonical, sharedRoadHash);
+  }
+
+  return {
+    shared_road_hash: sharedRoadHash,
+    coordinates
+  };
+}
+
+function normaliseSharedRoadCoords(coords) {
+  if (!Array.isArray(coords) || coords.length < 2) {
+    return null;
+  }
+
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+
+  if (
+    !Array.isArray(first) ||
+    !Array.isArray(last) ||
+    first.length < 2 ||
+    last.length < 2
+  ) {
+    return null;
+  }
+
+  const endpoints = [first, last].map((coord) => [
+    Number(Number(coord[0]).toFixed(6)),
+    Number(Number(coord[1]).toFixed(6))
+  ]);
+
+  if (
+    !endpoints.every(([lat, lng]) =>
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    endpoints[0][0] === endpoints[1][0] &&
+    endpoints[0][1] === endpoints[1][1]
+  ) {
+    return null;
+  }
+
+  endpoints.sort((a, b) => {
+    return a[0] - b[0] || a[1] - b[1];
+  });
+
+  return endpoints;
+}
+
+async function computeLocalRoadDatasetFingerprint() {
+  const localSegmentIds = Object.keys(state.savedSegments).sort();
+  return sha256Hex(localSegmentIds.join("\n"));
+}
+
+async function sha256Hex(value) {
+  if (!window.crypto?.subtle) {
+    throw new Error("Secure road hashing is unavailable in this browser");
+  }
+
+  const digest = await window.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(String(value))
+  );
+
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function getSharedRoadSyncStore() {
+  const store = readJson(SHARED_ROAD_SYNC_STATE_KEY, {});
+
+  return store && typeof store === "object" && !Array.isArray(store)
+    ? store
+    : {};
+}
+
+function getSharedRoadSyncMetaForCurrentUser() {
+  const userId = String(state.auth.user?.id || "");
+
+  if (!userId) return null;
+
+  const store = getSharedRoadSyncStore();
+  const meta = store[userId];
+
+  return meta && typeof meta === "object"
+    ? meta
+    : null;
+}
+
+function setSharedRoadSyncMetaForCurrentUser(meta) {
+  const userId = String(state.auth.user?.id || "");
+
+  if (!userId) return;
+
+  const store = getSharedRoadSyncStore();
+  store[userId] = meta;
+  writeJson(SHARED_ROAD_SYNC_STATE_KEY, store);
+}
+
+function removeSharedRoadSyncMetaForCurrentUser() {
+  const userId = String(state.auth.user?.id || "");
+
+  if (!userId) return;
+
+  const store = getSharedRoadSyncStore();
+  delete store[userId];
+  writeJson(SHARED_ROAD_SYNC_STATE_KEY, store);
+}
+
+function sharedRoadErrorMessage(error) {
+  const message = String(error?.message || "").toLowerCase();
+
+  if (message.includes("map sharing is off")) {
+    return "Map sharing is off";
+  }
+
+  if (message.includes("maximum of 500")) {
+    return "Shared-road batch was too large";
+  }
+
+  if (message.includes("payload")) {
+    return "Shared-road batch was too large";
+  }
+
+  if (message.includes("authentication")) {
+    return "Sign in again to sync shared roads";
+  }
+
+  if (message.includes("function") && message.includes("does not exist")) {
+    return "Checkpoint 7 SQL has not been installed yet";
+  }
+
+  return error?.message || "Could not sync shared roads";
+}
+
 /* ---------- Checkpoint 4 safe profile stats sync ---------- */
 
 async function maybeSyncProfileStats(options = {}) {
@@ -3412,15 +4412,13 @@ async function maybeSyncProfileStats(options = {}) {
 
   state.statsSync.syncing = true;
 
-  const syncedAt = new Date().toISOString();
-
   const { error } = await state.auth.client.rpc("sync_my_profile_stats", {
-  p_unlocked_count: stats.unlockedCount,
-  p_unlocked_km: stats.unlockedKm,
-  p_today_km: stats.todayKm,
-  p_week_km: stats.weekKm,
-  p_australia_percent: stats.australiaPercent
-});
+    p_unlocked_count: stats.unlockedCount,
+    p_unlocked_km: stats.unlockedKm,
+    p_today_km: stats.todayKm,
+    p_week_km: stats.weekKm,
+    p_australia_percent: stats.australiaPercent
+  });
 
   state.statsSync.syncing = false;
 
