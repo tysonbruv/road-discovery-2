@@ -1,29 +1,81 @@
 "use strict";
 
-/* Road Discovery AU v41 service worker */
+/*
+  Road Discovery AU v42 service worker
 
-const CACHE_NAME = "road-discovery-au-v41";
+  Checkpoint 8:
+  Private friend nicknames.
 
-const APP_SHELL = [
+  Expected frontend versions:
+  - app.js?v=42
+  - style.css?v=36
+
+  The previous app.js?v=41 and style.css?v=35 files are also
+  recognised during the update so the site can be upgraded safely.
+*/
+
+const CACHE_NAME = "road-discovery-au-v42";
+
+const CORE_APP_SHELL = [
   "./",
   "./index.html",
-  "./style.css?v=35",
-  "./app.js?v=41",
   "./manifest.json",
   "./icon.svg"
 ];
 
-/* Install the new app files and activate immediately */
+const VERSIONED_APP_FILES = [
+  "./style.css?v=36",
+  "./app.js?v=42",
+
+  /*
+    Temporary fallback files used while the GitHub files are being
+    replaced one at a time.
+  */
+  "./style.css?v=35",
+  "./app.js?v=41"
+];
+
+/* -------------------------------------------------- */
+/* Install                                            */
+/* -------------------------------------------------- */
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then(async (cache) => {
+        /*
+          These files should always exist.
+        */
+        await cache.addAll(CORE_APP_SHELL);
+
+        /*
+          Cache each versioned file separately.
+
+          If app.js?v=42 or style.css?v=36 has not been uploaded yet,
+          installation can still complete using the previous version.
+        */
+        await Promise.all(
+          VERSIONED_APP_FILES.map(async (file) => {
+            try {
+              await cache.add(file);
+            } catch (error) {
+              console.warn(
+                `Could not pre-cache ${file}. It will be cached when available.`,
+                error
+              );
+            }
+          })
+        );
+      })
       .then(() => self.skipWaiting())
   );
 });
 
-/* Delete all older Road Discovery cache versions */
+/* -------------------------------------------------- */
+/* Activate                                           */
+/* -------------------------------------------------- */
+
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
@@ -39,7 +91,10 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-/* Use network-first so updates appear quickly, with cache as backup */
+/* -------------------------------------------------- */
+/* Fetch                                              */
+/* -------------------------------------------------- */
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
 
@@ -51,6 +106,7 @@ self.addEventListener("fetch", (event) => {
 
   /*
     Do not intercept external requests such as:
+
     - Leaflet CDN files
     - Supabase client library
     - CARTO map tiles
@@ -61,16 +117,19 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  /* Page navigation */
+  /* ------------------------------------------------ */
+  /* Page navigation                                  */
+  /* ------------------------------------------------ */
+
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
           if (networkResponse && networkResponse.ok) {
-            const copy = networkResponse.clone();
+            const responseCopy = networkResponse.clone();
 
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put("./index.html", copy);
+              cache.put("./index.html", responseCopy);
             });
           }
 
@@ -87,37 +146,65 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  /* JavaScript, CSS, manifest and icon files */
+  /* ------------------------------------------------ */
+  /* Local JavaScript, CSS, manifest and icon files   */
+  /* ------------------------------------------------ */
+
   event.respondWith(
     fetch(request)
       .then((networkResponse) => {
         if (networkResponse && networkResponse.ok) {
-          const copy = networkResponse.clone();
+          const responseCopy = networkResponse.clone();
 
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, copy);
+            cache.put(request, responseCopy);
           });
         }
 
         return networkResponse;
       })
       .catch(async () => {
-        const cachedResponse = await caches.match(request);
+        /*
+          First try the exact requested file.
+        */
+        const exactCachedResponse = await caches.match(request);
 
-        if (cachedResponse) {
-          return cachedResponse;
+        if (exactCachedResponse) {
+          return exactCachedResponse;
         }
 
         /*
-          Handles cases where the browser asks for the file without
-          the version query string while the cached copy includes it.
+          Handles cases where the browser requests a file without its
+          version query string.
         */
         if (url.pathname.endsWith("/style.css")) {
-          return caches.match("./style.css?v=35");
+          return (
+            (await caches.match("./style.css?v=36")) ||
+            (await caches.match("./style.css?v=35")) ||
+            Response.error()
+          );
         }
 
         if (url.pathname.endsWith("/app.js")) {
-          return caches.match("./app.js?v=41");
+          return (
+            (await caches.match("./app.js?v=42")) ||
+            (await caches.match("./app.js?v=41")) ||
+            Response.error()
+          );
+        }
+
+        if (url.pathname.endsWith("/manifest.json")) {
+          return (
+            (await caches.match("./manifest.json")) ||
+            Response.error()
+          );
+        }
+
+        if (url.pathname.endsWith("/icon.svg")) {
+          return (
+            (await caches.match("./icon.svg")) ||
+            Response.error()
+          );
         }
 
         return Response.error();
