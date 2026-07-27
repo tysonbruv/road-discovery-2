@@ -1,6 +1,7 @@
 :root {
   --bg: #05070a;
   --bg-2: #080c11;
+
   --panel: rgba(8, 12, 17, 0.94);
   --panel-solid: #0a0f15;
   --panel-soft: rgba(255, 255, 255, 0.055);
@@ -13,9 +14,10 @@
   --line: rgba(255, 255, 255, 0.12);
   --line-strong: rgba(255, 255, 255, 0.2);
 
-  --orange: #ff8a1f;
-  --orange-2: #ffb15a;
-  --blue: #4aa3ff;
+  --road-grey: #4e5563;
+  --orange: #ff8a18;
+  --orange-2: #ffb04a;
+  --blue: #4bb3ff;
   --green: #38d67a;
   --red: #ff4d4d;
 
@@ -78,11 +80,12 @@ button {
   color: inherit;
   cursor: pointer;
   user-select: none;
+  touch-action: manipulation;
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
 input {
@@ -105,10 +108,15 @@ input {
   text-align: center;
 }
 
+/* -------------------------------------------------- */
+/* Main app and map                                   */
+/* -------------------------------------------------- */
+
 .app-shell {
   position: fixed;
   inset: 0;
   width: 100%;
+  height: 100%;
   height: 100dvh;
   overflow: hidden;
   background: var(--bg);
@@ -118,21 +126,29 @@ input {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: #05070a;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
 }
-
-/* Leaflet dark-ish cleanup */
 
 .leaflet-container {
   width: 100%;
   height: 100%;
-  background: #05070a;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
   font-family: inherit;
+  outline: none;
 }
 
-.leaflet-tile-pane {
-  filter: brightness(0.62) contrast(1.22) saturate(0.55);
-}
+/*
+  Do not darken the map tiles here.
+
+  The old friends version used:
+  filter: brightness(0.62);
+
+  That made the normal grey roads on the CARTO map almost disappear.
+*/
 
 .leaflet-control-zoom {
   display: none;
@@ -155,16 +171,90 @@ input {
   color: var(--text);
 }
 
+.leaflet-tooltip {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 12, 17, 0.94);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.leaflet-tooltip::before {
+  display: none;
+}
+
 .leaflet-marker-icon,
 .leaflet-marker-shadow {
   -webkit-user-drag: none;
 }
 
-/* Top HUD */
+/* -------------------------------------------------- */
+/* Leaflet positioning and pane fallback              */
+/* -------------------------------------------------- */
+
+.leaflet-pane,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-tile-container,
+.leaflet-pane > svg,
+.leaflet-pane > canvas,
+.leaflet-zoom-box,
+.leaflet-image-layer,
+.leaflet-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.leaflet-tile {
+  max-width: none !important;
+  max-height: none !important;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.leaflet-tile-container {
+  pointer-events: none;
+}
+
+.leaflet-map-pane {
+  z-index: 400;
+}
+
+.leaflet-tile-pane {
+  z-index: 200;
+}
+
+.leaflet-overlay-pane {
+  z-index: 400;
+}
+
+.leaflet-shadow-pane {
+  z-index: 500;
+}
+
+.leaflet-marker-pane {
+  z-index: 600;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 650;
+}
+
+.leaflet-popup-pane {
+  z-index: 700;
+}
+
+/* -------------------------------------------------- */
+/* Top HUD                                            */
+/* -------------------------------------------------- */
 
 .top-hud {
   position: absolute;
-  z-index: 20;
+  z-index: 1000;
   top: calc(12px + var(--safe-top));
   left: calc(12px + var(--safe-left));
   right: calc(12px + var(--safe-right));
@@ -187,7 +277,8 @@ input {
   padding: 8px 10px 8px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(5, 7, 10, 0.72);
+  background: rgba(5, 7, 10, 0.76);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow-soft);
 }
@@ -200,7 +291,11 @@ input {
   flex: 0 0 auto;
   border-radius: 999px;
   background:
-    radial-gradient(circle at 30% 25%, rgba(255, 177, 90, 0.9), transparent 32%),
+    radial-gradient(
+      circle at 30% 25%,
+      rgba(255, 177, 90, 0.9),
+      transparent 32%
+    ),
     linear-gradient(135deg, #ff7a00, #9e4200);
   color: #190a00;
   font-weight: 900;
@@ -225,10 +320,13 @@ input {
 
 .brand-subtitle {
   margin-top: 2px;
+  overflow: hidden;
   color: var(--muted);
   font-size: 11px;
+  font-weight: 650;
   line-height: 1.1;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .gps-pill {
@@ -238,7 +336,8 @@ input {
   padding: 9px 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(5, 7, 10, 0.72);
+  background: rgba(5, 7, 10, 0.76);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow-soft);
   color: var(--muted);
@@ -261,7 +360,8 @@ input {
   padding: 10px 9px;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgba(5, 7, 10, 0.74);
+  background: rgba(5, 7, 10, 0.77);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow-soft);
   text-align: center;
@@ -288,12 +388,15 @@ input {
 .accuracy-status {
   display: inline-flex;
   align-items: center;
-  max-width: calc(100vw - 24px - var(--safe-left) - var(--safe-right));
+  max-width: calc(
+    100vw - 24px - var(--safe-left) - var(--safe-right)
+  );
   margin-top: 8px;
   padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(5, 7, 10, 0.66);
+  background: rgba(5, 7, 10, 0.7);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow-soft);
   color: var(--muted);
@@ -303,11 +406,13 @@ input {
   pointer-events: none;
 }
 
-/* Right-side tool buttons */
+/* -------------------------------------------------- */
+/* Right-side map tools                               */
+/* -------------------------------------------------- */
 
 .tool-stack {
   position: absolute;
-  z-index: 30;
+  z-index: 1100;
   top: calc(174px + var(--safe-top));
   right: calc(12px + var(--safe-right));
   display: flex;
@@ -319,11 +424,15 @@ input {
 .tool-btn {
   width: 46px;
   height: 46px;
+  min-width: 46px;
+  min-height: 46px;
   display: grid;
   place-items: center;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(5, 7, 10, 0.78);
+  background: rgba(5, 7, 10, 0.82);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow-soft);
   color: var(--text);
@@ -332,7 +441,12 @@ input {
   transition:
     transform 0.12s ease,
     background 0.12s ease,
-    border-color 0.12s ease;
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.tool-btn:hover {
+  border-color: var(--line-strong);
 }
 
 .tool-btn:active {
@@ -341,27 +455,44 @@ input {
   border-color: var(--line-strong);
 }
 
-.danger-tool {
-  color: #ffd5d5;
-  background: rgba(64, 8, 8, 0.78);
+#locateBtn {
+  color: #dff1ff;
+  font-size: 24px;
 }
 
-/* Bottom drive controls */
+#locateBtn:active {
+  border-color: rgba(75, 179, 255, 0.7);
+  box-shadow:
+    var(--shadow-soft),
+    0 0 0 4px rgba(75, 179, 255, 0.12),
+    0 0 22px rgba(75, 179, 255, 0.35);
+}
+
+.danger-tool {
+  color: #ffd5d5;
+  background: rgba(64, 8, 8, 0.82);
+  border-color: rgba(255, 77, 77, 0.3);
+}
+
+/* -------------------------------------------------- */
+/* Bottom drive controls                              */
+/* -------------------------------------------------- */
 
 .bottom-controls {
   position: absolute;
-  z-index: 24;
+  z-index: 1050;
   left: calc(12px + var(--safe-left));
   right: calc(12px + var(--safe-right));
   bottom: calc(12px + var(--safe-bottom));
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
   pointer-events: auto;
 }
 
 .drive-btn {
-  min-height: 54px;
+  width: 100%;
+  min-height: 56px;
   padding: 0 16px;
   border-radius: 19px;
   box-shadow: var(--shadow);
@@ -379,40 +510,63 @@ input {
 }
 
 .primary-drive-btn {
-  background: linear-gradient(135deg, var(--orange), #ff6a00);
+  background: linear-gradient(
+    135deg,
+    var(--orange),
+    #ff6a00
+  );
   color: #1b0900;
 }
 
-.secondary-drive-btn {
-  border: 1px solid var(--line);
-  background: rgba(5, 7, 10, 0.82);
-  backdrop-filter: blur(18px);
-  color: var(--text);
+.primary-drive-btn:disabled {
+  filter: saturate(0.65);
+  opacity: 0.78;
 }
 
-/* Shared panels */
+.secondary-drive-btn {
+  border: 1px solid rgba(255, 77, 77, 0.34);
+  background: rgba(92, 10, 10, 0.88);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  color: #ffd8d8;
+}
+
+/* -------------------------------------------------- */
+/* Shared panel backdrop and panels                   */
+/* -------------------------------------------------- */
 
 .panel-backdrop {
   position: absolute;
-  z-index: 39;
+  z-index: 2000;
   inset: 0;
-  background: rgba(0, 0, 0, 0.34);
+  padding: 0;
+  background: rgba(0, 0, 0, 0.38);
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
 
 .side-panel {
   position: absolute;
-  z-index: 40;
+  z-index: 2100;
   top: calc(10px + var(--safe-top));
   right: calc(10px + var(--safe-right));
   bottom: calc(10px + var(--safe-bottom));
-  width: min(390px, calc(100vw - 20px - var(--safe-left) - var(--safe-right)));
+  width: min(
+    390px,
+    calc(
+      100vw -
+      20px -
+      var(--safe-left) -
+      var(--safe-right)
+    )
+  );
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-xl);
   background: var(--panel);
+  -webkit-backdrop-filter: blur(26px);
   backdrop-filter: blur(26px);
   box-shadow: var(--shadow);
 }
@@ -444,9 +598,12 @@ input {
 .panel-close-btn {
   width: 38px;
   height: 38px;
+  min-width: 38px;
+  min-height: 38px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 13px;
   background: rgba(255, 255, 255, 0.055);
@@ -464,6 +621,7 @@ input {
   overflow: auto;
   padding: 14px 14px 18px;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .panel-section {
@@ -495,13 +653,15 @@ input {
 
 .privacy-note {
   padding: 11px 12px;
-  border: 1px solid rgba(255, 138, 31, 0.2);
+  border: 1px solid rgba(255, 138, 24, 0.2);
   border-radius: 14px;
-  background: rgba(255, 138, 31, 0.075);
+  background: rgba(255, 138, 24, 0.075);
   color: rgba(255, 224, 195, 0.82);
 }
 
-/* Buttons and fields */
+/* -------------------------------------------------- */
+/* General buttons and fields                         */
+/* -------------------------------------------------- */
 
 .wide-btn,
 .danger-btn,
@@ -520,7 +680,11 @@ input {
 }
 
 .wide-btn {
-  background: linear-gradient(135deg, rgba(255, 138, 31, 0.98), rgba(255, 106, 0, 0.98));
+  background: linear-gradient(
+    135deg,
+    rgba(255, 138, 24, 0.98),
+    rgba(255, 106, 0, 0.98)
+  );
   color: #1b0900;
 }
 
@@ -558,7 +722,7 @@ input {
 
 .field-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
 }
 
@@ -581,15 +745,15 @@ input {
 }
 
 .text-field:focus {
-  border-color: rgba(255, 138, 31, 0.65);
-  box-shadow: 0 0 0 3px rgba(255, 138, 31, 0.13);
+  border-color: rgba(255, 138, 24, 0.65);
+  box-shadow: 0 0 0 3px rgba(255, 138, 24, 0.13);
 }
 
 .small-action-btn {
   height: 44px;
   padding: 0 13px;
   border-radius: 14px;
-  background: rgba(255, 138, 31, 0.94);
+  background: rgba(255, 138, 24, 0.94);
   color: #1b0900;
   font-size: 13px;
   font-weight: 900;
@@ -609,12 +773,14 @@ input {
   font-weight: 900;
 }
 
-/* Toggle switches */
+/* -------------------------------------------------- */
+/* Toggle switches                                    */
+/* -------------------------------------------------- */
 
 .toggle-row {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
   padding: 13px;
@@ -690,7 +856,9 @@ input {
   background: #ffffff;
 }
 
-/* Friends panel */
+/* -------------------------------------------------- */
+/* Friends panel                                      */
+/* -------------------------------------------------- */
 
 .friends-panel .panel-content {
   padding-bottom: 20px;
@@ -745,7 +913,7 @@ input {
 .friend-row {
   width: 100%;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 11px;
   align-items: center;
   padding: 12px;
@@ -771,10 +939,18 @@ input {
   place-items: center;
   border-radius: 999px;
   background:
-    radial-gradient(circle at 30% 25%, rgba(255, 177, 90, 0.95), transparent 34%),
-    linear-gradient(135deg, rgba(255, 138, 31, 0.98), rgba(128, 51, 0, 0.95));
+    radial-gradient(
+      circle at 30% 25%,
+      rgba(255, 177, 90, 0.95),
+      transparent 34%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(255, 138, 24, 0.98),
+      rgba(128, 51, 0, 0.95)
+    );
   color: #1b0900;
-  font-weight: 1000;
+  font-weight: 900;
   line-height: 1;
 }
 
@@ -873,6 +1049,7 @@ input {
 }
 
 .friend-stat-card {
+  min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -889,20 +1066,23 @@ input {
 }
 
 .friend-stat-value {
+  overflow: hidden;
   color: var(--text);
   font-size: 17px;
-  font-weight: 1000;
+  font-weight: 900;
   line-height: 1.1;
   letter-spacing: -0.02em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .friend-map-preview-btn {
   width: 100%;
   overflow: hidden;
   padding: 0;
-  border: 1px solid rgba(255, 138, 31, 0.22);
+  border: 1px solid rgba(255, 138, 24, 0.22);
   border-radius: 18px;
-  background: rgba(255, 138, 31, 0.055);
+  background: rgba(255, 138, 24, 0.055);
   text-align: left;
   box-shadow: var(--shadow-soft);
 }
@@ -913,7 +1093,7 @@ input {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 13px;
-  border-bottom: 1px solid rgba(255, 138, 31, 0.16);
+  border-bottom: 1px solid rgba(255, 138, 24, 0.16);
   color: rgba(255, 224, 195, 0.92);
   font-size: 13px;
   font-weight: 900;
@@ -922,9 +1102,22 @@ input {
 .friend-map-preview {
   height: 190px;
   background:
-    radial-gradient(circle at 26% 28%, rgba(255, 255, 255, 0.055), transparent 22%),
-    radial-gradient(circle at 76% 68%, rgba(255, 138, 31, 0.08), transparent 25%),
-    linear-gradient(135deg, #05070a, #0a1118 55%, #05070a);
+    radial-gradient(
+      circle at 26% 28%,
+      rgba(255, 255, 255, 0.055),
+      transparent 22%
+    ),
+    radial-gradient(
+      circle at 76% 68%,
+      rgba(255, 138, 24, 0.08),
+      transparent 25%
+    ),
+    linear-gradient(
+      135deg,
+      #05070a,
+      #0a1118 55%,
+      #05070a
+    );
 }
 
 .friend-map-svg,
@@ -939,7 +1132,9 @@ input {
   stroke: var(--orange);
   stroke-linecap: round;
   stroke-linejoin: round;
-  filter: drop-shadow(0 0 8px rgba(255, 138, 31, 0.35));
+  filter: drop-shadow(
+    0 0 8px rgba(255, 138, 24, 0.35)
+  );
 }
 
 .friend-map-svg path {
@@ -961,11 +1156,13 @@ input {
   margin: 0;
 }
 
-/* Full friend map overlay */
+/* -------------------------------------------------- */
+/* Full friend map overlay                            */
+/* -------------------------------------------------- */
 
 .friend-map-overlay {
   position: absolute;
-  z-index: 60;
+  z-index: 3000;
   inset: 0;
   display: flex;
   flex-direction: column;
@@ -984,7 +1181,8 @@ input {
     12px
     calc(14px + var(--safe-left));
   border-bottom: 1px solid var(--line);
-  background: rgba(5, 7, 10, 0.84);
+  background: rgba(5, 7, 10, 0.86);
+  -webkit-backdrop-filter: blur(22px);
   backdrop-filter: blur(22px);
   box-shadow: var(--shadow-soft);
 }
@@ -1009,10 +1207,25 @@ input {
   flex: 1;
   overflow: hidden;
   background:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    radial-gradient(circle at 30% 25%, rgba(255, 138, 31, 0.08), transparent 25%),
-    radial-gradient(circle at 75% 74%, rgba(74, 163, 255, 0.055), transparent 24%),
+    linear-gradient(
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px
+    ),
+    radial-gradient(
+      circle at 30% 25%,
+      rgba(255, 138, 24, 0.08),
+      transparent 25%
+    ),
+    radial-gradient(
+      circle at 75% 74%,
+      rgba(75, 179, 255, 0.055),
+      transparent 24%
+    ),
     #05070a;
   background-size:
     46px 46px,
@@ -1027,7 +1240,12 @@ input {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at center, transparent 0%, rgba(0, 0, 0, 0.22) 68%, rgba(0, 0, 0, 0.56) 100%);
+    radial-gradient(
+      circle at center,
+      transparent 0%,
+      rgba(0, 0, 0, 0.22) 68%,
+      rgba(0, 0, 0, 0.56) 100%
+    );
   pointer-events: none;
 }
 
@@ -1036,19 +1254,23 @@ input {
   inset: 0;
 }
 
-/* Toast */
+/* -------------------------------------------------- */
+/* Toast messages                                     */
+/* -------------------------------------------------- */
 
 .toast {
   position: absolute;
-  z-index: 90;
+  z-index: 4000;
   left: 50%;
   bottom: calc(86px + var(--safe-bottom));
   max-width: calc(100vw - 28px);
+  overflow: hidden;
   transform: translateX(-50%);
   padding: 10px 13px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(5, 7, 10, 0.9);
+  background: rgba(5, 7, 10, 0.92);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow);
   color: var(--text);
@@ -1056,13 +1278,33 @@ input {
   font-weight: 800;
   text-align: center;
   white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 
-/* Small screens */
+/* -------------------------------------------------- */
+/* Recording mode                                     */
+/* -------------------------------------------------- */
+
+body.recording .primary-drive-btn {
+  display: none;
+}
+
+body.recording .secondary-drive-btn {
+  display: block;
+}
+
+body.recording #locateBtn {
+  border-color: rgba(75, 179, 255, 0.38);
+}
+
+/* -------------------------------------------------- */
+/* Small phones                                       */
+/* -------------------------------------------------- */
 
 @media (max-width: 380px) {
   .brand-title {
-    max-width: 150px;
+    max-width: 145px;
     font-size: 13px;
   }
 
@@ -1090,13 +1332,20 @@ input {
 
   .tool-stack {
     top: calc(168px + var(--safe-top));
+    gap: 7px;
   }
 
   .tool-btn {
     width: 43px;
     height: 43px;
+    min-width: 43px;
+    min-height: 43px;
     border-radius: 15px;
     font-size: 19px;
+  }
+
+  #locateBtn {
+    font-size: 22px;
   }
 
   .drive-btn {
@@ -1107,11 +1356,17 @@ input {
   .friend-stat-value {
     font-size: 15px;
   }
+
+  .friend-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
-/* Short landscape / tight height */
+/* -------------------------------------------------- */
+/* Short screens                                      */
+/* -------------------------------------------------- */
 
-@media (max-height: 620px) {
+@media (max-height: 680px) {
   .top-hud {
     top: calc(8px + var(--safe-top));
   }
@@ -1144,13 +1399,15 @@ input {
   }
 
   .tool-stack {
-    top: calc(128px + var(--safe-top));
+    top: calc(126px + var(--safe-top));
     gap: 7px;
   }
 
   .tool-btn {
     width: 42px;
     height: 42px;
+    min-width: 42px;
+    min-height: 42px;
     border-radius: 14px;
   }
 
@@ -1159,11 +1416,29 @@ input {
   }
 
   .drive-btn {
-    min-height: 48px;
+    min-height: 50px;
   }
 }
 
-/* Wide screens */
+@media (max-height: 540px) {
+  .tool-stack {
+    top: calc(92px + var(--safe-top));
+    display: grid;
+    grid-template-columns: repeat(3, 42px);
+  }
+
+  .stats-bar {
+    display: none;
+  }
+
+  .brand-row {
+    margin-bottom: 0;
+  }
+}
+
+/* -------------------------------------------------- */
+/* Tablets and desktop                                */
+/* -------------------------------------------------- */
 
 @media (min-width: 760px) {
   .top-hud {
@@ -1191,7 +1466,9 @@ input {
   }
 }
 
-/* Motion safety */
+/* -------------------------------------------------- */
+/* Reduced motion                                     */
+/* -------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
   *,
