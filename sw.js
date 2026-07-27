@@ -1,14 +1,14 @@
 "use strict";
 
-/* Road Discovery AU v31 service worker */
+/* Road Discovery AU v32 service worker */
 
-const CACHE_NAME = "road-discovery-au-v31";
+const CACHE_NAME = "road-discovery-au-v32";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./style.css?v=31",
-  "./app.js?v=31",
+  "./style.css?v=32",
+  "./app.js?v=32",
   "./manifest.json",
   "./icon.svg"
 ];
@@ -52,6 +52,7 @@ self.addEventListener("fetch", (event) => {
   /*
     Do not intercept external requests such as:
     - Leaflet CDN files
+    - Supabase client library
     - CARTO map tiles
     - Overpass road data
     - OSRM waypoint routes
@@ -109,14 +110,14 @@ self.addEventListener("fetch", (event) => {
 
         /*
           Handles cases where the browser asks for the file without
-          the v31 query string while the cached copy includes it.
+          the v32 query string while the cached copy includes it.
         */
         if (url.pathname.endsWith("/style.css")) {
-          return caches.match("./style.css?v=31");
+          return caches.match("./style.css?v=32");
         }
 
         if (url.pathname.endsWith("/app.js")) {
-          return caches.match("./app.js?v=31");
+          return caches.match("./app.js?v=32");
         }
 
         return Response.error();
