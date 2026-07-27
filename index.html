@@ -58,7 +58,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=35"
+    href="style.css?v=36"
   />
 </head>
 
@@ -630,7 +630,7 @@
                 </div>
 
                 <span class="profile-status-pill">
-                  Checkpoint 7
+                  Checkpoint 8
                 </span>
               </div>
 
@@ -671,8 +671,8 @@
                     </strong>
 
                     <span>
-                      Off by default. Later, approved friends can see your
-                      shared stats only if this is on.
+                      Off by default. Approved friends can see your
+                      shared statistics only while this is on.
                     </span>
                   </div>
 
@@ -748,7 +748,6 @@
             id="addFriendBox"
             class="add-friend-box hidden"
           >
-
             <label
               class="field-label"
               for="friendCodeInput"
@@ -792,19 +791,19 @@
           </section>
 
           <section class="friends-block">
-  <div class="friends-block-title">
-    Outgoing requests
-  </div>
+            <div class="friends-block-title">
+              Outgoing requests
+            </div>
 
-  <div
-    id="outgoingRequestsList"
-    class="requests-list"
-  >
-    <div class="empty-state">
-      Friend requests you send appear here.
-    </div>
-  </div>
-</section>
+            <div
+              id="outgoingRequestsList"
+              class="requests-list"
+            >
+              <div class="empty-state">
+                Friend requests you send appear here.
+              </div>
+            </div>
+          </section>
 
           <section class="friends-block">
             <div class="friends-block-title">
@@ -822,7 +821,7 @@
           </section>
         </section>
 
-        <!-- Friend profile retained for later checkpoints -->
+        <!-- Friend profile -->
         <section
           id="friendProfileView"
           class="friends-view hidden"
@@ -844,14 +843,102 @@
                 J
               </div>
 
-              <div>
-                <h2 id="friendProfileName">
-                  Friend
-                </h2>
+              <div class="friend-profile-identity">
+                <div class="friend-profile-name-row">
+                  <h2 id="friendProfileName">
+                    Friend
+                  </h2>
 
-                <p id="friendProfileHandle">
+                  <span
+                    id="friendNicknameBadge"
+                    class="friend-nickname-badge hidden"
+                  >
+                    Private name
+                  </span>
+                </div>
+
+                <p
+                  id="friendProfileHandle"
+                  class="friend-original-username"
+                >
                   Road Profile
                 </p>
+              </div>
+            </div>
+
+            <!-- Private friend-name controls -->
+            <div
+              id="friendNameControls"
+              class="friend-name-controls"
+            >
+              <button
+                id="changeFriendNameBtn"
+                class="ghost-btn wide-btn change-friend-name-btn"
+                type="button"
+                aria-controls="friendNameEditor"
+                aria-expanded="false"
+              >
+                Change name
+              </button>
+
+              <div
+                id="friendNameEditor"
+                class="friend-name-editor hidden"
+              >
+                <label
+                  class="field-label"
+                  for="friendNicknameInput"
+                >
+                  Private name
+                </label>
+
+                <input
+                  id="friendNicknameInput"
+                  class="text-field"
+                  type="text"
+                  inputmode="text"
+                  autocomplete="off"
+                  maxlength="40"
+                  placeholder="For example: Dad"
+                />
+
+                <p class="friend-name-editor-note">
+                  Only you will see this name. Your friend’s real
+                  username and Road Profile will not be changed.
+                </p>
+
+                <div
+                  id="friendNameCharacterCount"
+                  class="friend-name-character-count"
+                >
+                  0 / 40
+                </div>
+
+                <div class="friend-name-editor-actions">
+                  <button
+                    id="saveFriendNameBtn"
+                    class="wide-btn"
+                    type="button"
+                  >
+                    Save name
+                  </button>
+
+                  <button
+                    id="cancelFriendNameBtn"
+                    class="ghost-btn wide-btn"
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <button
+                  id="clearFriendNameBtn"
+                  class="ghost-btn wide-btn clear-friend-name-btn hidden"
+                  type="button"
+                >
+                  Use original username
+                </button>
               </div>
             </div>
 
@@ -951,7 +1038,6 @@
               >
                 Remove friend
               </button>
-
             </div>
           </div>
         </section>
@@ -1000,8 +1086,6 @@
         ></div>
       </div>
     </section>
-
-
 
     <!-- Map-sharing confirmation -->
     <section
@@ -1062,7 +1146,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=41"></script>
+  <script src="app.js?v=42"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
