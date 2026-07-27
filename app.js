@@ -1,7 +1,7 @@
 "use strict";
 
-/* Road Discovery AU v41
-   Checkpoint 7: exact historical discovered-road sharing between accepted friends.
+/* Road Discovery AU v42
+   Checkpoint 8: private friend nicknames.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
    Live GPS, current drives, markers, accuracy, speed, heading, waypoints and routes are never uploaded.
@@ -17,6 +17,7 @@ const SHARED_ROAD_SYNC_STATE_KEY = "roadDiscoveryAU.sharedRoadSync.v1";
 const SHARED_ROAD_UPLOAD_BATCH_SIZE = 300;
 const SHARED_ROAD_DOWNLOAD_PAGE_SIZE = 500;
 const SHARED_ROAD_MAX_DOWNLOAD_PAGES = 200;
+const FRIEND_NICKNAME_MAX_LENGTH = 40;
 
 const SUPABASE_URL = "https://tancfzqmzvaalqotmvks.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_LnMT-vhl4xvj4idb91dNdA_EdQMJutI";
@@ -133,7 +134,12 @@ const state = {
     respondingAction: null,
 
     cancellingOutgoingRequestId: null,
-    removingFriendId: null
+    removingFriendId: null,
+
+    nicknames: new Map(),
+    loadingNicknames: false,
+    nicknameEditorOpen: false,
+    nicknameRequestFriendId: null
   },
 
   statsSync: {
@@ -289,6 +295,15 @@ function cacheEls() {
     "friendProfileAvatar",
     "friendProfileName",
     "friendProfileHandle",
+    "friendNicknameBadge",
+    "friendNameControls",
+    "changeFriendNameBtn",
+    "friendNameEditor",
+    "friendNicknameInput",
+    "friendNameCharacterCount",
+    "saveFriendNameBtn",
+    "cancelFriendNameBtn",
+    "clearFriendNameBtn",
     "friendAustraliaStat",
     "friendUnlockedStat",
     "friendTodayStat",
@@ -583,7 +598,7 @@ function bindEvents() {
 
     locateUser({
       zoom: true,
-      loadRoads: true,
+             loadRoads: true,
       quiet: false
     });
   });
@@ -710,6 +725,26 @@ function bindEvents() {
   els.openFriendMapBtn?.addEventListener("click", openFriendFullMap);
   els.closeFriendMapBtn?.addEventListener("click", closeFriendFullMap);
 
+  els.changeFriendNameBtn?.addEventListener("click", openFriendNameEditor);
+  els.saveFriendNameBtn?.addEventListener("click", saveActiveFriendNickname);
+  els.cancelFriendNameBtn?.addEventListener("click", cancelFriendNameEditor);
+  els.clearFriendNameBtn?.addEventListener("click", clearActiveFriendNickname);
+
+  els.friendNicknameInput?.addEventListener("input", () => {
+    enforceFriendNicknameLimit();
+    updateFriendNameCharacterCount();
+  });
+
+  els.friendNicknameInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveActiveFriendNickname();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      cancelFriendNameEditor();
+    }
+  });
+
   els.cancelMapShareBtn?.addEventListener("click", () => {
     resolveMapShareConfirmation(false);
   });
@@ -796,6 +831,7 @@ function openFriendsPanel() {
 function showFriendsListView() {
   closeFriendFullMap();
   clearActiveFriendMapData({ keepActiveFriend: false });
+  state.friends.nicknameEditorOpen = false;
 
   els.friendProfileView?.classList.add("hidden");
   els.friendsListView?.classList.remove("hidden");
@@ -1162,8 +1198,7 @@ async function ensureRoadsNearPoint(point, options = {}) {
   const tooFarFromLoadedArea =
     !state.lastRoadLoadCenter ||
     haversine(point, state.lastRoadLoadCenter) > 1000;
-
-  if (
+     if (
     !needsRoads &&
     (!replaceIfFar || !tooFarFromLoadedArea)
   ) {
@@ -1761,8 +1796,7 @@ async function getFreshRouteStartPoint() {
   }
 
   const point = positionToPoint(position);
-
-  state.currentPoint = point;
+     state.currentPoint = point;
   updateUserMarker(point);
 
   return point;
@@ -2361,8 +2395,7 @@ async function handleProfilePrivacyToggle(field, checked) {
           : "Map sharing is off. Server cleanup will retry"
       );
     }
-
-    return;
+         return;
   }
 
   showToast(checked ? "Road Profile sharing on" : "Road Profile sharing off");
@@ -2554,6 +2587,11 @@ function clearFriendData() {
   state.friends.cancellingOutgoingRequestId = null;
   state.friends.removingFriendId = null;
 
+  state.friends.nicknames.clear();
+  state.friends.loadingNicknames = false;
+  state.friends.nicknameEditorOpen = false;
+  state.friends.nicknameRequestFriendId = null;
+
   closeFriendFullMap();
   clearActiveFriendMapData({ keepActiveFriend: false });
 
@@ -2580,8 +2618,17 @@ async function refreshFriendData(options = {}) {
   await Promise.all([
     loadIncomingFriendRequests({ quiet: true }),
     loadOutgoingFriendRequests({ quiet: true }),
-    loadFriends({ quiet: true })
+    loadFriends({ quiet: true }),
+    loadFriendNicknames({ quiet: true })
   ]);
+
+  pruneFriendNicknamesToAcceptedFriends();
+
+  const activeFriend = getActiveFriend();
+
+  if (activeFriend) {
+    renderFriendProfile(activeFriend);
+  }
 
   if (!quiet) {
     showToast("Friends updated");
@@ -2599,7 +2646,8 @@ function renderFriendsList() {
     Boolean(state.friends.sendingRequest) ||
     Boolean(state.friends.respondingRequestId) ||
     Boolean(state.friends.cancellingOutgoingRequestId) ||
-    Boolean(state.friends.removingFriendId);
+    Boolean(state.friends.removingFriendId) ||
+    Boolean(state.friends.nicknameRequestFriendId);
 
   if (els.showAddFriendBtn) {
     els.showAddFriendBtn.disabled = !signedIn || busy;
@@ -2830,6 +2878,83 @@ async function loadFriends(options = {}) {
   return state.friends.acceptedFriends;
 }
 
+async function loadFriendNicknames(options = {}) {
+  const { quiet = false } = options;
+
+  if (!state.auth.client || !state.auth.user) {
+    state.friends.nicknames.clear();
+    state.friends.loadingNicknames = false;
+    renderFriendsList();
+    return state.friends.nicknames;
+  }
+
+  if (state.friends.loadingNicknames) {
+    return state.friends.nicknames;
+  }
+
+  state.friends.loadingNicknames = true;
+
+  if (!quiet) {
+    renderFriendsList();
+  }
+
+  const { data, error } = await state.auth.client.rpc(
+    "get_my_friend_nicknames"
+  );
+
+  state.friends.loadingNicknames = false;
+
+  if (error) {
+    console.error(error);
+
+    if (!quiet) {
+      showToast(friendNicknameErrorMessage(error));
+    }
+
+    renderFriendsList();
+    return state.friends.nicknames;
+  }
+
+  const nextNicknames = new Map();
+  const rows = Array.isArray(data)
+    ? data
+    : data && typeof data === "object"
+      ? [data]
+      : [];
+
+  for (const row of rows) {
+    const friendId = String(
+      row?.friend_id ||
+      row?.id ||
+      row?.p_friend_id ||
+      ""
+    );
+
+    const nickname = normaliseFriendNickname(
+      row?.nickname ??
+      row?.friend_nickname ??
+      row?.p_nickname ??
+      ""
+    );
+
+    if (friendId && nickname) {
+      nextNicknames.set(friendId, nickname);
+    }
+  }
+
+  state.friends.nicknames = nextNicknames;
+
+  renderFriendsList();
+
+  const activeFriend = getActiveFriend();
+
+  if (activeFriend) {
+    renderFriendProfile(activeFriend);
+  }
+
+  return state.friends.nicknames;
+}
+
 async function acceptIncomingFriendRequest(requestId) {
   await respondToIncomingFriendRequest("accept", requestId);
 }
@@ -2870,7 +2995,7 @@ async function cancelOutgoingFriendRequest(requestId) {
   renderFriendsList();
 
   const { data, error } = await state.auth.client.rpc(
-    "cancel_outgoing_friend_request",
+         "cancel_outgoing_friend_request",
     {
       target_request_id: requestId
     }
@@ -3142,8 +3267,10 @@ function renderAcceptedFriends(signedIn) {
 function renderAcceptedFriendRow(friend) {
   const friendId = String(friend.friend_id || friend.id || "");
   const username = friend.username || "Road Profile";
+  const nickname = getFriendNickname(friendId);
+  const displayName = nickname || username;
   const friendCode = friend.friend_code || "Friend code hidden";
-  const initial = username.slice(0, 1).toUpperCase() || "R";
+  const initial = displayName.slice(0, 1).toUpperCase() || "R";
 
   const profileStatus = friend.show_profile
     ? "Profile sharing on"
@@ -3172,13 +3299,21 @@ function renderAcceptedFriendRow(friend) {
       ? ` • ${formatSyncedTime(stats.lastSyncedAt)}`
       : "";
 
+  const subtitle = nickname
+    ? `${username} • ${friendCode} • ${profileStatus} • ${mapStatus}${syncedText}`
+    : `${friendCode} • ${profileStatus} • ${mapStatus}${syncedText}`;
+
   return `
-    <button class="friend-row real-friend-row" type="button" data-friend-id="${escapeHtml(friendId)}">
+    <button
+      class="friend-row real-friend-row${nickname ? " friend-row-has-nickname" : ""}"
+      type="button"
+      data-friend-id="${escapeHtml(friendId)}"
+    >
       <div class="friend-avatar">${escapeHtml(initial)}</div>
 
       <div class="friend-main">
-        <div class="friend-name">${escapeHtml(username)}</div>
-        <div class="friend-sub">${escapeHtml(friendCode)} • ${escapeHtml(profileStatus)} • ${escapeHtml(mapStatus)}${escapeHtml(syncedText)}</div>
+        <div class="friend-name">${escapeHtml(displayName)}</div>
+        <div class="friend-sub">${escapeHtml(subtitle)}</div>
       </div>
 
       <div class="friend-score">
@@ -3187,6 +3322,62 @@ function renderAcceptedFriendRow(friend) {
       </div>
     </button>
   `;
+}
+
+function pruneFriendNicknamesToAcceptedFriends() {
+  const acceptedIds = new Set(
+    state.friends.acceptedFriends.map((friend) => {
+      return String(friend.friend_id || friend.id || "");
+    })
+  );
+
+  for (const friendId of state.friends.nicknames.keys()) {
+    if (!acceptedIds.has(friendId)) {
+      state.friends.nicknames.delete(friendId);
+    }
+  }
+}
+
+function getFriendNickname(friendId) {
+  const id = String(friendId || "");
+  return state.friends.nicknames.get(id) || "";
+}
+
+function getFriendDisplayName(friend) {
+  if (!friend) return "Friend";
+
+  const friendId = String(friend.friend_id || friend.id || "");
+  return getFriendNickname(friendId) || friend.username || "Road Profile";
+}
+
+function normaliseFriendNickname(value) {
+  return Array.from(String(value || "").trim())
+    .slice(0, FRIEND_NICKNAME_MAX_LENGTH)
+    .join("");
+}
+
+function friendNicknameLength(value) {
+  return Array.from(String(value || "")).length;
+}
+
+function enforceFriendNicknameLimit() {
+  if (!els.friendNicknameInput) return;
+
+  const characters = Array.from(els.friendNicknameInput.value || "");
+
+  if (characters.length > FRIEND_NICKNAME_MAX_LENGTH) {
+    els.friendNicknameInput.value = characters
+      .slice(0, FRIEND_NICKNAME_MAX_LENGTH)
+      .join("");
+  }
+}
+
+function updateFriendNameCharacterCount() {
+  if (!els.friendNameCharacterCount) return;
+
+  const count = friendNicknameLength(els.friendNicknameInput?.value || "");
+  els.friendNameCharacterCount.textContent =
+    `${count} / ${FRIEND_NICKNAME_MAX_LENGTH}`;
 }
 
 function normaliseFriendCodeInput(value) {
@@ -3260,6 +3451,7 @@ function openFriendProfile(friendId) {
 
   state.activeFriendId = String(friend.friend_id || friend.id || "");
   state.friendMap.friendId = state.activeFriendId;
+  state.friends.nicknameEditorOpen = false;
 
   renderFriendProfile(friend);
   showFriendProfileView();
@@ -3272,8 +3464,10 @@ function renderFriendProfile(friend) {
 
   const friendId = String(friend.friend_id || friend.id || "");
   const username = friend.username || "Road Profile";
+  const nickname = getFriendNickname(friendId);
+  const displayName = nickname || username;
   const friendCode = friend.friend_code || "Friend code hidden";
-  const initial = username.slice(0, 1).toUpperCase() || "R";
+  const initial = displayName.slice(0, 1).toUpperCase() || "R";
   const profileShared = Boolean(friend.show_profile);
   const mapShared = Boolean(friend.show_map);
   const stats = normaliseFriendStats(friend);
@@ -3285,18 +3479,29 @@ function renderFriendProfile(friend) {
   }
 
   if (els.friendProfileName) {
-    els.friendProfileName.textContent = username;
+    els.friendProfileName.textContent = displayName;
+  }
+
+  if (els.friendNicknameBadge) {
+    els.friendNicknameBadge.classList.toggle("hidden", !nickname);
   }
 
   if (els.friendProfileHandle) {
+    const identityPrefix = nickname
+      ? `${username} • ${friendCode}`
+      : friendCode;
+
     if (!profileShared) {
-      els.friendProfileHandle.textContent = `${friendCode} • profile private`;
+      els.friendProfileHandle.textContent = `${identityPrefix} • profile private`;
     } else if (stats.hasStats) {
-      els.friendProfileHandle.textContent = `${friendCode} • ${formatSyncedTime(stats.lastSyncedAt)}`;
+      els.friendProfileHandle.textContent = `${identityPrefix} • ${formatSyncedTime(stats.lastSyncedAt)}`;
     } else {
-      els.friendProfileHandle.textContent = `${friendCode} • not synced yet`;
+      els.friendProfileHandle.textContent = `${identityPrefix} • not synced yet`;
     }
   }
+
+  renderFriendNameControls(friend);
+  updateActiveFriendMapTitle(friend);
 
   if (!profileShared) {
     setText(els.friendAustraliaStat, "Private");
@@ -3359,10 +3564,257 @@ function renderFriendProfile(friend) {
   renderFriendPreviewSvg(friend);
 }
 
+function renderFriendNameControls(friend) {
+  if (!friend) return;
+
+  const friendId = String(friend.friend_id || friend.id || "");
+  const nickname = getFriendNickname(friendId);
+  const requestRunning = Boolean(state.friends.nicknameRequestFriendId);
+  const editorOpen = Boolean(state.friends.nicknameEditorOpen);
+
+  els.friendNameControls?.classList.remove("hidden");
+  els.friendNameEditor?.classList.toggle("hidden", !editorOpen);
+
+  if (els.changeFriendNameBtn) {
+    els.changeFriendNameBtn.disabled = requestRunning;
+    els.changeFriendNameBtn.textContent = nickname
+      ? "Change private name"
+      : "Change name";
+    els.changeFriendNameBtn.setAttribute(
+      "aria-expanded",
+      editorOpen ? "true" : "false"
+    );
+  }
+
+  if (editorOpen && els.friendNicknameInput) {
+    const expectedValue = nickname;
+
+    if (document.activeElement !== els.friendNicknameInput) {
+      els.friendNicknameInput.value = expectedValue;
+    }
+  }
+
+  if (els.friendNicknameInput) {
+         els.friendNicknameInput.disabled = requestRunning;
+  }
+
+  if (els.saveFriendNameBtn) {
+    const saving = state.friends.nicknameRequestFriendId === friendId;
+    els.saveFriendNameBtn.disabled = requestRunning;
+    els.saveFriendNameBtn.textContent = saving
+      ? "Saving..."
+      : "Save name";
+  }
+
+  if (els.cancelFriendNameBtn) {
+    els.cancelFriendNameBtn.disabled = requestRunning;
+  }
+
+  if (els.clearFriendNameBtn) {
+    const clearing = state.friends.nicknameRequestFriendId === friendId;
+    els.clearFriendNameBtn.classList.toggle("hidden", !nickname);
+    els.clearFriendNameBtn.disabled = requestRunning;
+    els.clearFriendNameBtn.textContent = clearing
+      ? "Updating..."
+      : "Use original username";
+  }
+
+  updateFriendNameCharacterCount();
+}
+
+function openFriendNameEditor() {
+  const friend = getActiveFriend();
+
+  if (!friend) {
+    showToast("Open an accepted friend first");
+    return;
+  }
+
+  if (state.friends.nicknameRequestFriendId) {
+    return;
+  }
+
+  const friendId = String(friend.friend_id || friend.id || "");
+
+  state.friends.nicknameEditorOpen = true;
+
+  if (els.friendNicknameInput) {
+    els.friendNicknameInput.value = getFriendNickname(friendId);
+  }
+
+  renderFriendProfile(friend);
+  updateFriendNameCharacterCount();
+
+  setTimeout(() => {
+    els.friendNicknameInput?.focus();
+    els.friendNicknameInput?.select();
+  }, 0);
+}
+
+function cancelFriendNameEditor() {
+  if (state.friends.nicknameRequestFriendId) {
+    return;
+  }
+
+  state.friends.nicknameEditorOpen = false;
+
+  const friend = getActiveFriend();
+
+  if (friend) {
+    renderFriendProfile(friend);
+  }
+}
+
+async function saveActiveFriendNickname() {
+  if (!state.auth.client || !state.auth.user) {
+    showToast("Sign in to change a friend name");
+    return;
+  }
+
+  const friend = getActiveFriend();
+
+  if (!friend) {
+    showToast("Friend could not be found");
+    return;
+  }
+
+  if (state.friends.nicknameRequestFriendId) {
+    return;
+  }
+
+  enforceFriendNicknameLimit();
+
+  const rawNickname = String(els.friendNicknameInput?.value || "").trim();
+  const nicknameLength = friendNicknameLength(rawNickname);
+
+  if (!rawNickname) {
+    showToast("Enter a private name");
+    return;
+  }
+
+  if (nicknameLength > FRIEND_NICKNAME_MAX_LENGTH) {
+    showToast("Private name must be 40 characters or fewer");
+    return;
+  }
+
+  const friendId = String(friend.friend_id || friend.id || "");
+  const nickname = normaliseFriendNickname(rawNickname);
+
+  state.friends.nicknameRequestFriendId = friendId;
+  renderFriendsList();
+  renderFriendProfile(friend);
+
+  const { error } = await state.auth.client.rpc(
+    "set_friend_nickname",
+    {
+      p_friend_id: friendId,
+      p_nickname: nickname
+    }
+  );
+
+  state.friends.nicknameRequestFriendId = null;
+
+  if (error) {
+    console.error(error);
+    showToast(friendNicknameErrorMessage(error));
+    renderFriendsList();
+    renderFriendProfile(friend);
+    return;
+  }
+
+  state.friends.nicknames.set(friendId, nickname);
+  state.friends.nicknameEditorOpen = false;
+
+  renderFriendsList();
+  renderFriendProfile(friend);
+  showToast(`Private name saved as ${nickname}`);
+}
+
+async function clearActiveFriendNickname() {
+  if (!state.auth.client || !state.auth.user) {
+    showToast("Sign in to change a friend name");
+    return;
+  }
+
+  const friend = getActiveFriend();
+
+  if (!friend) {
+    showToast("Friend could not be found");
+    return;
+  }
+
+  if (state.friends.nicknameRequestFriendId) {
+    return;
+  }
+
+  const friendId = String(friend.friend_id || friend.id || "");
+
+  if (!getFriendNickname(friendId)) {
+    state.friends.nicknameEditorOpen = false;
+    renderFriendProfile(friend);
+    return;
+  }
+
+  state.friends.nicknameRequestFriendId = friendId;
+  renderFriendsList();
+  renderFriendProfile(friend);
+
+  const { error } = await state.auth.client.rpc(
+    "clear_friend_nickname",
+    {
+      p_friend_id: friendId
+    }
+  );
+
+  state.friends.nicknameRequestFriendId = null;
+
+  if (error) {
+    console.error(error);
+    showToast(friendNicknameErrorMessage(error));
+    renderFriendsList();
+    renderFriendProfile(friend);
+    return;
+  }
+
+  state.friends.nicknames.delete(friendId);
+  state.friends.nicknameEditorOpen = false;
+
+  renderFriendsList();
+  renderFriendProfile(friend);
+  showToast("Original username restored");
+}
+
+function updateActiveFriendMapTitle(friend = getActiveFriend()) {
+  if (!els.friendMapTitle || !friend) return;
+
+  els.friendMapTitle.textContent = `${getFriendDisplayName(friend)}’s Map`;
+}
+
+function friendNicknameErrorMessage(error) {
+  const message = String(error?.message || "").toLowerCase();
+
+  if (message.includes("40") || message.includes("too long")) {
+    return "Private name must be 40 characters or fewer";
+  }
+
+  if (message.includes("not friends") || message.includes("friendship")) {
+    return "That friendship is no longer available";
+  }
+
+  if (message.includes("function") && message.includes("does not exist")) {
+    return "Nickname SQL has not been installed yet";
+  }
+
+  return error?.message || "Could not update private name";
+}
+
 async function refreshActiveFriendProfileAndMap(friendId) {
   const expectedFriendId = String(friendId || "");
 
-  await loadFriends({ quiet: true });
+  await Promise.all([
+    loadFriends({ quiet: true }),
+    loadFriendNicknames({ quiet: true })
+  ]);
 
   if (state.activeFriendId !== expectedFriendId) {
     return;
@@ -3659,9 +4111,7 @@ async function openFriendFullMap() {
     return;
   }
 
-  if (els.friendMapTitle) {
-    els.friendMapTitle.textContent = `${friend.username || "Friend"}’s Map`;
-  }
+  updateActiveFriendMapTitle(friend);
 
   els.friendMapOverlay?.classList.remove("hidden");
   els.friendMapOverlay?.setAttribute("aria-hidden", "false");
@@ -3745,7 +4195,7 @@ function drawFriendFullMapRoads(roads) {
   const bounds = state.friendMap.fullRoadLayer.getBounds();
 
   if (bounds.isValid()) {
-    map.fitBounds(bounds, {
+         map.fitBounds(bounds, {
       padding: [28, 28],
       maxZoom: 17
     });
@@ -3838,7 +4288,7 @@ async function removeActiveFriend() {
     ""
   );
 
-  const username = friend.username || "this friend";
+  const displayName = getFriendDisplayName(friend);
 
   if (!friendId) {
     showToast("Friend ID is missing");
@@ -3850,7 +4300,7 @@ async function removeActiveFriend() {
   }
 
   const confirmed = confirm(
-    `Remove ${username} from your friends? Their profile and road progress will not be deleted.`
+    `Remove ${displayName} from your friends? Their profile and road progress will not be deleted.`
   );
 
   if (!confirmed) {
@@ -3899,7 +4349,9 @@ async function removeActiveFriend() {
       return itemFriendId !== friendId;
     });
 
+  state.friends.nicknames.delete(friendId);
   state.friends.removingFriendId = null;
+  state.friends.nicknameEditorOpen = false;
   state.activeFriendId = null;
 
   closeFriendFullMap();
@@ -3910,7 +4362,10 @@ async function removeActiveFriend() {
     quiet: true
   });
 
-  showToast(`${username} removed`);
+  state.friends.nicknames.delete(friendId);
+  renderFriendsList();
+
+  showToast(`${displayName} removed`);
 }
 
 function applyFriendSettingsToUI() {
@@ -4340,8 +4795,7 @@ function removeSharedRoadSyncMetaForCurrentUser() {
   const userId = String(state.auth.user?.id || "");
 
   if (!userId) return;
-
-  const store = getSharedRoadSyncStore();
+     const store = getSharedRoadSyncStore();
   delete store[userId];
   writeJson(SHARED_ROAD_SYNC_STATE_KEY, store);
 }
