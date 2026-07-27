@@ -1,18 +1,24 @@
 "use strict";
 
-/* Road Discovery AU v31
+/* Road Discovery AU v32
    - restores the stable v29 road/GPS engine
    - keeps existing v29 progress keys and saved coordinates
    - safely migrates v30 coordinate-key progress where possible
    - restores the My Location button
    - preloads nearby grey roads before Start Drive
    - keeps the v30 Friends, Settings and Waypoint UI
+   - adds Checkpoint 1 Supabase Road Profile auth/profile support
 */
 
 const STORAGE_KEY = "roadDiscoveryAU.visited.v1";
 const SAVED_SEGMENTS_KEY = "roadDiscoveryAU.savedSegments.v1";
 const FRIEND_SETTINGS_KEY = "roadDiscoveryAU.friendSettings.v1";
 const TODAY_UNLOCKS_KEY = "roadDiscoveryAU.todayUnlocks.v1";
+const ROAD_PROFILE_CACHE_KEY = "roadDiscoveryAU.roadProfile.v1";
+
+/* Supabase Checkpoint 1 config */
+const SUPABASE_URL = "https://tancfzqmzvaalqotmvks.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_LnMT-vhl4xvj4idb91dNdA_EdQMJutI";
 
 const AU_TOTAL_UNLOCKS_ESTIMATE = 18000000;
 
@@ -146,6 +152,15 @@ const state = {
     showMap: false
   },
 
+  auth: {
+    client: null,
+    session: null,
+    user: null,
+    profile: null,
+    loading: false,
+    passwordRecovery: false
+  },
+
   toastTimer: null
 };
 
@@ -157,9 +172,11 @@ function init() {
   loadSavedState();
   initMap();
   bindEvents();
+  initSupabase();
 
   renderAllStats();
   renderFriendsList();
+  renderAuthState();
   applyFriendSettingsToUI();
   setDriveButtons("idle");
   setDriveStatus("Ready to drive");
@@ -232,6 +249,32 @@ function cacheEls() {
     "closeFriendsBtn",
     "friendsListView",
     "friendProfileView",
+
+    "signedOutProfileCard",
+    "signedInProfileCard",
+    "authCreateModeBtn",
+    "authSignInModeBtn",
+    "createAuthForm",
+    "signInAuthForm",
+    "createEmailInput",
+    "createPasswordInput",
+    "createProfileBtn",
+    "signInEmailInput",
+    "signInPasswordInput",
+    "signInBtn",
+    "forgotPasswordBtn",
+    "resetPasswordBox",
+    "newPasswordInput",
+    "updatePasswordBtn",
+    "authMessage",
+    "profileEmailValue",
+    "profileUsernameValue",
+    "profileFriendCodeValue",
+    "copyFriendCodeBtn",
+    "profileProfileToggle",
+    "profileMapToggle",
+    "signOutBtn",
+
     "showAddFriendBtn",
     "addFriendBox",
     "friendSearchInput",
@@ -553,36 +596,63 @@ function bindEvents() {
   els.closeWaypointBtn?.addEventListener("click", closePanels);
   els.closeFriendsBtn?.addEventListener("click", closePanels);
 
+  els.authCreateModeBtn?.addEventListener("click", () => {
+    setAuthMode("create");
+  });
+
+  els.authSignInModeBtn?.addEventListener("click", () => {
+    setAuthMode("signin");
+  });
+
+  els.createProfileBtn?.addEventListener("click", createRoadProfileAccount);
+  els.signInBtn?.addEventListener("click", signInRoadProfile);
+  els.forgotPasswordBtn?.addEventListener("click", sendPasswordReset);
+  els.updatePasswordBtn?.addEventListener("click", updateRecoveredPassword);
+  els.copyFriendCodeBtn?.addEventListener("click", copyFriendCode);
+  els.signOutBtn?.addEventListener("click", signOutRoadProfile);
+
+  els.createPasswordInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      createRoadProfileAccount();
+    }
+  });
+
+  els.signInPasswordInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      signInRoadProfile();
+    }
+  });
+
+  els.profileProfileToggle?.addEventListener("change", () => {
+    handleProfilePrivacyToggle(
+      "show_profile",
+      Boolean(els.profileProfileToggle.checked)
+    );
+  });
+
+  els.profileMapToggle?.addEventListener("change", () => {
+    handleProfilePrivacyToggle(
+      "show_map",
+      Boolean(els.profileMapToggle.checked)
+    );
+  });
+
   els.startBtn?.addEventListener("click", startDrive);
   els.finishBtn?.addEventListener("click", finishDrive);
 
   els.resetBtn?.addEventListener("click", resetDiscoveredRoads);
 
   els.friendProfileToggle?.addEventListener("change", () => {
-    state.friendSettings.showProfile = Boolean(
-      els.friendProfileToggle.checked
-    );
-
-    saveFriendSettings();
-
-    showToast(
-      state.friendSettings.showProfile
-        ? "Road Profile sharing on"
-        : "Road Profile sharing off"
+    handleProfilePrivacyToggle(
+      "show_profile",
+      Boolean(els.friendProfileToggle.checked)
     );
   });
 
   els.friendMapToggle?.addEventListener("change", () => {
-    state.friendSettings.showMap = Boolean(
-      els.friendMapToggle.checked
-    );
-
-    saveFriendSettings();
-
-    showToast(
-      state.friendSettings.showMap
-        ? "Map overview sharing on"
-        : "Map overview sharing off"
+    handleProfilePrivacyToggle(
+      "show_map",
+      Boolean(els.friendMapToggle.checked)
     );
   });
 
@@ -613,7 +683,7 @@ function bindEvents() {
       return;
     }
 
-    showToast("Real username search needs the backend");
+    showToast("Username search comes in a later checkpoint. Use friend codes next.");
   });
 
   els.addFriendCodeBtn?.addEventListener("click", () => {
@@ -624,7 +694,7 @@ function bindEvents() {
       return;
     }
 
-    showToast("Friend codes need the backend");
+    showToast("Add by friend code comes in Checkpoint 2");
   });
 
   els.backToFriendsBtn?.addEventListener(
@@ -2222,72 +2292,554 @@ function maybeUpdateWaypointRoute(
   });
 }
 
-/* ---------- Friends ---------- */
 
-function renderFriendsList() {
-  if (!els.friendsList) return;
+/* ---------- Supabase Road Profile / Auth ---------- */
 
-  els.friendsList.innerHTML = "";
+function initSupabase() {
+  renderAuthState();
 
-  DEMO_FRIENDS.forEach(
-    (friend) => {
-      const row =
-        document.createElement(
-          "button"
-        );
+  if (!window.supabase || typeof window.supabase.createClient !== "function") {
+    setAuthMessage(
+      "Supabase did not load. Map still works locally, but Road Profile is unavailable.",
+      "error"
+    );
 
-      row.className = "friend-row";
-      row.type = "button";
-      row.dataset.friendId =
-        friend.id;
+    return;
+  }
 
-      row.innerHTML = `
-        <div class="friend-avatar">
-          ${escapeHtml(friend.avatar)}
-        </div>
-
-        <div class="friend-main">
-          <div class="friend-name">
-            ${escapeHtml(friend.name)}
-          </div>
-
-          <div class="friend-sub">
-            Australia ${escapeHtml(
-              friend.australiaPercent
-            )}
-          </div>
-        </div>
-
-        <div class="friend-score">
-          <strong>
-            ${formatNumber(
-              friend.unlocked
-            )}
-          </strong>
-
-          <span>/ 18M</span>
-        </div>
-      `;
-
-      row.addEventListener(
-        "click",
-        () => {
-          openFriendProfile(
-            friend.id
-          );
-        }
-      );
-
-      els.friendsList.appendChild(
-        row
-      );
+  state.auth.client = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
     }
   );
 
-  if (els.friendRequestsList) {
-    els.friendRequestsList.innerHTML =
-      '<div class="empty-state">No pending requests</div>';
+  state.auth.client.auth.onAuthStateChange(
+    async (event, session) => {
+      state.auth.session = session || null;
+      state.auth.user = session?.user || null;
+
+      if (event === "PASSWORD_RECOVERY") {
+        state.auth.passwordRecovery = true;
+        showPasswordRecoveryBox();
+        setAuthMessage("Enter a new password to finish the reset.", "info");
+      }
+
+      if (state.auth.user) {
+        await ensureRoadProfile({ quiet: true });
+      } else {
+        state.auth.profile = null;
+        state.auth.loading = false;
+      }
+
+      renderAuthState();
+    }
+  );
+
+  loadInitialAuthSession();
+}
+
+async function loadInitialAuthSession() {
+  if (!state.auth.client) return;
+
+  state.auth.loading = true;
+  renderAuthState();
+
+  const { data, error } = await state.auth.client.auth.getSession();
+
+  if (error) {
+    console.error(error);
+    setAuthMessage("Could not check sign-in status.", "error");
+    state.auth.loading = false;
+    renderAuthState();
+    return;
   }
+
+  state.auth.session = data?.session || null;
+  state.auth.user = data?.session?.user || null;
+
+  if (state.auth.user) {
+    await ensureRoadProfile({ quiet: true });
+  } else {
+    state.auth.profile = null;
+    state.auth.loading = false;
+    renderAuthState();
+  }
+}
+
+async function ensureRoadProfile(options = {}) {
+  const { quiet = false } = options;
+
+  if (!state.auth.client || !state.auth.user) {
+    return null;
+  }
+
+  state.auth.loading = true;
+
+  if (!quiet) {
+    setAuthMessage("Loading Road Profile...", "info");
+  }
+
+  renderAuthState();
+
+  const { data, error } = await state.auth.client.rpc("create_road_profile");
+
+  if (error) {
+    console.error(error);
+    state.auth.loading = false;
+    setAuthMessage("Could not load or create Road Profile.", "error");
+    renderAuthState();
+    return null;
+  }
+
+  const profile = normaliseProfile(data);
+
+  if (!profile) {
+    state.auth.loading = false;
+    setAuthMessage("Road Profile response was empty.", "error");
+    renderAuthState();
+    return null;
+  }
+
+  state.auth.profile = profile;
+  state.friendSettings.showProfile = Boolean(profile.show_profile);
+  state.friendSettings.showMap = Boolean(profile.show_map);
+
+  writeJson(ROAD_PROFILE_CACHE_KEY, profile);
+  saveFriendSettings();
+
+  state.auth.loading = false;
+  renderAuthState();
+
+  return profile;
+}
+
+function normaliseProfile(data) {
+  if (Array.isArray(data)) {
+    return data[0] || null;
+  }
+
+  if (data && typeof data === "object") {
+    return data;
+  }
+
+  return null;
+}
+
+async function createRoadProfileAccount() {
+  if (!state.auth.client) {
+    setAuthMessage("Supabase is not connected.", "error");
+    return;
+  }
+
+  const email = els.createEmailInput?.value.trim();
+  const password = els.createPasswordInput?.value || "";
+
+  if (!email) {
+    setAuthMessage("Enter your email address.", "error");
+    return;
+  }
+
+  if (password.length < 6) {
+    setAuthMessage("Password must be at least 6 characters.", "error");
+    return;
+  }
+
+  state.auth.loading = true;
+  renderAuthState();
+  setAuthMessage("Creating Road Profile...", "info");
+
+  const { data, error } = await state.auth.client.auth.signUp({
+    email,
+    password
+  });
+
+  if (error) {
+    console.error(error);
+    state.auth.loading = false;
+    setAuthMessage(error.message || "Could not create account.", "error");
+    renderAuthState();
+    return;
+  }
+
+  state.auth.session = data?.session || null;
+  state.auth.user = data?.user || data?.session?.user || null;
+
+  if (state.auth.session && state.auth.user) {
+    await ensureRoadProfile({ quiet: false });
+    setAuthMessage("Road Profile created.", "success");
+    showToast("Road Profile created");
+    return;
+  }
+
+  state.auth.loading = false;
+  setAuthMessage(
+    "Account created. Check your email to confirm it, then sign in.",
+    "success"
+  );
+  renderAuthState();
+}
+
+async function signInRoadProfile() {
+  if (!state.auth.client) {
+    setAuthMessage("Supabase is not connected.", "error");
+    return;
+  }
+
+  const email = els.signInEmailInput?.value.trim();
+  const password = els.signInPasswordInput?.value || "";
+
+  if (!email || !password) {
+    setAuthMessage("Enter your email and password.", "error");
+    return;
+  }
+
+  state.auth.loading = true;
+  renderAuthState();
+  setAuthMessage("Signing in...", "info");
+
+  const { data, error } = await state.auth.client.auth.signInWithPassword({
+    email,
+    password
+  });
+
+  if (error) {
+    console.error(error);
+    state.auth.loading = false;
+    setAuthMessage(error.message || "Could not sign in.", "error");
+    renderAuthState();
+    return;
+  }
+
+  state.auth.session = data?.session || null;
+  state.auth.user = data?.user || data?.session?.user || null;
+
+  if (state.auth.user) {
+    await ensureRoadProfile({ quiet: false });
+    setAuthMessage("Signed in.", "success");
+    showToast("Signed in");
+  } else {
+    state.auth.loading = false;
+    setAuthMessage("Could not read signed-in user.", "error");
+    renderAuthState();
+  }
+}
+
+async function signOutRoadProfile() {
+  if (!state.auth.client) return;
+
+  state.auth.loading = true;
+  renderAuthState();
+
+  const { error } = await state.auth.client.auth.signOut();
+
+  if (error) {
+    console.error(error);
+    state.auth.loading = false;
+    setAuthMessage(error.message || "Could not sign out.", "error");
+    renderAuthState();
+    return;
+  }
+
+  state.auth.session = null;
+  state.auth.user = null;
+  state.auth.profile = null;
+  state.auth.loading = false;
+
+  renderAuthState();
+  showToast("Signed out");
+}
+
+async function sendPasswordReset() {
+  if (!state.auth.client) {
+    setAuthMessage("Supabase is not connected.", "error");
+    return;
+  }
+
+  const email =
+    els.signInEmailInput?.value.trim() ||
+    els.createEmailInput?.value.trim();
+
+  if (!email) {
+    setAuthMessage("Enter your email first.", "error");
+    return;
+  }
+
+  state.auth.loading = true;
+  renderAuthState();
+
+  const { error } = await state.auth.client.auth.resetPasswordForEmail(
+    email,
+    {
+      redirectTo: getAuthRedirectUrl()
+    }
+  );
+
+  state.auth.loading = false;
+
+  if (error) {
+    console.error(error);
+    setAuthMessage(error.message || "Could not send reset email.", "error");
+    renderAuthState();
+    return;
+  }
+
+  setAuthMessage("Password reset email sent.", "success");
+  renderAuthState();
+}
+
+async function updateRecoveredPassword() {
+  if (!state.auth.client) return;
+
+  const password = els.newPasswordInput?.value || "";
+
+  if (password.length < 6) {
+    setAuthMessage("New password must be at least 6 characters.", "error");
+    return;
+  }
+
+  state.auth.loading = true;
+  renderAuthState();
+
+  const { error } = await state.auth.client.auth.updateUser({
+    password
+  });
+
+  state.auth.loading = false;
+
+  if (error) {
+    console.error(error);
+    setAuthMessage(error.message || "Could not update password.", "error");
+    renderAuthState();
+    return;
+  }
+
+  state.auth.passwordRecovery = false;
+
+  if (els.resetPasswordBox) {
+    els.resetPasswordBox.classList.add("hidden");
+  }
+
+  if (els.newPasswordInput) {
+    els.newPasswordInput.value = "";
+  }
+
+  setAuthMessage("Password updated.", "success");
+  showToast("Password updated");
+  renderAuthState();
+}
+
+async function handleProfilePrivacyToggle(field, checked) {
+  const localKey =
+    field === "show_profile"
+      ? "showProfile"
+      : "showMap";
+
+  state.friendSettings[localKey] = checked;
+
+  if (state.auth.profile) {
+    state.auth.profile[field] = checked;
+  }
+
+  applyFriendSettingsToUI();
+
+  if (!state.auth.client || !state.auth.user || !state.auth.profile) {
+    saveFriendSettings();
+    showToast("Create a Road Profile before sharing");
+    return;
+  }
+
+  const update = {};
+  update[field] = checked;
+
+  const { data, error } = await state.auth.client
+    .from("profiles")
+    .update(update)
+    .eq("id", state.auth.user.id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error(error);
+
+    state.friendSettings[localKey] = !checked;
+
+    if (state.auth.profile) {
+      state.auth.profile[field] = !checked;
+    }
+
+    applyFriendSettingsToUI();
+    showToast("Could not update privacy");
+    return;
+  }
+
+  const profile = normaliseProfile(data);
+
+  if (profile) {
+    state.auth.profile = profile;
+    state.friendSettings.showProfile = Boolean(profile.show_profile);
+    state.friendSettings.showMap = Boolean(profile.show_map);
+    writeJson(ROAD_PROFILE_CACHE_KEY, profile);
+  }
+
+  saveFriendSettings();
+  applyFriendSettingsToUI();
+
+  if (field === "show_profile") {
+    showToast(checked ? "Road Profile sharing on" : "Road Profile sharing off");
+  } else {
+    showToast(checked ? "Map overview sharing on" : "Map overview sharing off");
+  }
+}
+
+async function copyFriendCode() {
+  const code = state.auth.profile?.friend_code;
+
+  if (!code) {
+    showToast("No friend code yet");
+    return;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(code);
+    } else {
+      copyTextFallback(code);
+    }
+
+    showToast("Friend code copied");
+  } catch (error) {
+    console.error(error);
+    copyTextFallback(code);
+    showToast("Friend code copied");
+  }
+}
+
+function copyTextFallback(text) {
+  const input = document.createElement("textarea");
+  input.value = text;
+  input.setAttribute("readonly", "");
+  input.style.position = "fixed";
+  input.style.left = "-9999px";
+  document.body.appendChild(input);
+  input.select();
+  document.execCommand("copy");
+  input.remove();
+}
+
+function getAuthRedirectUrl() {
+  return window.location.href.split("#")[0].split("?")[0];
+}
+
+function setAuthMode(mode) {
+  const isCreate = mode === "create";
+
+  els.authCreateModeBtn?.classList.toggle("active", isCreate);
+  els.authSignInModeBtn?.classList.toggle("active", !isCreate);
+  els.createAuthForm?.classList.toggle("hidden", !isCreate);
+  els.signInAuthForm?.classList.toggle("hidden", isCreate);
+
+  setAuthMessage("", "info");
+}
+
+function showPasswordRecoveryBox() {
+  els.resetPasswordBox?.classList.remove("hidden");
+}
+
+function renderAuthState() {
+  const signedIn = Boolean(state.auth.user);
+  const loading = Boolean(state.auth.loading);
+  const profile = state.auth.profile;
+
+  els.signedOutProfileCard?.classList.toggle("hidden", signedIn);
+  els.signedInProfileCard?.classList.toggle("hidden", !signedIn);
+
+  if (signedIn) {
+    setText(els.profileEmailValue, state.auth.user?.email || "Signed in");
+    setText(els.profileUsernameValue, profile?.username || "Creating profile...");
+    setText(els.profileFriendCodeValue, profile?.friend_code || "Creating code...");
+  }
+
+  if (state.auth.passwordRecovery) {
+    showPasswordRecoveryBox();
+  }
+
+  [
+    els.createProfileBtn,
+    els.signInBtn,
+    els.forgotPasswordBtn,
+    els.updatePasswordBtn,
+    els.copyFriendCodeBtn,
+    els.signOutBtn,
+    els.profileProfileToggle,
+    els.profileMapToggle,
+    els.friendProfileToggle,
+    els.friendMapToggle
+  ].forEach((element) => {
+    if (element) {
+      element.disabled = loading;
+    }
+  });
+
+  if (els.copyFriendCodeBtn) {
+    els.copyFriendCodeBtn.disabled = loading || !profile?.friend_code;
+  }
+
+  applyFriendSettingsToUI();
+  renderFriendsList();
+}
+
+function setText(element, text) {
+  if (element) {
+    element.textContent = text;
+  }
+}
+
+function setAuthMessage(message, type = "info") {
+  if (!els.authMessage) return;
+
+  if (!message) {
+    els.authMessage.classList.add("hidden");
+    els.authMessage.textContent = "";
+    return;
+  }
+
+  els.authMessage.textContent = message;
+  els.authMessage.className = `auth-message ${type}`;
+}
+
+/* ---------- Friends ---------- */
+
+function renderFriendsList() {
+  const signedIn = Boolean(state.auth.user);
+
+  if (els.showAddFriendBtn) {
+    els.showAddFriendBtn.disabled = true;
+    els.showAddFriendBtn.textContent = signedIn
+      ? "+ Add Friend (Checkpoint 2)"
+      : "+ Add Friend (sign in first)";
+  }
+
+  if (els.addFriendBox) {
+    els.addFriendBox.classList.add("hidden");
+  }
+
+  if (els.friendRequestsList) {
+    els.friendRequestsList.innerHTML = signedIn
+      ? '<div class="empty-state">Friend requests come in Checkpoint 2.</div>'
+      : '<div class="empty-state">Create or sign in to a Road Profile before friend requests.</div>';
+  }
+
+  if (!els.friendsList) return;
+
+  els.friendsList.innerHTML = signedIn
+    ? '<div class="empty-state">Real friends list comes in Checkpoint 3. Josh and Dad are no longer used as real friends.</div>'
+    : '<div class="empty-state">Sign in to use real friends. The app still works locally without an account.</div>';
 }
 
 function openFriendProfile(
@@ -2452,18 +3004,31 @@ function getActiveFriend() {
 }
 
 function applyFriendSettingsToUI() {
+  const showProfile = state.auth.profile
+    ? Boolean(state.auth.profile.show_profile)
+    : Boolean(state.friendSettings.showProfile);
+
+  const showMap = state.auth.profile
+    ? Boolean(state.auth.profile.show_map)
+    : Boolean(state.friendSettings.showMap);
+
+  state.friendSettings.showProfile = showProfile;
+  state.friendSettings.showMap = showMap;
+
   if (els.friendProfileToggle) {
-    els.friendProfileToggle.checked =
-      Boolean(
-        state.friendSettings.showProfile
-      );
+    els.friendProfileToggle.checked = showProfile;
   }
 
   if (els.friendMapToggle) {
-    els.friendMapToggle.checked =
-      Boolean(
-        state.friendSettings.showMap
-      );
+    els.friendMapToggle.checked = showMap;
+  }
+
+  if (els.profileProfileToggle) {
+    els.profileProfileToggle.checked = showProfile;
+  }
+
+  if (els.profileMapToggle) {
+    els.profileMapToggle.checked = showMap;
   }
 }
 
