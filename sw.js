@@ -1,18 +1,19 @@
 "use strict";
 
-/* Road Discovery AU v30 service worker */
+/* Road Discovery AU v31 service worker */
 
-const CACHE_NAME = "road-discovery-au-v30";
+const CACHE_NAME = "road-discovery-au-v31";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./style.css",
-  "./app.js",
+  "./style.css?v=31",
+  "./app.js?v=31",
   "./manifest.json",
   "./icon.svg"
 ];
 
+/* Install the new app files and activate immediately */
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -22,25 +23,23 @@ self.addEventListener("install", (event) => {
   );
 });
 
+/* Delete all older Road Discovery cache versions */
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
       .then((cacheNames) => {
         return Promise.all(
-          cacheNames.map((cacheName) => {
-            if (cacheName !== CACHE_NAME) {
-              return caches.delete(cacheName);
-            }
-
-            return null;
-          })
+          cacheNames
+            .filter((cacheName) => cacheName !== CACHE_NAME)
+            .map((cacheName) => caches.delete(cacheName))
         );
       })
       .then(() => self.clients.claim())
   );
 });
 
+/* Use network-first so updates appear quickly, with cache as backup */
 self.addEventListener("fetch", (event) => {
   const request = event.request;
 
@@ -50,41 +49,77 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
+  /*
+    Do not intercept external requests such as:
+    - Leaflet CDN files
+    - CARTO map tiles
+    - Overpass road data
+    - OSRM waypoint routes
+  */
   if (url.origin !== self.location.origin) {
     return;
   }
 
+  /* Page navigation */
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          const copy = response.clone();
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.ok) {
+            const copy = networkResponse.clone();
 
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put("./index.html", copy);
-          });
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put("./index.html", copy);
+            });
+          }
 
-          return response;
+          return networkResponse;
         })
-        .catch(() => caches.match("./index.html"))
+        .catch(async () => {
+          return (
+            (await caches.match("./index.html")) ||
+            (await caches.match("./"))
+          );
+        })
     );
 
     return;
   }
 
+  /* JavaScript, CSS, manifest and icon files */
   event.respondWith(
     fetch(request)
-      .then((response) => {
-        const copy = response.clone();
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.ok) {
+          const copy = networkResponse.clone();
 
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(request, copy);
-        });
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, copy);
+          });
+        }
 
-        return response;
+        return networkResponse;
       })
-      .catch(() => {
-        return caches.match(request);
+      .catch(async () => {
+        const cachedResponse = await caches.match(request);
+
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+
+        /*
+          Handles cases where the browser asks for the file without
+          the v31 query string while the cached copy includes it.
+        */
+        if (url.pathname.endsWith("/style.css")) {
+          return caches.match("./style.css?v=31");
+        }
+
+        if (url.pathname.endsWith("/app.js")) {
+          return caches.match("./app.js?v=31");
+        }
+
+        return Response.error();
       })
   );
 });
