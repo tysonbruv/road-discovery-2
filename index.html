@@ -58,7 +58,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=34"
+    href="style.css?v=35"
   />
 </head>
 
@@ -320,8 +320,8 @@
               </strong>
 
               <span>
-                Approved friends can see the roads you have painted
-                orange.
+                Accepted friends can see the exact historical roads you
+                have discovered and painted orange.
               </span>
             </div>
 
@@ -357,8 +357,8 @@
           </button>
 
           <p class="small-note">
-            This only affects progress saved on this device and
-            browser.
+            This clears progress saved on this device and removes the
+            server copy used by your shared friend map.
           </p>
         </section>
       </div>
@@ -630,7 +630,7 @@
                 </div>
 
                 <span class="profile-status-pill">
-                  Checkpoint 5
+                  Checkpoint 7
                 </span>
               </div>
 
@@ -700,8 +700,8 @@
                     </strong>
 
                     <span>
-                      Off by default. Later, approved friends can see orange
-                      discovered roads only if this is on.
+                      Off by default. Accepted friends can see your exact
+                      historical orange roads only while this is on.
                     </span>
                   </div>
 
@@ -721,8 +721,8 @@
               </div>
 
               <div class="privacy-note">
-                Safe aggregate stats can sync to approved friends. Your orange
-                road segments still stay on this device.
+                Shared roads are historical map-completion progress only.
+                Live location and active drives are never shared.
               </div>
 
               <button
@@ -919,7 +919,7 @@
                   Map overview
                 </span>
 
-                <span>
+                <span id="friendMapOpenLabel">
                   Open →
                 </span>
               </div>
@@ -939,8 +939,8 @@
             </button>
 
             <div class="privacy-note">
-              This is not live tracking. It only shows painted-road
-              progress.
+              Historical road-completion progress only. It does not show
+              live location or how many times a road was travelled.
             </div>
 
             <div class="friend-actions">
@@ -980,22 +980,69 @@
           </h2>
 
           <p>
-            Painted roads only. No live location.
+            Historical road-completion progress. Not live tracking.
           </p>
         </div>
       </header>
 
-      <div
-        id="friendFullMap"
-        class="friend-full-map"
-      >
-        <svg
-          id="friendFullMapSvg"
-          class="friend-full-map-svg"
-          viewBox="0 0 900 620"
+      <div class="friend-full-map-shell">
+        <div
+          id="friendFullMap"
+          class="friend-full-map"
           role="img"
-          aria-label="Friend painted roads"
-        ></svg>
+          aria-label="Friend historical discovered roads"
+        ></div>
+
+        <div
+          id="friendFullMapStatus"
+          class="friend-full-map-status hidden"
+          role="status"
+        ></div>
+      </div>
+    </section>
+
+
+
+    <!-- Map-sharing confirmation -->
+    <section
+      id="mapShareConfirmOverlay"
+      class="confirm-overlay hidden"
+      aria-hidden="true"
+    >
+      <div
+        class="confirm-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mapShareConfirmTitle"
+      >
+        <h2 id="mapShareConfirmTitle">
+          Show your discovered roads to friends?
+        </h2>
+
+        <p>
+          Accepted friends will be able to view your orange roads and see
+          how much of the map you have completed. This does not show your
+          live location, current drive, or how many times you have travelled
+          on a road.
+        </p>
+
+        <div class="confirm-actions">
+          <button
+            id="cancelMapShareBtn"
+            class="ghost-btn wide-btn"
+            type="button"
+          >
+            Cancel
+          </button>
+
+          <button
+            id="confirmMapShareBtn"
+            class="wide-btn"
+            type="button"
+          >
+            Show my map
+          </button>
+        </div>
       </div>
     </section>
 
@@ -1015,7 +1062,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=40"></script>
+  <script src="app.js?v=41"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
