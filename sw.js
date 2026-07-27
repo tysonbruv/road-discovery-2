@@ -117,7 +117,7 @@ self.addEventListener("fetch", (event) => {
         }
 
         if (url.pathname.endsWith("/app.js")) {
-          return caches.match("./app.js?v=36");
+          return caches.match("./app.js?v=37");
         }
 
         return Response.error();
