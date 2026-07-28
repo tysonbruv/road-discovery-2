@@ -347,6 +347,22 @@ function initMap() {
     tap: true
   }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
 
+     state.map.createPane("userAccuracyPane");
+  state.map.createPane("userLocationPane");
+
+  const userAccuracyPane = state.map.getPane("userAccuracyPane");
+  const userLocationPane = state.map.getPane("userLocationPane");
+
+  if (userAccuracyPane) {
+    userAccuracyPane.style.zIndex = "620";
+    userAccuracyPane.style.pointerEvents = "none";
+  }
+
+  if (userLocationPane) {
+    userLocationPane.style.zIndex = "640";
+    userLocationPane.style.pointerEvents = "none";
+  }
+
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
     maxZoom: 20,
     crossOrigin: true,
@@ -1155,6 +1171,7 @@ function updateUserMarker(point) {
 
   if (!state.userMarker) {
     state.userMarker = L.circleMarker(latlng, {
+      pane: "userLocationPane",
       radius: 8,
       color: "#eef7ff",
       weight: 3,
@@ -1168,6 +1185,7 @@ function updateUserMarker(point) {
 
   if (!state.accuracyCircle) {
     state.accuracyCircle = L.circle(latlng, {
+      pane: "userAccuracyPane",
       radius: point.accuracy || 20,
       color: ROUTE_BLUE,
       opacity: 0.35,
@@ -1180,6 +1198,9 @@ function updateUserMarker(point) {
     state.accuracyCircle.setLatLng(latlng);
     state.accuracyCircle.setRadius(point.accuracy || 20);
   }
+   
+   state.accuracyCircle?.bringToFront();
+  state.userMarker?.bringToFront();
 }
 
 /* ---------- Roads / discovery ---------- */
@@ -1496,11 +1517,7 @@ function unlockNearbySegments(point) {
 
     state.needsSavedSegmentsSave = false;
 
-    showToast(
-      unlocked === 1
-        ? "Road painted orange"
-        : `${unlocked} roads painted orange`
-    );
+        // Quiet mode: roads turn orange silently while driving.
 
     void maybeSyncProfileStats({ quiet: true });
   }
