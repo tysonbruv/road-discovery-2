@@ -1,7 +1,7 @@
 "use strict";
 
-/* Road Discovery AU v42
-   Checkpoint 8: private friend nicknames.
+/* Road Discovery AU v43
+   Checkpoint 9: simple Multiplayer Mode live dots.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
    Live GPS, current drives, markers, accuracy, speed, heading, waypoints and routes are never uploaded.
@@ -18,6 +18,9 @@ const SHARED_ROAD_UPLOAD_BATCH_SIZE = 300;
 const SHARED_ROAD_DOWNLOAD_PAGE_SIZE = 500;
 const SHARED_ROAD_MAX_DOWNLOAD_PAGES = 200;
 const FRIEND_NICKNAME_MAX_LENGTH = 40;
+const MULTIPLAYER_LOCATION_SEND_MIN_MS = 3000;
+const MULTIPLAYER_ROOM_POLL_MS = 4000;
+const MULTIPLAYER_STALE_DOT_MS = 30000;
 
 const SUPABASE_URL = "https://tancfzqmzvaalqotmvks.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_LnMT-vhl4xvj4idb91dNdA_EdQMJutI";
@@ -157,7 +160,7 @@ const state = {
     confirmationResolve: null
   },
 
-  friendMap: {
+    friendMap: {
     friendId: null,
     roads: [],
     loading: false,
@@ -167,6 +170,29 @@ const state = {
     fullMap: null,
     fullRoadLayer: null,
     fullRenderer: null
+  },
+
+  multiplayer: {
+    roomId: null,
+    roomCode: "",
+    expiresAt: null,
+    createdBy: null,
+    displayName: "",
+    dotColour: ROUTE_BLUE,
+
+    members: [],
+    markers: new Map(),
+    layer: null,
+
+    creating: false,
+    joining: false,
+    leaving: false,
+    updatingLocation: false,
+    polling: false,
+
+    watchId: null,
+    pollTimer: null,
+    lastLocationSentAt: 0
   },
 
   toastTimer: null
@@ -234,6 +260,7 @@ function cacheEls() {
     "settingsBtn",
     "waypointBtn",
     "friendsBtn",
+    "multiplayerBtn",
     "locateBtn",
     "clearWaypointBtn",
 
@@ -252,6 +279,20 @@ function cacheEls() {
     "closeWaypointBtn",
     "setWaypointBtn",
     "clearWaypointMenuBtn",
+
+    "multiplayerPanel",
+    "closeMultiplayerBtn",
+    "multiplayerSignedOutBox",
+    "multiplayerIdleBox",
+    "multiplayerActiveBox",
+    "createMultiplayerRoomBtn",
+    "multiplayerRoomCodeInput",
+    "joinMultiplayerRoomBtn",
+    "multiplayerRoomCodeValue",
+    "copyMultiplayerCodeBtn",
+    "multiplayerMembersList",
+    "multiplayerStatusText",
+    "leaveMultiplayerRoomBtn",
 
     "friendsPanel",
     "closeFriendsBtn",
@@ -347,15 +388,21 @@ function initMap() {
     tap: true
   }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
 
-     state.map.createPane("userAccuracyPane");
+  state.map.createPane("userAccuracyPane");
+  state.map.createPane("multiplayerPane");
   state.map.createPane("userLocationPane");
 
   const userAccuracyPane = state.map.getPane("userAccuracyPane");
+  const multiplayerPane = state.map.getPane("multiplayerPane");
   const userLocationPane = state.map.getPane("userLocationPane");
 
   if (userAccuracyPane) {
     userAccuracyPane.style.zIndex = "620";
     userAccuracyPane.style.pointerEvents = "none";
+  }
+   if (multiplayerPane) {
+    multiplayerPane.style.zIndex = "630";
+    multiplayerPane.style.pointerEvents = "none";
   }
 
   if (userLocationPane) {
@@ -373,6 +420,8 @@ function initMap() {
   state.savedLayer.addTo(state.map);
   state.tripLayer.addTo(state.map);
   state.routeLayer.addTo(state.map);
+
+  state.multiplayer.layer = L.layerGroup().addTo(state.map);
 
   drawSavedSegments();
 
@@ -605,9 +654,10 @@ function writeJson(key, value) {
 /* ---------- Events ---------- */
 
 function bindEvents() {
-  els.settingsBtn?.addEventListener("click", () => openPanel("settingsPanel"));
+    els.settingsBtn?.addEventListener("click", () => openPanel("settingsPanel"));
   els.waypointBtn?.addEventListener("click", () => openPanel("waypointPanel"));
   els.friendsBtn?.addEventListener("click", openFriendsPanel);
+  els.multiplayerBtn?.addEventListener("click", openMultiplayerPanel);
 
   els.locateBtn?.addEventListener("click", () => {
     state.followUser = true;
@@ -620,8 +670,9 @@ function bindEvents() {
   });
 
   els.panelBackdrop?.addEventListener("click", closePanels);
-  els.closeSettingsBtn?.addEventListener("click", closePanels);
+    els.closeSettingsBtn?.addEventListener("click", closePanels);
   els.closeWaypointBtn?.addEventListener("click", closePanels);
+  els.closeMultiplayerBtn?.addEventListener("click", closePanels);
   els.closeFriendsBtn?.addEventListener("click", closePanels);
 
   els.authCreateModeBtn?.addEventListener("click", () => setAuthMode("create"));
@@ -688,6 +739,29 @@ function bindEvents() {
     clearWaypoint();
     closePanels();
   });
+     els.createMultiplayerRoomBtn?.addEventListener(
+    "click",
+    createMultiplayerRoom
+  );
+
+  els.joinMultiplayerRoomBtn?.addEventListener(
+    "click",
+    joinMultiplayerRoom
+  );
+
+  els.multiplayerRoomCodeInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") joinMultiplayerRoom();
+  });
+
+  els.copyMultiplayerCodeBtn?.addEventListener(
+    "click",
+    copyMultiplayerRoomCode
+  );
+
+  els.leaveMultiplayerRoomBtn?.addEventListener(
+    "click",
+    () => leaveMultiplayerRoom()
+  );
 
   els.showAddFriendBtn?.addEventListener("click", () => {
     els.addFriendBox?.classList.toggle("hidden");
@@ -811,9 +885,10 @@ function closePanels(hideBackdrop = true) {
     Boolean(els.friendsPanel) &&
     !els.friendsPanel.classList.contains("hidden");
 
-  [
+    [
     "settingsPanel",
     "waypointPanel",
+    "multiplayerPanel",
     "friendsPanel"
   ].forEach((id) => {
     const panel = els[id];
@@ -857,7 +932,709 @@ function showFriendProfileView() {
   els.friendsListView?.classList.add("hidden");
   els.friendProfileView?.classList.remove("hidden");
 }
+/* ---------- Multiplayer Mode ---------- */
 
+function hasActiveMultiplayerRoom() {
+  return Boolean(state.multiplayer.roomId);
+}
+
+function openMultiplayerPanel() {
+  renderMultiplayerState();
+  openPanel("multiplayerPanel");
+}
+
+function renderMultiplayerState() {
+  const signedIn = Boolean(state.auth.user && state.auth.profile);
+  const active = hasActiveMultiplayerRoom();
+
+  const busy =
+    Boolean(state.multiplayer.creating) ||
+    Boolean(state.multiplayer.joining) ||
+    Boolean(state.multiplayer.leaving);
+
+  els.multiplayerBtn?.classList.toggle("multiplayer-active", active);
+
+  els.multiplayerSignedOutBox?.classList.toggle("hidden", signedIn);
+  els.multiplayerIdleBox?.classList.toggle("hidden", !signedIn || active);
+  els.multiplayerActiveBox?.classList.toggle("hidden", !signedIn || !active);
+
+  if (els.createMultiplayerRoomBtn) {
+    els.createMultiplayerRoomBtn.disabled = !signedIn || busy;
+    els.createMultiplayerRoomBtn.textContent = state.multiplayer.creating
+      ? "Creating..."
+      : "Create room";
+  }
+
+  if (els.joinMultiplayerRoomBtn) {
+    els.joinMultiplayerRoomBtn.disabled = !signedIn || busy;
+    els.joinMultiplayerRoomBtn.textContent = state.multiplayer.joining
+      ? "Joining..."
+      : "Join";
+  }
+
+  if (els.multiplayerRoomCodeInput) {
+    els.multiplayerRoomCodeInput.disabled = !signedIn || busy;
+  }
+
+  if (els.copyMultiplayerCodeBtn) {
+    els.copyMultiplayerCodeBtn.disabled = !active || busy;
+  }
+
+  if (els.leaveMultiplayerRoomBtn) {
+    els.leaveMultiplayerRoomBtn.disabled = !active || busy;
+    els.leaveMultiplayerRoomBtn.textContent = state.multiplayer.leaving
+      ? "Leaving..."
+      : "Leave room";
+  }
+
+  if (els.multiplayerRoomCodeValue) {
+    els.multiplayerRoomCodeValue.textContent =
+      state.multiplayer.roomCode || "RIDE-00000";
+  }
+
+  if (els.multiplayerStatusText) {
+    if (!active) {
+      els.multiplayerStatusText.textContent =
+        "Multiplayer Mode is off.";
+    } else if (state.isRecording) {
+      els.multiplayerStatusText.textContent =
+        "Start Drive is running. Your own roads still paint orange and your temporary dot is shared.";
+    } else {
+      els.multiplayerStatusText.textContent =
+        "Sharing your temporary dot while Multiplayer Mode is on. Press Start Drive if you want to paint roads.";
+    }
+  }
+
+  renderMultiplayerMembers();
+}
+
+function renderMultiplayerMembers() {
+  if (!els.multiplayerMembersList) return;
+
+  const members = Array.isArray(state.multiplayer.members)
+    ? state.multiplayer.members
+    : [];
+
+  if (!hasActiveMultiplayerRoom()) {
+    els.multiplayerMembersList.innerHTML = `
+      <div class="empty-state">
+        Riders appear here.
+      </div>
+    `;
+    return;
+  }
+
+  if (members.length === 0) {
+    els.multiplayerMembersList.innerHTML = `
+      <div class="empty-state">
+        Waiting for riders.
+      </div>
+    `;
+    return;
+  }
+
+  els.multiplayerMembersList.innerHTML = members
+    .map((member) => {
+      const name = escapeHtml(member.display_name || "Road user");
+      const colour = safeMultiplayerColour(member.dot_colour);
+      const isMe = Boolean(member.is_me);
+      const hasDot =
+        Number.isFinite(Number(member.lat)) &&
+        Number.isFinite(Number(member.lng));
+
+      const subText = isMe
+        ? "You"
+        : hasDot
+          ? `Dot updated ${formatMultiplayerAge(member.updated_at)}`
+          : "Waiting for location";
+
+      return `
+        <div class="multiplayer-member-row">
+          <span
+            class="multiplayer-member-dot"
+            style="--member-colour: ${colour};"
+            aria-hidden="true"
+          ></span>
+
+          <div class="multiplayer-member-main">
+            <div class="multiplayer-member-name">
+              ${name}
+            </div>
+
+            <div class="multiplayer-member-sub">
+              ${escapeHtml(subText)}
+            </div>
+          </div>
+
+          <div class="multiplayer-member-pill ${hasDot ? "online" : ""}">
+            ${hasDot ? "Live" : "Wait"}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+async function createMultiplayerRoom() {
+  if (!state.auth.client || !state.auth.user || !state.auth.profile) {
+    showToast("Sign in to use Multiplayer Mode");
+    renderMultiplayerState();
+    return;
+  }
+
+  if (state.multiplayer.creating || hasActiveMultiplayerRoom()) {
+    return;
+  }
+
+  state.multiplayer.creating = true;
+  renderMultiplayerState();
+
+  const { data, error } = await state.auth.client.rpc(
+    "create_multiplayer_room"
+  );
+
+  state.multiplayer.creating = false;
+
+  if (error) {
+    console.error(error);
+    showToast(multiplayerErrorMessage(error));
+    renderMultiplayerState();
+    return;
+  }
+
+  const room = normaliseMultiplayerRoom(data);
+
+  if (!room?.room_id) {
+    showToast("Could not read multiplayer room");
+    renderMultiplayerState();
+    return;
+  }
+
+  startMultiplayerMode(room);
+  showToast("Multiplayer room created");
+}
+
+async function joinMultiplayerRoom() {
+  if (!state.auth.client || !state.auth.user || !state.auth.profile) {
+    showToast("Sign in to use Multiplayer Mode");
+    renderMultiplayerState();
+    return;
+  }
+
+  if (state.multiplayer.joining || hasActiveMultiplayerRoom()) {
+    return;
+  }
+
+  const roomCode = normaliseMultiplayerRoomCode(
+    els.multiplayerRoomCodeInput?.value || ""
+  );
+
+  if (!roomCode) {
+    showToast("Enter a room code");
+    return;
+  }
+
+  state.multiplayer.joining = true;
+  renderMultiplayerState();
+
+  const { data, error } = await state.auth.client.rpc(
+    "join_multiplayer_room",
+    {
+      p_room_code: roomCode
+    }
+  );
+
+  state.multiplayer.joining = false;
+
+  if (error) {
+    console.error(error);
+    showToast(multiplayerErrorMessage(error));
+    renderMultiplayerState();
+    return;
+  }
+
+  const room = normaliseMultiplayerRoom(data);
+
+  if (!room?.room_id) {
+    showToast("Could not join multiplayer room");
+    renderMultiplayerState();
+    return;
+  }
+
+  if (els.multiplayerRoomCodeInput) {
+    els.multiplayerRoomCodeInput.value = "";
+  }
+
+  startMultiplayerMode(room);
+  showToast("Joined multiplayer room");
+}
+
+function startMultiplayerMode(room) {
+  state.multiplayer.roomId = String(room.room_id || "");
+  state.multiplayer.roomCode = String(room.room_code || "");
+  state.multiplayer.expiresAt = room.expires_at || null;
+  state.multiplayer.createdBy = room.created_by || null;
+  state.multiplayer.displayName = String(room.display_name || "");
+  state.multiplayer.dotColour = safeMultiplayerColour(
+    room.dot_colour || ROUTE_BLUE
+  );
+  state.multiplayer.members = [];
+
+  renderMultiplayerState();
+  startMultiplayerPolling();
+  startMultiplayerLocationWatch();
+
+  if (state.currentPoint) {
+    void maybeSendMultiplayerLocation(state.currentPoint, {
+      force: true
+    });
+  }
+
+  void pollMultiplayerRoomState();
+}
+
+async function leaveMultiplayerRoom(options = {}) {
+  const { quiet = false, leaveServer = true } = options;
+
+  if (!hasActiveMultiplayerRoom()) {
+    stopMultiplayerMode({
+      clearRoom: true
+    });
+    return;
+  }
+
+  const roomId = state.multiplayer.roomId;
+
+  state.multiplayer.leaving = true;
+  renderMultiplayerState();
+
+  stopMultiplayerLocationWatch();
+  stopMultiplayerPolling();
+  clearMultiplayerMarkers();
+
+  if (
+    leaveServer &&
+    state.auth.client &&
+    state.auth.user &&
+    roomId
+  ) {
+    const { error } = await state.auth.client.rpc(
+      "leave_multiplayer_room",
+      {
+        p_room_id: roomId
+      }
+    );
+
+    if (error && !quiet) {
+      console.error(error);
+      showToast(multiplayerErrorMessage(error));
+    }
+  }
+
+  state.multiplayer.leaving = false;
+
+  stopMultiplayerMode({
+    clearRoom: true
+  });
+
+  if (!quiet) {
+    showToast("Left multiplayer room");
+  }
+}
+
+function stopMultiplayerMode(options = {}) {
+  const { clearRoom = true } = options;
+
+  stopMultiplayerLocationWatch();
+  stopMultiplayerPolling();
+  clearMultiplayerMarkers();
+
+  state.multiplayer.creating = false;
+  state.multiplayer.joining = false;
+  state.multiplayer.leaving = false;
+  state.multiplayer.updatingLocation = false;
+  state.multiplayer.polling = false;
+  state.multiplayer.lastLocationSentAt = 0;
+  state.multiplayer.members = [];
+
+  if (clearRoom) {
+    state.multiplayer.roomId = null;
+    state.multiplayer.roomCode = "";
+    state.multiplayer.expiresAt = null;
+    state.multiplayer.createdBy = null;
+    state.multiplayer.displayName = "";
+    state.multiplayer.dotColour = ROUTE_BLUE;
+  }
+
+  renderMultiplayerState();
+}
+
+function startMultiplayerPolling() {
+  stopMultiplayerPolling();
+
+  if (!hasActiveMultiplayerRoom()) return;
+
+  void pollMultiplayerRoomState();
+
+  state.multiplayer.pollTimer = window.setInterval(() => {
+    void pollMultiplayerRoomState();
+  }, MULTIPLAYER_ROOM_POLL_MS);
+}
+
+function stopMultiplayerPolling() {
+  if (state.multiplayer.pollTimer !== null) {
+    window.clearInterval(state.multiplayer.pollTimer);
+    state.multiplayer.pollTimer = null;
+  }
+}
+
+async function pollMultiplayerRoomState() {
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    state.multiplayer.polling ||
+    !navigator.onLine
+  ) {
+    return;
+  }
+
+  state.multiplayer.polling = true;
+
+  const { data, error } = await state.auth.client.rpc(
+    "get_multiplayer_room_state",
+    {
+      p_room_id: state.multiplayer.roomId
+    }
+  );
+
+  state.multiplayer.polling = false;
+
+  if (error) {
+    console.error(error);
+
+    stopMultiplayerMode({
+      clearRoom: true
+    });
+
+    showToast(multiplayerErrorMessage(error));
+    return;
+  }
+
+  state.multiplayer.members = Array.isArray(data) ? data : [];
+
+  const firstRow = state.multiplayer.members[0];
+
+  if (firstRow) {
+    state.multiplayer.roomCode = String(
+      firstRow.room_code || state.multiplayer.roomCode || ""
+    );
+    state.multiplayer.expiresAt =
+      firstRow.expires_at || state.multiplayer.expiresAt;
+    state.multiplayer.createdBy =
+      firstRow.created_by || state.multiplayer.createdBy;
+  }
+
+  drawMultiplayerMarkers(state.multiplayer.members);
+  renderMultiplayerState();
+}
+
+function startMultiplayerLocationWatch() {
+  if (!hasActiveMultiplayerRoom()) return;
+
+  /*
+    If Start Drive is running, do not start a second GPS watch.
+    The normal drive GPS watch will call maybeSendMultiplayerLocation(point).
+  */
+  if (state.isRecording || state.watchId !== null) {
+    stopMultiplayerLocationWatch();
+    return;
+  }
+
+  if (state.multiplayer.watchId !== null) {
+    return;
+  }
+
+  if (!navigator.geolocation) {
+    showToast("GPS is not available for Multiplayer Mode");
+    return;
+  }
+
+  state.multiplayer.watchId = navigator.geolocation.watchPosition(
+    onMultiplayerGpsPosition,
+    onMultiplayerGpsError,
+    {
+      enableHighAccuracy: true,
+      maximumAge: 1000,
+      timeout: 10000
+    }
+  );
+}
+
+function stopMultiplayerLocationWatch() {
+  if (state.multiplayer.watchId !== null) {
+    navigator.geolocation.clearWatch(state.multiplayer.watchId);
+    state.multiplayer.watchId = null;
+  }
+}
+
+function onMultiplayerGpsPosition(position) {
+  const point = positionToPoint(position);
+
+  state.currentPoint = point;
+
+  updateUserMarker(point);
+
+  void maybeSendMultiplayerLocation(point);
+}
+
+function onMultiplayerGpsError(error) {
+  const message =
+    error?.code === 1
+      ? "GPS permission denied"
+      : error?.code === 2
+        ? "GPS position unavailable"
+        : error?.code === 3
+          ? "GPS timed out"
+          : "GPS error";
+
+  if (hasActiveMultiplayerRoom()) {
+    setAccuracyStatus(message);
+  }
+}
+
+async function maybeSendMultiplayerLocation(point, options = {}) {
+  const { force = false } = options;
+
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    !navigator.onLine
+  ) {
+    return false;
+  }
+
+  if (
+    !point ||
+    !Number.isFinite(Number(point.lat)) ||
+    !Number.isFinite(Number(point.lng))
+  ) {
+    return false;
+  }
+
+  const now = Date.now();
+
+  if (
+    !force &&
+    now - state.multiplayer.lastLocationSentAt <
+      MULTIPLAYER_LOCATION_SEND_MIN_MS
+  ) {
+    return false;
+  }
+
+  if (state.multiplayer.updatingLocation) {
+    return false;
+  }
+
+  state.multiplayer.lastLocationSentAt = now;
+  state.multiplayer.updatingLocation = true;
+
+  const { error } = await state.auth.client.rpc(
+    "update_multiplayer_location",
+    {
+      p_room_id: state.multiplayer.roomId,
+      p_lat: Number(point.lat),
+      p_lng: Number(point.lng),
+      p_accuracy: Number.isFinite(Number(point.accuracy))
+        ? Number(point.accuracy)
+        : null
+    }
+  );
+
+  state.multiplayer.updatingLocation = false;
+
+  if (error) {
+    console.error(error);
+    return false;
+  }
+
+  return true;
+}
+
+function drawMultiplayerMarkers(members) {
+  if (!state.map || !state.multiplayer.layer) return;
+
+  const seenIds = new Set();
+
+  for (const member of members || []) {
+    const userId = String(member.user_id || "");
+
+    if (!userId || member.is_me) {
+      continue;
+    }
+
+    const lat = Number(member.lat);
+    const lng = Number(member.lng);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      continue;
+    }
+
+    seenIds.add(userId);
+
+    const colour = safeMultiplayerColour(member.dot_colour);
+    const stale = isMultiplayerDotStale(member.updated_at);
+    const name = member.display_name || "Rider";
+
+    const icon = L.divIcon({
+      className: "multiplayer-dot-icon",
+      html: `
+        <div
+          class="multiplayer-leaflet-dot ${stale ? "stale" : ""}"
+          style="--dot-colour: ${colour};"
+        ></div>
+      `,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    const existingMarker = state.multiplayer.markers.get(userId);
+
+    if (existingMarker) {
+      existingMarker.setLatLng([lat, lng]);
+      existingMarker.setIcon(icon);
+      existingMarker.setTooltipContent(escapeHtml(name));
+    } else {
+      const marker = L.marker([lat, lng], {
+        icon,
+        pane: "multiplayerPane",
+        interactive: false
+      }).addTo(state.multiplayer.layer);
+
+      marker.bindTooltip(escapeHtml(name), {
+        sticky: true
+      });
+
+      state.multiplayer.markers.set(userId, marker);
+    }
+  }
+
+  for (const [userId, marker] of state.multiplayer.markers.entries()) {
+    if (!seenIds.has(userId)) {
+      state.multiplayer.layer.removeLayer(marker);
+      state.multiplayer.markers.delete(userId);
+    }
+  }
+}
+
+function clearMultiplayerMarkers() {
+  if (state.multiplayer.layer) {
+    state.multiplayer.layer.clearLayers();
+  }
+
+  state.multiplayer.markers.clear();
+}
+
+async function copyMultiplayerRoomCode() {
+  const code = state.multiplayer.roomCode;
+
+  if (!code) {
+    showToast("No room code yet");
+    return;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(code);
+    } else {
+      copyTextFallback(code);
+    }
+
+    showToast("Room code copied");
+  } catch (error) {
+    console.error(error);
+    copyTextFallback(code);
+    showToast("Room code copied");
+  }
+}
+
+function normaliseMultiplayerRoom(data) {
+  if (Array.isArray(data)) {
+    return data[0] || null;
+  }
+
+  if (data && typeof data === "object") {
+    return data;
+  }
+
+  return null;
+}
+
+function normaliseMultiplayerRoomCode(value) {
+  const cleaned = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+
+  if (!cleaned) return "";
+
+  if (cleaned.startsWith("RIDE-")) {
+    return cleaned;
+  }
+
+  return `RIDE-${cleaned}`;
+}
+
+function safeMultiplayerColour(value) {
+  const colour = String(value || "").trim();
+
+  if (/^#[0-9a-f]{6}$/i.test(colour)) {
+    return colour;
+  }
+
+  return ROUTE_BLUE;
+}
+
+function isMultiplayerDotStale(updatedAt) {
+  const timestamp = Date.parse(updatedAt || "");
+
+  if (!Number.isFinite(timestamp)) {
+    return true;
+  }
+
+  return Date.now() - timestamp > MULTIPLAYER_STALE_DOT_MS;
+}
+
+function formatMultiplayerAge(updatedAt) {
+  const timestamp = Date.parse(updatedAt || "");
+
+  if (!Number.isFinite(timestamp)) {
+    return "soon";
+  }
+
+  const seconds = Math.max(
+    0,
+    Math.round((Date.now() - timestamp) / 1000)
+  );
+
+  if (seconds < 6) return "now";
+  if (seconds < 60) return `${seconds}s ago`;
+
+  const minutes = Math.round(seconds / 60);
+
+  return `${minutes}m ago`;
+}
+
+function multiplayerErrorMessage(error) {
+  const message = String(error?.message || "");
+
+  if (!message) {
+    return "Multiplayer Mode had a problem";
+  }
+
+  return message.replace(/^Error:\s*/i, "");
+}
 /* ---------- GPS / drive ---------- */
 
 async function locateUser(options = {}) {
@@ -1027,7 +1804,7 @@ function beginGpsWatch() {
   setDriveStatus("Driving");
   setGpsStatus("GPS active");
 
-  state.watchId = navigator.geolocation.watchPosition(
+    state.watchId = navigator.geolocation.watchPosition(
     onGpsPosition,
     onGpsError,
     {
@@ -1036,6 +1813,9 @@ function beginGpsWatch() {
       timeout: 10000
     }
   );
+
+  stopMultiplayerLocationWatch();
+  renderMultiplayerState();
 
   showToast("Drive started");
 }
@@ -1077,6 +1857,11 @@ function finishDrive() {
     reason: "finish-drive"
   });
 
+    if (hasActiveMultiplayerRoom()) {
+    startMultiplayerLocationWatch();
+    renderMultiplayerState();
+  }
+
   showToast("Drive saved on this device");
 }
 
@@ -1103,9 +1888,10 @@ function resetTripState() {
 function onGpsPosition(position) {
   const point = positionToPoint(position);
 
-  state.currentPoint = point;
+    state.currentPoint = point;
 
   updateUserMarker(point);
+  void maybeSendMultiplayerLocation(point);
 
   if (state.followUser) {
     state.map?.panTo([point.lat, point.lng], {
@@ -1978,7 +2764,11 @@ function initSupabase() {
       await maybeSyncProfileStats({ force: true, quiet: true });
       await reconcileMySharedRoads({ quiet: true });
       await refreshFriendData({ quiet: true });
-    } else {
+        } else {
+      stopMultiplayerMode({
+        clearRoom: true
+      });
+
       state.auth.profile = null;
       state.auth.loading = false;
       clearFriendData();
@@ -2015,7 +2805,11 @@ async function loadInitialAuthSession() {
     await maybeSyncProfileStats({ force: true, quiet: true });
     await reconcileMySharedRoads({ quiet: true });
     await refreshFriendData({ quiet: true });
-  } else {
+    } else {
+    stopMultiplayerMode({
+      clearRoom: true
+    });
+
     state.auth.profile = null;
     state.auth.loading = false;
     clearFriendData();
@@ -2206,6 +3000,12 @@ async function signInRoadProfile() {
 
 async function signOutRoadProfile() {
   if (!state.auth.client) return;
+
+  if (hasActiveMultiplayerRoom()) {
+    await leaveMultiplayerRoom({
+      quiet: true
+    });
+  }
 
   state.auth.loading = true;
   renderAuthState();
@@ -2562,8 +3362,9 @@ function renderAuthState() {
       !profile?.friend_code;
   }
 
-  applyFriendSettingsToUI();
+    applyFriendSettingsToUI();
   renderFriendsList();
+  renderMultiplayerState();
 }
 
 function setText(element, text) {
@@ -4421,6 +5222,16 @@ async function handleOnlineReconnect() {
 
   if (!state.isRecording) {
     await reconcileMySharedRoads({ quiet: true });
+  }
+
+  if (hasActiveMultiplayerRoom()) {
+    if (state.currentPoint) {
+      void maybeSendMultiplayerLocation(state.currentPoint, {
+        force: true
+      });
+    }
+
+    void pollMultiplayerRoomState();
   }
 }
 
