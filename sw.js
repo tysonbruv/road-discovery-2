@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v43 service worker
+  Road Discovery AU v44 service worker
 
   Checkpoint 9:
   Simple Multiplayer Mode live dots.
 
   Expected frontend versions:
-  - app.js?v=43
+  - app.js?v=44
   - style.css?v=37
 
   Previous files are also recognised during the update so the site
   can upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v43";
+const CACHE_NAME = "road-discovery-au-v44";
 
 const CORE_APP_SHELL = [
   "./",
@@ -25,12 +25,13 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=37",
-  "./app.js?v=43",
+  "./app.js?v=44",
 
   /*
     Temporary fallback files used while the GitHub files are being
     replaced one at a time.
   */
+  "./app.js?v=43",
   "./style.css?v=36",
   "./app.js?v=42",
   "./style.css?v=35",
@@ -190,6 +191,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=44")) ||
             (await caches.match("./app.js?v=43")) ||
             (await caches.match("./app.js?v=42")) ||
             (await caches.match("./app.js?v=41")) ||
