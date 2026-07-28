@@ -2910,13 +2910,25 @@ async function createRoadProfileAccount() {
   });
 
   if (error) {
-    console.error(error);
-    state.auth.loading = false;
-    state.auth.submitting = false;
+  console.error(error);
+
+  state.auth.loading = false;
+  state.auth.submitting = false;
+
+  const message = String(error.message || "").toLowerCase();
+
+  if (message.includes("email rate limit")) {
+    setAuthMessage(
+      "Too many confirmation emails were requested. Wait a while, then try again. If you already created the account, check your email or spam folder for the confirmation link.",
+      "error"
+    );
+  } else {
     setAuthMessage(error.message || "Could not create account.", "error");
-    renderAuthState();
-    return;
   }
+
+  renderAuthState();
+  return;
+}
 
   state.auth.session = data?.session || null;
   state.auth.user = data?.user || data?.session?.user || null;
