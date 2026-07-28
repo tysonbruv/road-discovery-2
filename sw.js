@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v42 service worker
+  Road Discovery AU v43 service worker
 
-  Checkpoint 8:
-  Private friend nicknames.
+  Checkpoint 9:
+  Simple Multiplayer Mode live dots.
 
   Expected frontend versions:
-  - app.js?v=42
-  - style.css?v=36
+  - app.js?v=43
+  - style.css?v=37
 
-  The previous app.js?v=41 and style.css?v=35 files are also
-  recognised during the update so the site can be upgraded safely.
+  Previous files are also recognised during the update so the site
+  can upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v42";
+const CACHE_NAME = "road-discovery-au-v43";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,13 +24,15 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
-  "./style.css?v=36",
-  "./app.js?v=42",
+  "./style.css?v=37",
+  "./app.js?v=43",
 
   /*
     Temporary fallback files used while the GitHub files are being
     replaced one at a time.
   */
+  "./style.css?v=36",
+  "./app.js?v=42",
   "./style.css?v=35",
   "./app.js?v=41"
 ];
@@ -52,7 +54,7 @@ self.addEventListener("install", (event) => {
         /*
           Cache each versioned file separately.
 
-          If app.js?v=42 or style.css?v=36 has not been uploaded yet,
+          If the newest app.js or style.css has not been uploaded yet,
           installation can still complete using the previous version.
         */
         await Promise.all(
@@ -179,6 +181,7 @@ self.addEventListener("fetch", (event) => {
         */
         if (url.pathname.endsWith("/style.css")) {
           return (
+            (await caches.match("./style.css?v=37")) ||
             (await caches.match("./style.css?v=36")) ||
             (await caches.match("./style.css?v=35")) ||
             Response.error()
@@ -187,6 +190,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=43")) ||
             (await caches.match("./app.js?v=42")) ||
             (await caches.match("./app.js?v=41")) ||
             Response.error()
