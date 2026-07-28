@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v43
+/* Road Discovery AU v44
    Checkpoint 9: simple Multiplayer Mode live dots.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
