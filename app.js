@@ -20,7 +20,7 @@ const SHARED_ROAD_MAX_DOWNLOAD_PAGES = 200;
 const FRIEND_NICKNAME_MAX_LENGTH = 40;
 const MULTIPLAYER_LOCATION_SEND_MIN_MS = 3000;
 const MULTIPLAYER_ROOM_POLL_MS = 4000;
-const MULTIPLAYER_STALE_DOT_MS = 30000;
+const MULTIPLAYER_STALE_DOT_MS = 5 * 60 * 1000;
 
 const SUPABASE_URL = "https://tancfzqmzvaalqotmvks.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_LnMT-vhl4xvj4idb91dNdA_EdQMJutI";
