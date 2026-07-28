@@ -58,7 +58,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=36"
+    href="style.css?v=37"
   />
 </head>
 
@@ -201,6 +201,16 @@
       </button>
 
       <button
+        id="multiplayerBtn"
+        class="tool-btn"
+        type="button"
+        aria-label="Open multiplayer mode"
+        title="Multiplayer Mode"
+      >
+        ●●
+      </button>
+
+      <button
         id="locateBtn"
         class="tool-btn"
         type="button"
@@ -340,14 +350,14 @@
           </label>
 
           <div class="privacy-note">
-  Check your email and click the confirmation link after creating
-  your Road Profile.
-  <br /><br />
-  Friends cannot see your live location, current drive,
-  blue location marker, start point, finish point, speed,
-  heading or live position. They can only see roads you have turned orange,
-  if you turn map sharing on.
-</div>
+            Check your email and click the confirmation link after creating
+            your Road Profile.
+            <br /><br />
+            Friends cannot see your live location, current drive,
+            blue location marker, start point, finish point, speed,
+            heading or live position. They can only see roads you have turned orange,
+            if you turn map sharing on.
+          </div>
         </section>
 
         <section class="panel-section">
@@ -417,6 +427,158 @@
             Press “Set waypoint on map”, close this panel and then tap
             the map where you want to go.
           </p>
+        </section>
+      </div>
+    </aside>
+
+    <!-- Multiplayer panel -->
+    <aside
+      id="multiplayerPanel"
+      class="side-panel multiplayer-panel hidden"
+      aria-hidden="true"
+      aria-label="Multiplayer Mode"
+    >
+      <div class="panel-header">
+        <div>
+          <h2>Multiplayer Mode</h2>
+
+          <p>
+            Temporary coloured dots for this ride.
+          </p>
+        </div>
+
+        <button
+          id="closeMultiplayerBtn"
+          class="panel-close-btn"
+          type="button"
+          aria-label="Close multiplayer mode"
+        >
+          ×
+        </button>
+      </div>
+
+      <div class="panel-content">
+        <section
+          id="multiplayerSignedOutBox"
+          class="panel-section multiplayer-signed-out-box"
+        >
+          <h3>Sign in first</h3>
+
+          <p class="small-note">
+            Multiplayer Mode needs a Road Profile so riders have names
+            and temporary room access.
+          </p>
+        </section>
+
+        <section
+          id="multiplayerIdleBox"
+          class="panel-section multiplayer-idle-box"
+        >
+          <h3>Start a temporary room</h3>
+
+          <button
+            id="createMultiplayerRoomBtn"
+            class="wide-btn"
+            type="button"
+          >
+            Create room
+          </button>
+
+          <div class="multiplayer-divider">
+            or
+          </div>
+
+          <label
+            class="field-label"
+            for="multiplayerRoomCodeInput"
+          >
+            Join by room code
+          </label>
+
+          <div class="field-row">
+            <input
+              id="multiplayerRoomCodeInput"
+              class="text-field"
+              type="text"
+              inputmode="text"
+              autocomplete="off"
+              placeholder="RIDE-4821"
+            />
+
+            <button
+              id="joinMultiplayerRoomBtn"
+              class="small-action-btn"
+              type="button"
+            >
+              Join
+            </button>
+          </div>
+
+          <div class="privacy-note">
+            Multiplayer Mode only shows temporary coloured dots.
+            Start Drive still paints your own roads orange and saves
+            them to your own stats. Other riders cannot paint roads for you.
+          </div>
+        </section>
+
+        <section
+          id="multiplayerActiveBox"
+          class="panel-section multiplayer-active-box hidden"
+        >
+          <h3>Room active</h3>
+
+          <div class="multiplayer-room-code-card">
+            <span>
+              Room code
+            </span>
+
+            <strong id="multiplayerRoomCodeValue">
+              RIDE-00000
+            </strong>
+          </div>
+
+          <button
+            id="copyMultiplayerCodeBtn"
+            class="wide-btn"
+            type="button"
+          >
+            Copy room code
+          </button>
+
+          <div class="friends-block">
+            <div class="friends-block-title">
+              Riders
+            </div>
+
+            <div
+              id="multiplayerMembersList"
+              class="multiplayer-members-list"
+            >
+              <div class="empty-state">
+                Riders appear here.
+              </div>
+            </div>
+          </div>
+
+          <div
+            id="multiplayerStatusText"
+            class="small-note"
+          >
+            Sharing your temporary dot while Multiplayer Mode is on.
+          </div>
+
+          <button
+            id="leaveMultiplayerRoomBtn"
+            class="ghost-btn wide-btn multiplayer-leave-btn"
+            type="button"
+          >
+            Leave room
+          </button>
+
+          <div class="privacy-note">
+            Leaving the room stops live dot sharing. This does not turn
+            off normal road painting if Start Drive is running.
+          </div>
         </section>
       </div>
     </aside>
@@ -615,14 +777,14 @@
               ></div>
 
               <div class="privacy-note">
-  Check your email and click the confirmation link after creating
-  your Road Profile. This gives you your road username and friend code.
-  <br /><br />
-  Friends cannot see your live location, current drive,
-  blue location marker, start point, finish point, speed,
-  heading or live position. They can only see roads you have turned orange,
-  if you turn map sharing on.
-</div>
+                Check your email and click the confirmation link after creating
+                your Road Profile. This gives you your road username and friend code.
+                <br /><br />
+                Friends cannot see your live location, current drive,
+                blue location marker, start point, finish point, speed,
+                heading or live position. They can only see roads you have turned orange,
+                if you turn map sharing on.
+              </div>
             </div>
 
             <div
@@ -639,7 +801,7 @@
                 </div>
 
                 <span class="profile-status-pill">
-                  Checkpoint 8
+                  Checkpoint 9
                 </span>
               </div>
 
@@ -1155,7 +1317,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=42"></script>
+  <script src="app.js?v=43"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
