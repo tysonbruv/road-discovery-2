@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v44 service worker
+  Road Discovery AU v45 service worker
 
-  Checkpoint 9:
-  Simple Multiplayer Mode live dots.
+  Checkpoint 10:
+  Hide & Seek Mode inside Multiplayer.
 
   Expected frontend versions:
-  - app.js?v=44
-  - style.css?v=37
+  - app.js?v=45
+  - style.css?v=38
 
-  Previous files are also recognised during the update so the site
-  can upgrade safely while GitHub files are replaced one at a time.
+  Previous files are recognised during the update so the site can
+  upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v44";
+const CACHE_NAME = "road-discovery-au-v45";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,40 +24,24 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
-  "./style.css?v=37",
-  "./app.js?v=44",
+  "./style.css?v=38",
+  "./app.js?v=45",
 
-  /*
-    Temporary fallback files used while the GitHub files are being
-    replaced one at a time.
-  */
+  /* Temporary fallbacks during a one-file-at-a-time upload. */
+  "./app.js?v=44",
+  "./style.css?v=37",
   "./app.js?v=43",
   "./style.css?v=36",
-  "./app.js?v=42",
-  "./style.css?v=35",
-  "./app.js?v=41"
+  "./app.js?v=42"
 ];
-
-/* -------------------------------------------------- */
-/* Install                                            */
-/* -------------------------------------------------- */
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
       .then(async (cache) => {
-        /*
-          These files should always exist.
-        */
         await cache.addAll(CORE_APP_SHELL);
 
-        /*
-          Cache each versioned file separately.
-
-          If the newest app.js or style.css has not been uploaded yet,
-          installation can still complete using the previous version.
-        */
         await Promise.all(
           VERSIONED_APP_FILES.map(async (file) => {
             try {
@@ -75,10 +59,6 @@ self.addEventListener("install", (event) => {
   );
 });
 
-/* -------------------------------------------------- */
-/* Activate                                           */
-/* -------------------------------------------------- */
-
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
@@ -94,10 +74,6 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-/* -------------------------------------------------- */
-/* Fetch                                              */
-/* -------------------------------------------------- */
-
 self.addEventListener("fetch", (event) => {
   const request = event.request;
 
@@ -107,22 +83,10 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  /*
-    Do not intercept external requests such as:
-
-    - Leaflet CDN files
-    - Supabase client library
-    - CARTO map tiles
-    - Overpass road data
-    - OSRM waypoint routes
-  */
+  /* Do not intercept external tiles, road data, routing or Supabase. */
   if (url.origin !== self.location.origin) {
     return;
   }
-
-  /* ------------------------------------------------ */
-  /* Page navigation                                  */
-  /* ------------------------------------------------ */
 
   if (request.mode === "navigate") {
     event.respondWith(
@@ -149,10 +113,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  /* ------------------------------------------------ */
-  /* Local JavaScript, CSS, manifest and icon files   */
-  /* ------------------------------------------------ */
-
   event.respondWith(
     fetch(request)
       .then((networkResponse) => {
@@ -167,34 +127,27 @@ self.addEventListener("fetch", (event) => {
         return networkResponse;
       })
       .catch(async () => {
-        /*
-          First try the exact requested file.
-        */
         const exactCachedResponse = await caches.match(request);
 
         if (exactCachedResponse) {
           return exactCachedResponse;
         }
 
-        /*
-          Handles cases where the browser requests a file without its
-          version query string.
-        */
         if (url.pathname.endsWith("/style.css")) {
           return (
+            (await caches.match("./style.css?v=38")) ||
             (await caches.match("./style.css?v=37")) ||
             (await caches.match("./style.css?v=36")) ||
-            (await caches.match("./style.css?v=35")) ||
             Response.error()
           );
         }
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=45")) ||
             (await caches.match("./app.js?v=44")) ||
             (await caches.match("./app.js?v=43")) ||
             (await caches.match("./app.js?v=42")) ||
-            (await caches.match("./app.js?v=41")) ||
             Response.error()
           );
         }
