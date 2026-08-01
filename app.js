@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v45
+/* Road Discovery AU v46
    Checkpoint 10: Hide & Seek Mode inside Multiplayer.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -7447,3 +7447,970 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+
+/* ================================================== */
+/* Road Discovery AU v46 Hide & Seek extension        */
+/* Append this block once to the bottom of app.js v45 */
+/* ================================================== */
+
+const HS46_ESCAPE_SECONDS = 3 * 60;
+const HS46_SIGNAL_WARNING_SECONDS = 5;
+
+Object.assign(state.hideSeek, {
+  roleRevealAt: null,
+  nextSignalAt: null,
+  signalSequence: 0,
+  signalEmittedAt: null,
+  signalExpiresAt: null,
+  signalClues: [],
+  signalPolling: false,
+  roleRevealTimer: null,
+  revealedRoundId: null
+});
+
+[
+  "hideSeekSignalPanel",
+  "hideSeekSignalStatus",
+  "hideSeekSignalList",
+  "hideSeekMapHud",
+  "hideSeekMapRole",
+  "hideSeekMapPhase",
+  "hideSeekMapTimer",
+  "hideSeekMapSignalStatus",
+  "hideSeekMapSignalList",
+  "hideSeekRoleRevealOverlay",
+  "hideSeekRoleRevealText"
+].forEach((id) => {
+  els[id] = $(id);
+});
+
+const hideSeekV45 = {
+  resetState: resetHideSeekState,
+  startCountdown: startHideSeekCountdown,
+  renderState: renderHideSeekState,
+  playerStatusLabel: hideSeekPlayerStatusLabel,
+  phaseLabel: hideSeekPhaseLabel,
+  gameStatusText: hideSeekGameStatusText,
+  pollState: pollHideSeekState,
+  applyRows: applyHideSeekRows
+};
+
+hasActiveHideSeekRound = function () {
+  return Boolean(
+    state.hideSeek.roundId &&
+    ["starting", "escape", "hunt"].includes(
+      state.hideSeek.phase
+    )
+  );
+};
+
+resetHideSeekState = function (options = {}) {
+  const {
+    clearRound = true,
+    render = true
+  } = options;
+
+  hideHideSeekRoleReveal();
+
+  hideSeekV45.resetState({
+    clearRound,
+    render: false
+  });
+
+  state.hideSeek.signalPolling = false;
+  state.hideSeek.nextSignalAt = null;
+  state.hideSeek.signalEmittedAt = null;
+  state.hideSeek.signalExpiresAt = null;
+  state.hideSeek.signalClues = [];
+
+  if (clearRound) {
+    state.hideSeek.roleRevealAt = null;
+    state.hideSeek.signalSequence = 0;
+    state.hideSeek.revealedRoundId = null;
+  }
+
+  renderHideSeekMapHud();
+
+  if (render) {
+    renderMultiplayerState();
+  }
+};
+
+startHideSeekCountdown = function () {
+  stopHideSeekCountdown();
+
+  if (!hasActiveHideSeekRound()) return;
+
+  state.hideSeek.countdownTimer = window.setInterval(() => {
+    renderHideSeekState();
+
+    const phaseDeadline =
+      state.hideSeek.phase === "starting"
+        ? state.hideSeek.roleRevealAt
+        : state.hideSeek.phase === "escape"
+          ? state.hideSeek.escapeEndsAt
+          : state.hideSeek.phase === "hunt"
+            ? state.hideSeek.huntEndsAt
+            : null;
+
+    const phaseDeadlineMs = Date.parse(
+      phaseDeadline || ""
+    );
+
+    if (
+      Number.isFinite(phaseDeadlineMs) &&
+      hs46ServerNowMs() >= phaseDeadlineMs
+    ) {
+      void pollHideSeekState({
+        force: true
+      });
+    }
+
+    const nextSignalMs = Date.parse(
+      state.hideSeek.nextSignalAt || ""
+    );
+
+    if (
+      state.hideSeek.phase === "hunt" &&
+      Number.isFinite(nextSignalMs) &&
+      hs46ServerNowMs() >= nextSignalMs
+    ) {
+      void pollHideSeekSignalState();
+    }
+  }, 1000);
+};
+
+renderHideSeekState = function () {
+  hideSeekV45.renderState();
+
+  const role =
+    state.hideSeek.phase === "starting"
+      ? "choosing"
+      : state.hideSeek.viewerRole || "player";
+
+  if (els.hideSeekRoleBadge) {
+    els.hideSeekRoleBadge.textContent =
+      role === "wolf"
+        ? "Wolf"
+        : role === "sheep"
+          ? "Sheep"
+          : role === "choosing"
+            ? "Choosing..."
+            : "Player";
+
+    els.hideSeekRoleBadge.classList.toggle(
+      "wolf",
+      role === "wolf"
+    );
+
+    els.hideSeekRoleBadge.classList.toggle(
+      "sheep",
+      role === "sheep"
+    );
+
+    els.hideSeekRoleBadge.classList.toggle(
+      "choosing",
+      role === "choosing"
+    );
+  }
+
+  renderHideSeekSignalUI();
+  renderHideSeekMapHud();
+};
+
+renderHideSeekPlayers = function () {
+  if (!els.hideSeekPlayersList) return;
+
+  const players = Array.isArray(
+    state.hideSeek.players
+  )
+    ? state.hideSeek.players
+    : [];
+
+  if (players.length === 0) {
+    els.hideSeekPlayersList.innerHTML = `
+      <div class="empty-state">
+        Roles appear when the round starts.
+      </div>
+    `;
+
+    return;
+  }
+
+  els.hideSeekPlayersList.innerHTML = players
+    .map((player) => {
+      const role =
+        state.hideSeek.phase === "starting" ||
+        !player.role
+          ? "choosing"
+          : player.role === "wolf"
+            ? "wolf"
+            : "sheep";
+
+      const status = String(
+        player.player_status || "active"
+      );
+
+      const name = escapeHtml(
+        player.display_name || "Road user"
+      );
+
+      const isMe = Boolean(player.is_me);
+
+      const statusLabel =
+        hideSeekPlayerStatusLabel(player);
+
+      const roleLabel =
+        role === "choosing"
+          ? "Role is being chosen"
+          : role === "wolf"
+            ? "Wolf"
+            : "Sheep";
+
+      return `
+        <div class="hide-seek-player-row">
+          <span
+            class="hide-seek-player-dot ${role} ${escapeHtml(status)}"
+            aria-hidden="true"
+          ></span>
+
+          <div class="hide-seek-player-main">
+            <div class="hide-seek-player-name">
+              ${name}${isMe ? " <span>You</span>" : ""}
+            </div>
+
+            <div class="hide-seek-player-sub">
+              ${roleLabel}
+            </div>
+          </div>
+
+          <div class="hide-seek-player-status ${escapeHtml(status)}">
+            ${escapeHtml(statusLabel)}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+};
+
+hideSeekPlayerStatusLabel = function (player) {
+  if (state.hideSeek.phase === "starting") {
+    return "Choosing";
+  }
+
+  return hideSeekV45.playerStatusLabel(player);
+};
+
+hideSeekPhaseLabel = function (phase) {
+  if (phase === "starting") {
+    return "Choosing";
+  }
+
+  return hideSeekV45.phaseLabel(phase);
+};
+
+hideSeekGameStatusText = function () {
+  if (state.hideSeek.phase === "starting") {
+    return "Randomly choosing one wolf and the sheep...";
+  }
+
+  return hideSeekV45.gameStatusText();
+};
+
+formatHideSeekCountdown = function () {
+  let deadline = null;
+
+  if (state.hideSeek.phase === "starting") {
+    deadline = state.hideSeek.roleRevealAt;
+  } else if (state.hideSeek.phase === "escape") {
+    deadline = state.hideSeek.escapeEndsAt;
+  } else if (state.hideSeek.phase === "hunt") {
+    deadline = state.hideSeek.huntEndsAt;
+  }
+
+  const deadlineMs = Date.parse(deadline || "");
+
+  if (!Number.isFinite(deadlineMs)) {
+    return "00:00";
+  }
+
+  const seconds = Math.max(
+    0,
+    Math.ceil(
+      (deadlineMs - hs46ServerNowMs()) / 1000
+    )
+  );
+
+  return hs46FormatSeconds(seconds);
+};
+
+function hs46FormatSeconds(secondsValue) {
+  const seconds = Math.max(
+    0,
+    Math.ceil(Number(secondsValue) || 0)
+  );
+
+  const minutesPart = Math.floor(seconds / 60);
+
+  const secondsPart = String(
+    seconds % 60
+  ).padStart(2, "0");
+
+  return (
+    `${String(minutesPart).padStart(2, "0")}` +
+    `:${secondsPart}`
+  );
+}
+
+function hs46ServerNowMs() {
+  return (
+    Date.now() +
+    state.hideSeek.serverOffsetMs
+  );
+}
+
+function hs46SignalIsActive() {
+  const emittedMs = Date.parse(
+    state.hideSeek.signalEmittedAt || ""
+  );
+
+  const expiresMs = Date.parse(
+    state.hideSeek.signalExpiresAt || ""
+  );
+
+  const now = hs46ServerNowMs();
+
+  return (
+    state.hideSeek.phase === "hunt" &&
+    Number.isFinite(emittedMs) &&
+    Number.isFinite(expiresMs) &&
+    now >= emittedMs &&
+    now < expiresMs
+  );
+}
+
+function hs46SignalStatusText() {
+  if (state.hideSeek.phase !== "hunt") {
+    return "";
+  }
+
+  if (hs46SignalIsActive()) {
+    if (state.hideSeek.viewerRole === "wolf") {
+      return state.hideSeek.signalClues.length > 0
+        ? "Sheep signals active"
+        : "No hidden sheep signal received";
+    }
+
+    return "Your signal was sent";
+  }
+
+  const nextMs = Date.parse(
+    state.hideSeek.nextSignalAt || ""
+  );
+
+  if (!Number.isFinite(nextMs)) {
+    return "No more signals this round";
+  }
+
+  const seconds = Math.max(
+    0,
+    Math.ceil(
+      (nextMs - hs46ServerNowMs()) / 1000
+    )
+  );
+
+  if (
+    seconds <=
+    HS46_SIGNAL_WARNING_SECONDS
+  ) {
+    return `Signal incoming • ${seconds}s`;
+  }
+
+  return (
+    `Next signal • ` +
+    hs46FormatSeconds(seconds)
+  );
+}
+
+function hs46DirectionArrow(direction) {
+  return {
+    N: "↑",
+    NE: "↗",
+    E: "→",
+    SE: "↘",
+    S: "↓",
+    SW: "↙",
+    W: "←",
+    NW: "↖"
+  }[direction] || "•";
+}
+
+function hs46DistanceLabel(distance) {
+  if (distance === "close") {
+    return "Close";
+  }
+
+  if (distance === "medium") {
+    return "Medium";
+  }
+
+  return "Far";
+}
+
+function hs46SignalCluesHtml() {
+  if (
+    state.hideSeek.viewerRole !== "wolf" ||
+    !hs46SignalIsActive() ||
+    state.hideSeek.signalClues.length === 0
+  ) {
+    return "";
+  }
+
+  return state.hideSeek.signalClues
+    .map((clue) => {
+      const direction = escapeHtml(
+        clue.direction
+      );
+
+      const distance = escapeHtml(
+        hs46DistanceLabel(clue.distance)
+      );
+
+      const arrow = hs46DirectionArrow(
+        clue.direction
+      );
+
+      return `
+        <span class="hide-seek-signal-clue ${escapeHtml(clue.distance)}">
+          <strong>${arrow}</strong>
+          <span>${direction} • ${distance}</span>
+        </span>
+      `;
+    })
+    .join("");
+}
+
+function renderHideSeekSignalUI() {
+  const visible =
+    Boolean(state.hideSeek.roundId) &&
+    state.hideSeek.phase === "hunt";
+
+  const statusText = visible
+    ? hs46SignalStatusText()
+    : "";
+
+  const cluesHtml = visible
+    ? hs46SignalCluesHtml()
+    : "";
+
+  const nextMs = Date.parse(
+    state.hideSeek.nextSignalAt || ""
+  );
+
+  const secondsToSignal =
+    Number.isFinite(nextMs)
+      ? Math.max(
+          0,
+          Math.ceil(
+            (
+              nextMs -
+              hs46ServerNowMs()
+            ) / 1000
+          )
+        )
+      : null;
+
+  const incoming =
+    secondsToSignal !== null &&
+    secondsToSignal <=
+      HS46_SIGNAL_WARNING_SECONDS;
+
+  els.hideSeekSignalPanel?.classList.toggle(
+    "hidden",
+    !visible
+  );
+
+  if (els.hideSeekSignalStatus) {
+    els.hideSeekSignalStatus.textContent =
+      statusText;
+
+    els.hideSeekSignalStatus.classList.toggle(
+      "incoming",
+      incoming
+    );
+  }
+
+  if (els.hideSeekSignalList) {
+    els.hideSeekSignalList.classList.toggle(
+      "hidden",
+      !cluesHtml
+    );
+
+    els.hideSeekSignalList.innerHTML =
+      cluesHtml;
+  }
+}
+
+function renderHideSeekMapHud() {
+  if (!els.hideSeekMapHud) return;
+
+  const hasRound = Boolean(
+    state.hideSeek.roundId
+  );
+
+  els.hideSeekMapHud.classList.toggle(
+    "hidden",
+    !hasRound
+  );
+
+  if (!hasRound) return;
+
+  const role =
+    state.hideSeek.phase === "starting"
+      ? "choosing"
+      : state.hideSeek.viewerRole || "player";
+
+  if (els.hideSeekMapRole) {
+    els.hideSeekMapRole.textContent =
+      role === "wolf"
+        ? "Wolf"
+        : role === "sheep"
+          ? "Sheep"
+          : role === "choosing"
+            ? "Choosing"
+            : "Player";
+
+    els.hideSeekMapRole.classList.toggle(
+      "wolf",
+      role === "wolf"
+    );
+
+    els.hideSeekMapRole.classList.toggle(
+      "sheep",
+      role === "sheep"
+    );
+
+    els.hideSeekMapRole.classList.toggle(
+      "choosing",
+      role === "choosing"
+    );
+  }
+
+  if (els.hideSeekMapPhase) {
+    if (state.hideSeek.phase === "starting") {
+      els.hideSeekMapPhase.textContent =
+        "Choosing roles";
+    } else if (
+      state.hideSeek.phase === "escape"
+    ) {
+      els.hideSeekMapPhase.textContent =
+        "Sheep escape";
+    } else if (
+      state.hideSeek.phase === "hunt"
+    ) {
+      els.hideSeekMapPhase.textContent =
+        "Hunt";
+    } else if (
+      state.hideSeek.phase === "finished"
+    ) {
+      els.hideSeekMapPhase.textContent =
+        state.hideSeek.winner === "wolf"
+          ? "Wolf wins"
+          : "Sheep win";
+    } else {
+      els.hideSeekMapPhase.textContent =
+        "Round ended";
+    }
+  }
+
+  if (els.hideSeekMapTimer) {
+    els.hideSeekMapTimer.textContent =
+      [
+        "starting",
+        "escape",
+        "hunt"
+      ].includes(state.hideSeek.phase)
+        ? formatHideSeekCountdown()
+        : "Finished";
+  }
+
+  const signalVisible =
+    state.hideSeek.phase === "hunt";
+
+  const signalStatus = signalVisible
+    ? hs46SignalStatusText()
+    : "";
+
+  const cluesHtml = signalVisible
+    ? hs46SignalCluesHtml()
+    : "";
+
+  const nextMs = Date.parse(
+    state.hideSeek.nextSignalAt || ""
+  );
+
+  const secondsToSignal =
+    Number.isFinite(nextMs)
+      ? Math.max(
+          0,
+          Math.ceil(
+            (
+              nextMs -
+              hs46ServerNowMs()
+            ) / 1000
+          )
+        )
+      : null;
+
+  const incoming =
+    secondsToSignal !== null &&
+    secondsToSignal <=
+      HS46_SIGNAL_WARNING_SECONDS;
+
+  if (els.hideSeekMapSignalStatus) {
+    els.hideSeekMapSignalStatus.classList.toggle(
+      "hidden",
+      !signalVisible
+    );
+
+    els.hideSeekMapSignalStatus.classList.toggle(
+      "incoming",
+      incoming
+    );
+
+    els.hideSeekMapSignalStatus.textContent =
+      signalStatus;
+  }
+
+  if (els.hideSeekMapSignalList) {
+    els.hideSeekMapSignalList.classList.toggle(
+      "hidden",
+      !cluesHtml
+    );
+
+    els.hideSeekMapSignalList.innerHTML =
+      cluesHtml;
+  }
+}
+
+function showHideSeekRoleReveal(role) {
+  if (
+    !state.hideSeek.roundId ||
+    !["wolf", "sheep"].includes(role) ||
+    state.hideSeek.revealedRoundId ===
+      state.hideSeek.roundId
+  ) {
+    return;
+  }
+
+  hideHideSeekRoleReveal();
+
+  state.hideSeek.revealedRoundId =
+    state.hideSeek.roundId;
+
+  if (els.hideSeekRoleRevealText) {
+    els.hideSeekRoleRevealText.textContent =
+      role === "wolf"
+        ? "You are the wolf"
+        : "You are a sheep";
+  }
+
+  if (els.hideSeekRoleRevealOverlay) {
+    els.hideSeekRoleRevealOverlay.classList.remove(
+      "hidden"
+    );
+
+    els.hideSeekRoleRevealOverlay.classList.toggle(
+      "wolf",
+      role === "wolf"
+    );
+
+    els.hideSeekRoleRevealOverlay.classList.toggle(
+      "sheep",
+      role === "sheep"
+    );
+
+    els.hideSeekRoleRevealOverlay.setAttribute(
+      "aria-hidden",
+      "false"
+    );
+  }
+
+  state.hideSeek.roleRevealTimer =
+    window.setTimeout(() => {
+      hideHideSeekRoleReveal();
+    }, 3000);
+}
+
+function hideHideSeekRoleReveal() {
+  if (
+    state.hideSeek.roleRevealTimer !== null
+  ) {
+    window.clearTimeout(
+      state.hideSeek.roleRevealTimer
+    );
+
+    state.hideSeek.roleRevealTimer = null;
+  }
+
+  if (els.hideSeekRoleRevealOverlay) {
+    els.hideSeekRoleRevealOverlay.classList.add(
+      "hidden"
+    );
+
+    els.hideSeekRoleRevealOverlay.classList.remove(
+      "wolf",
+      "sheep"
+    );
+
+    els.hideSeekRoleRevealOverlay.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+  }
+}
+
+pollHideSeekState = async function (
+  options = {}
+) {
+  await hideSeekV45.pollState(options);
+
+  if (state.hideSeek.roundId) {
+    await pollHideSeekSignalState();
+  }
+};
+
+async function pollHideSeekSignalState() {
+  if (
+    !state.hideSeek.roundId ||
+    !state.auth.client ||
+    !state.auth.user ||
+    state.hideSeek.signalPolling ||
+    !navigator.onLine
+  ) {
+    return;
+  }
+
+  state.hideSeek.signalPolling = true;
+
+  const { data, error } =
+    await state.auth.client.rpc(
+      "get_hide_seek_signal_state",
+      {
+        p_room_id:
+          state.multiplayer.roomId
+      }
+    );
+
+  state.hideSeek.signalPolling = false;
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  const row = Array.isArray(data)
+    ? data[0]
+    : data;
+
+  if (
+    !row ||
+    String(row.round_id || "") !==
+      state.hideSeek.roundId
+  ) {
+    return;
+  }
+
+  const serverNowMs = Date.parse(
+    row.server_now || ""
+  );
+
+  if (Number.isFinite(serverNowMs)) {
+    state.hideSeek.serverOffsetMs =
+      serverNowMs - Date.now();
+  }
+
+  state.hideSeek.roleRevealAt =
+    row.role_reveal_at ||
+    state.hideSeek.roleRevealAt;
+
+  state.hideSeek.nextSignalAt =
+    row.next_signal_at || null;
+
+  state.hideSeek.signalSequence =
+    Number(row.signal_sequence) || 0;
+
+  state.hideSeek.signalEmittedAt =
+    row.signal_emitted_at || null;
+
+  state.hideSeek.signalExpiresAt =
+    row.signal_expires_at || null;
+
+  state.hideSeek.signalClues =
+    normaliseHideSeekSignalClues(
+      row.clues
+    );
+
+  renderHideSeekState();
+}
+
+function normaliseHideSeekSignalClues(
+  value
+) {
+  let clues = value;
+
+  if (typeof clues === "string") {
+    try {
+      clues = JSON.parse(clues);
+    } catch (error) {
+      console.error(error);
+      clues = [];
+    }
+  }
+
+  if (!Array.isArray(clues)) {
+    return [];
+  }
+
+  const allowedDirections = new Set([
+    "N",
+    "NE",
+    "E",
+    "SE",
+    "S",
+    "SW",
+    "W",
+    "NW"
+  ]);
+
+  const allowedDistances = new Set([
+    "close",
+    "medium",
+    "far"
+  ]);
+
+  /*
+    Only these two coarse fields are retained.
+    Any unexpected GPS fields are discarded.
+  */
+  return clues
+    .map((clue) => ({
+      direction: String(
+        clue?.direction || ""
+      ).toUpperCase(),
+
+      distance: String(
+        clue?.distance || ""
+      ).toLowerCase()
+    }))
+    .filter(
+      (clue) =>
+        allowedDirections.has(
+          clue.direction
+        ) &&
+        allowedDistances.has(
+          clue.distance
+        )
+    )
+    .slice(0, 7);
+}
+
+applyHideSeekRows = function (rows) {
+  const first = rows?.[0];
+
+  const previousRoundId =
+    state.hideSeek.roundId;
+
+  const previousRole =
+    state.hideSeek.viewerRole;
+
+  const escapeEndsMs = Date.parse(
+    first?.escape_ends_at || ""
+  );
+
+  if (Number.isFinite(escapeEndsMs)) {
+    state.hideSeek.roleRevealAt =
+      new Date(
+        escapeEndsMs -
+        HS46_ESCAPE_SECONDS * 1000
+      ).toISOString();
+  }
+
+  if (
+    String(first?.phase || "") !== "hunt"
+  ) {
+    state.hideSeek.nextSignalAt = null;
+    state.hideSeek.signalEmittedAt = null;
+    state.hideSeek.signalExpiresAt = null;
+    state.hideSeek.signalClues = [];
+  }
+
+  const normalShowToast = showToast;
+
+  if (
+    String(first?.phase || "") ===
+    "starting"
+  ) {
+    showToast = function (message) {
+      if (
+        /^You are (the wolf|a sheep)$/i.test(
+          String(message || "")
+        )
+      ) {
+        return;
+      }
+
+      normalShowToast(message);
+    };
+  }
+
+  try {
+    hideSeekV45.applyRows(rows);
+  } finally {
+    showToast = normalShowToast;
+  }
+
+  const roleIsRevealed = [
+    "wolf",
+    "sheep"
+  ].includes(state.hideSeek.viewerRole);
+
+  const roundChanged =
+    previousRoundId !==
+    state.hideSeek.roundId;
+
+  const roleChanged =
+    previousRole !==
+    state.hideSeek.viewerRole;
+
+  if (
+    roleIsRevealed &&
+    (roundChanged || roleChanged)
+  ) {
+    showHideSeekRoleReveal(
+      state.hideSeek.viewerRole
+    );
+  }
+};
+
+applyHideSeekOwnMarkerStyle = function () {
+  const colour =
+    hasActiveHideSeekRound() &&
+    state.hideSeek.phase === "starting"
+      ? HIDE_SEEK_OUT_COLOUR
+      : hasActiveHideSeekRound() &&
+          state.hideSeek.viewerRole === "wolf"
+        ? HIDE_SEEK_WOLF_COLOUR
+        : HIDE_SEEK_SHEEP_COLOUR;
+
+  state.userMarker?.setStyle({
+    color: "#eef7ff",
+    fillColor: colour
+  });
+
+  state.accuracyCircle?.setStyle({
+    color: colour,
+    fillColor: colour
+  });
+};
