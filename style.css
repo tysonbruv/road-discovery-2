@@ -1,5 +1,5 @@
-/* Road Discovery AU v36 stylesheet
-   Checkpoint 8: private friend nicknames
+/* Road Discovery AU v38 stylesheet
+   Checkpoint 10: Hide & Seek Mode
 */
 
 :root {
@@ -2232,6 +2232,265 @@ button:disabled.add-friend-main-btn {
   border: 0;
 }
 
+/* -------------------------------------------------- */
+/* Checkpoint 10 Hide & Seek                          */
+/* -------------------------------------------------- */
+
+.hide-seek-divider {
+  height: 1px;
+  margin: 18px 0;
+  background: var(--line);
+}
+
+.hide-seek-setup-box,
+.hide-seek-game-box {
+  padding: 14px;
+  border: 1px solid rgba(75, 179, 255, 0.22);
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      circle at 12% 0%,
+      rgba(75, 179, 255, 0.1),
+      transparent 36%
+    ),
+    rgba(255, 255, 255, 0.035);
+}
+
+.hide-seek-heading-row,
+.hide-seek-game-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hide-seek-heading-row .small-note {
+  margin: 5px 0 0;
+}
+
+.hide-seek-version-pill,
+.hide-seek-role-badge,
+.hide-seek-phase-badge {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.hide-seek-role-badge.sheep {
+  border-color: rgba(75, 179, 255, 0.42);
+  background: rgba(75, 179, 255, 0.13);
+  color: rgba(219, 241, 255, 0.98);
+}
+
+.hide-seek-role-badge.wolf {
+  border-color: rgba(255, 77, 77, 0.48);
+  background: rgba(255, 77, 77, 0.14);
+  color: rgba(255, 225, 225, 0.98);
+}
+
+.hide-seek-safety-note {
+  margin: 13px 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 176, 74, 0.28);
+  border-radius: 14px;
+  background: rgba(255, 176, 74, 0.075);
+  color: rgba(255, 231, 201, 0.86);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.hide-seek-start-btn {
+  margin-top: 2px;
+}
+
+.hide-seek-preparation-text {
+  margin: 10px 2px 0;
+  min-height: 32px;
+}
+
+.hide-seek-timer {
+  margin-top: 14px;
+  color: var(--text);
+  font-size: clamp(44px, 14vw, 62px);
+  font-weight: 950;
+  line-height: 0.95;
+  text-align: center;
+  letter-spacing: -0.055em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 28px rgba(75, 179, 255, 0.18);
+}
+
+.hide-seek-game-status {
+  max-width: 310px;
+  min-height: 42px;
+  margin: 12px auto 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.hide-seek-zone-warning {
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 77, 77, 0.46);
+  border-radius: 14px;
+  background: rgba(255, 77, 77, 0.13);
+  color: rgba(255, 232, 232, 0.98);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 0 0 22px rgba(255, 77, 77, 0.11);
+}
+
+.hide-seek-players-block {
+  margin-top: 15px;
+}
+
+.hide-seek-players-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hide-seek-player-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hide-seek-player-dot {
+  width: 17px;
+  height: 17px;
+  border: 3px solid rgba(238, 247, 255, 0.95);
+  border-radius: 999px;
+  background: var(--blue);
+  box-shadow: 0 0 14px rgba(75, 179, 255, 0.3);
+}
+
+.hide-seek-player-dot.wolf {
+  background: var(--red);
+  box-shadow: 0 0 14px rgba(255, 77, 77, 0.32);
+}
+
+.hide-seek-player-dot.found,
+.hide-seek-player-dot.out {
+  background: #9aa3b2;
+  box-shadow: none;
+}
+
+.hide-seek-player-main {
+  min-width: 0;
+}
+
+.hide-seek-player-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hide-seek-player-name span {
+  margin-left: 4px;
+  color: var(--blue);
+  font-size: 9px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hide-seek-player-sub {
+  margin-top: 3px;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.hide-seek-player-status {
+  min-width: 52px;
+  padding: 5px 7px;
+  border: 1px solid rgba(75, 179, 255, 0.25);
+  border-radius: 999px;
+  background: rgba(75, 179, 255, 0.08);
+  color: rgba(219, 241, 255, 0.86);
+  font-size: 9px;
+  font-weight: 950;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hide-seek-player-status.found,
+.hide-seek-player-status.out {
+  border-color: rgba(255, 77, 77, 0.28);
+  background: rgba(255, 77, 77, 0.08);
+  color: rgba(255, 218, 218, 0.9);
+}
+
+.hide-seek-player-status.survived {
+  border-color: rgba(56, 214, 122, 0.3);
+  background: rgba(56, 214, 122, 0.09);
+  color: rgba(214, 255, 230, 0.92);
+}
+
+.hide-seek-leave-btn {
+  margin-top: 13px;
+}
+
+.hide-seek-leaflet-dot {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 3px solid rgba(238, 247, 255, 0.98);
+  border-radius: 999px;
+  background: var(--dot-colour, var(--blue));
+  box-shadow:
+    0 0 0 5px rgba(5, 7, 10, 0.54),
+    0 0 0 9px color-mix(
+      in srgb,
+      var(--dot-colour, var(--blue)) 18%,
+      transparent
+    ),
+    0 0 26px color-mix(
+      in srgb,
+      var(--dot-colour, var(--blue)) 62%,
+      transparent
+    );
+}
+
+.hide-seek-leaflet-dot::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.hide-seek-leaflet-dot.found,
+.hide-seek-leaflet-dot.out {
+  opacity: 0.86;
+  filter: grayscale(0.25);
+}
+
 @media (max-width: 380px) {
   .multiplayer-room-code-card strong {
     font-size: 21px;
@@ -2242,6 +2501,20 @@ button:disabled.add-friend-main-btn {
   }
 
   .multiplayer-member-pill {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .hide-seek-heading-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hide-seek-player-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .hide-seek-player-status {
     grid-column: 2;
     justify-self: start;
   }
