@@ -58,7 +58,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=38"
+    href="style.css?v=39"
   />
 </head>
 
@@ -73,14 +73,12 @@
     id="appShell"
     class="app-shell"
   >
-    <!-- Main map -->
     <main
       id="map"
       class="map"
       aria-label="Road Discovery AU map"
     ></main>
 
-    <!-- Top HUD -->
     <header
       id="topHud"
       class="top-hud"
@@ -165,7 +163,67 @@
       </div>
     </header>
 
-    <!-- Right-side map tools -->
+    <!-- Hide & Seek information shown directly over the map -->
+    <section
+      id="hideSeekMapHud"
+      class="hide-seek-map-hud hidden"
+      aria-live="polite"
+    >
+      <div class="hide-seek-map-hud-top">
+        <span
+          id="hideSeekMapRole"
+          class="hide-seek-map-role choosing"
+        >
+          Choosing
+        </span>
+
+        <span
+          id="hideSeekMapPhase"
+          class="hide-seek-map-phase"
+        >
+          Starting
+        </span>
+      </div>
+
+      <div
+        id="hideSeekMapTimer"
+        class="hide-seek-map-timer"
+      >
+        00:10
+      </div>
+
+      <div
+        id="hideSeekMapSignalStatus"
+        class="hide-seek-map-signal-status hidden"
+      ></div>
+
+      <div
+        id="hideSeekMapSignalList"
+        class="hide-seek-map-signal-list hidden"
+      ></div>
+    </section>
+
+    <!-- Large role reveal -->
+    <section
+      id="hideSeekRoleRevealOverlay"
+      class="hide-seek-role-reveal-overlay hidden"
+      aria-live="assertive"
+      aria-hidden="true"
+    >
+      <div class="hide-seek-role-reveal-card">
+        <div class="hide-seek-role-reveal-kicker">
+          Hide &amp; Seek
+        </div>
+
+        <div
+          id="hideSeekRoleRevealText"
+          class="hide-seek-role-reveal-text"
+        >
+          You are a sheep
+        </div>
+      </div>
+    </section>
+
     <nav
       class="tool-stack"
       aria-label="Map tools"
@@ -231,7 +289,6 @@
       </button>
     </nav>
 
-    <!-- Bottom drive controls -->
     <footer
       id="bottomControls"
       class="bottom-controls"
@@ -253,7 +310,6 @@
       </button>
     </footer>
 
-    <!-- Panel backdrop -->
     <button
       id="panelBackdrop"
       class="panel-backdrop hidden"
@@ -355,8 +411,8 @@
             <br /><br />
             Friends cannot see your live location, current drive,
             blue location marker, start point, finish point, speed,
-            heading or live position. They can only see roads you have turned orange,
-            if you turn map sharing on.
+            heading or live position. They can only see roads you have
+            turned orange if you turn map sharing on.
           </div>
         </section>
 
@@ -516,7 +572,7 @@
 
           <div class="privacy-note">
             Up to 8 riders per room.
-  <br /><br />
+            <br /><br />
             Multiplayer Mode only shows temporary coloured dots.
             Start Drive still paints your own roads orange and saves
             them to your own stats. Other riders cannot paint roads for you.
@@ -569,7 +625,10 @@
             Sharing your temporary dot while Multiplayer Mode is on.
           </div>
 
-          <div class="hide-seek-divider" aria-hidden="true"></div>
+          <div
+            class="hide-seek-divider"
+            aria-hidden="true"
+          ></div>
 
           <div
             id="hideSeekSetupBox"
@@ -653,6 +712,21 @@
               role="alert"
             ></div>
 
+            <div
+              id="hideSeekSignalPanel"
+              class="hide-seek-signal-panel hidden"
+            >
+              <div
+                id="hideSeekSignalStatus"
+                class="hide-seek-signal-status"
+              ></div>
+
+              <div
+                id="hideSeekSignalList"
+                class="hide-seek-signal-list hidden"
+              ></div>
+            </div>
+
             <div class="friends-block hide-seek-players-block">
               <div class="friends-block-title">
                 Game players
@@ -720,7 +794,6 @@
       </div>
 
       <div class="panel-content">
-        <!-- Friends list -->
         <section
           id="friendsListView"
           class="friends-view"
@@ -888,12 +961,13 @@
 
               <div class="privacy-note">
                 Check your email and click the confirmation link after creating
-                your Road Profile. This gives you your road username and friend code.
+                your Road Profile. This gives you your road username and friend
+                code.
                 <br /><br />
                 Friends cannot see your live location, current drive,
                 blue location marker, start point, finish point, speed,
-                heading or live position. They can only see roads you have turned orange,
-                if you turn map sharing on.
+                heading or live position. They can only see roads you have
+                turned orange if you turn map sharing on.
               </div>
             </div>
 
@@ -911,7 +985,7 @@
                 </div>
 
                 <span class="profile-status-pill">
-                  Checkpoint 9
+                  Checkpoint 10
                 </span>
               </div>
 
@@ -1002,8 +1076,8 @@
               </div>
 
               <div class="privacy-note">
-                Check your email and click the confirmation link after creating your
-                Road Profile. Once confirmed, sign out, then sign back in.
+                Check your email and click the confirmation link after creating
+                your Road Profile. Once confirmed, sign out, then sign back in.
                 This gives you your Road username and friend code.
                 <br /><br />
                 Shared roads are historical map-completion progress only.
@@ -1106,7 +1180,6 @@
           </section>
         </section>
 
-        <!-- Friend profile -->
         <section
           id="friendProfileView"
           class="friends-view hidden"
@@ -1151,7 +1224,6 @@
               </div>
             </div>
 
-            <!-- Private friend-name controls -->
             <div
               id="friendNameControls"
               class="friend-name-controls"
@@ -1329,7 +1401,6 @@
       </div>
     </aside>
 
-    <!-- Full friend map overlay -->
     <section
       id="friendMapOverlay"
       class="friend-map-overlay hidden"
@@ -1372,7 +1443,6 @@
       </div>
     </section>
 
-    <!-- Map-sharing confirmation -->
     <section
       id="mapShareConfirmOverlay"
       class="confirm-overlay hidden"
@@ -1415,7 +1485,6 @@
       </div>
     </section>
 
-    <!-- Toast messages -->
     <div
       id="toast"
       class="toast hidden"
@@ -1431,7 +1500,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=45"></script>
+  <script src="app.js?v=46"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
@@ -1439,7 +1508,10 @@
         navigator.serviceWorker
           .register("./sw.js")
           .catch(function (error) {
-            console.error("Service worker registration failed:", error);
+            console.error(
+              "Service worker registration failed:",
+              error
+            );
           });
       });
     }
