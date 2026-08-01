@@ -58,7 +58,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=37"
+    href="style.css?v=38"
   />
 </head>
 
@@ -567,6 +567,114 @@
             class="small-note"
           >
             Sharing your temporary dot while Multiplayer Mode is on.
+          </div>
+
+          <div class="hide-seek-divider" aria-hidden="true"></div>
+
+          <div
+            id="hideSeekSetupBox"
+            class="hide-seek-setup-box"
+          >
+            <div class="hide-seek-heading-row">
+              <div>
+                <div class="friends-block-title">
+                  Hide &amp; Seek
+                </div>
+
+                <p class="small-note">
+                  One random wolf. Everyone else becomes sheep.
+                </p>
+              </div>
+
+              <span class="hide-seek-version-pill">
+                2–8 players
+              </span>
+            </div>
+
+            <div class="hide-seek-safety-note">
+              Play safely. Follow road rules. Do not speed. Do not stop
+              somewhere dangerous. Leave the zone if needed.
+            </div>
+
+            <button
+              id="startHideSeekBtn"
+              class="wide-btn hide-seek-start-btn"
+              type="button"
+            >
+              Start Hide &amp; Seek
+            </button>
+
+            <div
+              id="hideSeekPreparationText"
+              class="small-note hide-seek-preparation-text"
+            >
+              The app will choose one wolf and a road-based hiding zone.
+            </div>
+          </div>
+
+          <div
+            id="hideSeekGameBox"
+            class="hide-seek-game-box hidden"
+          >
+            <div class="hide-seek-game-header">
+              <span
+                id="hideSeekRoleBadge"
+                class="hide-seek-role-badge sheep"
+              >
+                Sheep
+              </span>
+
+              <span
+                id="hideSeekPhaseBadge"
+                class="hide-seek-phase-badge"
+              >
+                Escape
+              </span>
+            </div>
+
+            <div
+              id="hideSeekTimerValue"
+              class="hide-seek-timer"
+              aria-live="polite"
+            >
+              03:00
+            </div>
+
+            <div
+              id="hideSeekGameStatus"
+              class="hide-seek-game-status"
+            >
+              Waiting for the round.
+            </div>
+
+            <div
+              id="hideSeekZoneWarning"
+              class="hide-seek-zone-warning hidden"
+              role="alert"
+            ></div>
+
+            <div class="friends-block hide-seek-players-block">
+              <div class="friends-block-title">
+                Game players
+              </div>
+
+              <div
+                id="hideSeekPlayersList"
+                class="hide-seek-players-list"
+              >
+                <div class="empty-state">
+                  Roles appear when the round starts.
+                </div>
+              </div>
+            </div>
+
+            <button
+              id="leaveHideSeekBtn"
+              class="ghost-btn wide-btn hide-seek-leave-btn"
+              type="button"
+            >
+              Leave Hide &amp; Seek
+            </button>
           </div>
 
           <button
@@ -1323,7 +1431,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=44"></script>
+  <script src="app.js?v=45"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
