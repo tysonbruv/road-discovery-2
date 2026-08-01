@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v45 service worker
+  Road Discovery AU v46 service worker
 
   Checkpoint 10:
   Hide & Seek Mode inside Multiplayer.
 
   Expected frontend versions:
-  - app.js?v=45
-  - style.css?v=38
+  - app.js?v=46
+  - style.css?v=39
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v45";
+const CACHE_NAME = "road-discovery-au-v46";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,6 +24,10 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=39",
+  "./app.js?v=46",
+
+  /* Previous checkpoint fallback. */
   "./style.css?v=38",
   "./app.js?v=45",
 
@@ -66,8 +70,14 @@ self.addEventListener("activate", (event) => {
       .then((cacheNames) => {
         return Promise.all(
           cacheNames
-            .filter((cacheName) => cacheName !== CACHE_NAME)
-            .map((cacheName) => caches.delete(cacheName))
+            .filter(
+              (cacheName) =>
+                cacheName !== CACHE_NAME
+            )
+            .map(
+              (cacheName) =>
+                caches.delete(cacheName)
+            )
         );
       })
       .then(() => self.clients.claim())
@@ -83,7 +93,10 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  /* Do not intercept external tiles, road data, routing or Supabase. */
+  /*
+    Do not intercept external tiles, road data,
+    routing, Leaflet or Supabase.
+  */
   if (url.origin !== self.location.origin) {
     return;
   }
@@ -92,19 +105,30 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
-          if (networkResponse && networkResponse.ok) {
-            const responseCopy = networkResponse.clone();
+          if (
+            networkResponse &&
+            networkResponse.ok
+          ) {
+            const responseCopy =
+              networkResponse.clone();
 
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put("./index.html", responseCopy);
-            });
+            caches
+              .open(CACHE_NAME)
+              .then((cache) => {
+                cache.put(
+                  "./index.html",
+                  responseCopy
+                );
+              });
           }
 
           return networkResponse;
         })
         .catch(async () => {
           return (
-            (await caches.match("./index.html")) ||
+            (await caches.match(
+              "./index.html"
+            )) ||
             (await caches.match("./"))
           );
         })
@@ -116,52 +140,102 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(request)
       .then((networkResponse) => {
-        if (networkResponse && networkResponse.ok) {
-          const responseCopy = networkResponse.clone();
+        if (
+          networkResponse &&
+          networkResponse.ok
+        ) {
+          const responseCopy =
+            networkResponse.clone();
 
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseCopy);
-          });
+          caches
+            .open(CACHE_NAME)
+            .then((cache) => {
+              cache.put(
+                request,
+                responseCopy
+              );
+            });
         }
 
         return networkResponse;
       })
       .catch(async () => {
-        const exactCachedResponse = await caches.match(request);
+        const exactCachedResponse =
+          await caches.match(request);
 
         if (exactCachedResponse) {
           return exactCachedResponse;
         }
 
-        if (url.pathname.endsWith("/style.css")) {
+        if (
+          url.pathname.endsWith(
+            "/style.css"
+          )
+        ) {
           return (
-            (await caches.match("./style.css?v=38")) ||
-            (await caches.match("./style.css?v=37")) ||
-            (await caches.match("./style.css?v=36")) ||
+            (await caches.match(
+              "./style.css?v=39"
+            )) ||
+            (await caches.match(
+              "./style.css?v=38"
+            )) ||
+            (await caches.match(
+              "./style.css?v=37"
+            )) ||
+            (await caches.match(
+              "./style.css?v=36"
+            )) ||
             Response.error()
           );
         }
 
-        if (url.pathname.endsWith("/app.js")) {
+        if (
+          url.pathname.endsWith(
+            "/app.js"
+          )
+        ) {
           return (
-            (await caches.match("./app.js?v=45")) ||
-            (await caches.match("./app.js?v=44")) ||
-            (await caches.match("./app.js?v=43")) ||
-            (await caches.match("./app.js?v=42")) ||
+            (await caches.match(
+              "./app.js?v=46"
+            )) ||
+            (await caches.match(
+              "./app.js?v=45"
+            )) ||
+            (await caches.match(
+              "./app.js?v=44"
+            )) ||
+            (await caches.match(
+              "./app.js?v=43"
+            )) ||
+            (await caches.match(
+              "./app.js?v=42"
+            )) ||
             Response.error()
           );
         }
 
-        if (url.pathname.endsWith("/manifest.json")) {
+        if (
+          url.pathname.endsWith(
+            "/manifest.json"
+          )
+        ) {
           return (
-            (await caches.match("./manifest.json")) ||
+            (await caches.match(
+              "./manifest.json"
+            )) ||
             Response.error()
           );
         }
 
-        if (url.pathname.endsWith("/icon.svg")) {
+        if (
+          url.pathname.endsWith(
+            "/icon.svg"
+          )
+        ) {
           return (
-            (await caches.match("./icon.svg")) ||
+            (await caches.match(
+              "./icon.svg"
+            )) ||
             Response.error()
           );
         }
