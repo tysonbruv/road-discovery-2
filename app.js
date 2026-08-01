@@ -1,7 +1,7 @@
 "use strict";
 
-/* Road Discovery AU v44
-   Checkpoint 9: simple Multiplayer Mode live dots.
+/* Road Discovery AU v45
+   Checkpoint 10: Hide & Seek Mode inside Multiplayer.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
    Live GPS, current drives, markers, accuracy, speed, heading, waypoints and routes are never uploaded.
@@ -21,6 +21,21 @@ const FRIEND_NICKNAME_MAX_LENGTH = 40;
 const MULTIPLAYER_LOCATION_SEND_MIN_MS = 3000;
 const MULTIPLAYER_ROOM_POLL_MS = 4000;
 const MULTIPLAYER_STALE_DOT_MS = 5 * 60 * 1000;
+
+const HIDE_SEEK_ZONE_RADIUS_M = 1000;
+const HIDE_SEEK_ZONE_MIN_START_DISTANCE_M = 1200;
+const HIDE_SEEK_ZONE_MAX_START_DISTANCE_M = 3000;
+const HIDE_SEEK_ZONE_LOCAL_MAX_DISTANCE_M = 2450;
+const HIDE_SEEK_ZONE_MIN_ROAD_CHUNKS = 25;
+const HIDE_SEEK_ZONE_MIN_CANDIDATES = 6;
+const HIDE_SEEK_ZONE_MAX_CANDIDATES = 18;
+const HIDE_SEEK_CANDIDATE_SPACING_M = 240;
+const HIDE_SEEK_LOCATION_SEND_MIN_MS = 3000;
+const HIDE_SEEK_ROUTE_MIN_REROUTE_TIME_MS = 45000;
+const HIDE_SEEK_ROUTE_REROUTE_DISTANCE_M = 120;
+const HIDE_SEEK_WOLF_COLOUR = "#ff4d4d";
+const HIDE_SEEK_SHEEP_COLOUR = "#4bb3ff";
+const HIDE_SEEK_OUT_COLOUR = "#9aa3b2";
 
 const SUPABASE_URL = "https://tancfzqmzvaalqotmvks.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_LnMT-vhl4xvj4idb91dNdA_EdQMJutI";
@@ -195,6 +210,46 @@ const state = {
     lastLocationSentAt: 0
   },
 
+  hideSeek: {
+    roundId: null,
+    phase: "",
+    viewerRole: "",
+    winner: null,
+    players: [],
+
+    escapeEndsAt: null,
+    huntEndsAt: null,
+    serverOffsetMs: 0,
+
+    zonePoint: null,
+    zoneRadiusM: HIDE_SEEK_ZONE_RADIUS_M,
+    leaveWarningSeconds: 15,
+    findDistanceM: 50,
+    staleAfterSeconds: 300,
+    outsideWarningEndsAt: null,
+
+    starting: false,
+    polling: false,
+    updatingLocation: false,
+    leaving: false,
+    preparationText: "",
+    unavailableMessage: "",
+
+    layer: null,
+    zoneCircle: null,
+    routeLine: null,
+    routeHalo: null,
+    routeRequestId: 0,
+    routeLoading: false,
+    routeKey: "",
+    lastRouteStartPoint: null,
+    lastRouteAt: 0,
+    markers: new Map(),
+
+    countdownTimer: null,
+    lastLocationSentAt: 0
+  },
+
   toastTimer: null
 };
 
@@ -292,6 +347,17 @@ function cacheEls() {
     "copyMultiplayerCodeBtn",
     "multiplayerMembersList",
     "multiplayerStatusText",
+    "hideSeekSetupBox",
+    "startHideSeekBtn",
+    "hideSeekPreparationText",
+    "hideSeekGameBox",
+    "hideSeekRoleBadge",
+    "hideSeekPhaseBadge",
+    "hideSeekTimerValue",
+    "hideSeekGameStatus",
+    "hideSeekZoneWarning",
+    "hideSeekPlayersList",
+    "leaveHideSeekBtn",
     "leaveMultiplayerRoomBtn",
 
     "friendsPanel",
@@ -422,6 +488,7 @@ function initMap() {
   state.routeLayer.addTo(state.map);
 
   state.multiplayer.layer = L.layerGroup().addTo(state.map);
+  state.hideSeek.layer = L.layerGroup().addTo(state.map);
 
   drawSavedSegments();
 
@@ -758,6 +825,16 @@ function bindEvents() {
     copyMultiplayerRoomCode
   );
 
+  els.startHideSeekBtn?.addEventListener(
+    "click",
+    startHideSeekRound
+  );
+
+  els.leaveHideSeekBtn?.addEventListener(
+    "click",
+    leaveHideSeekRound
+  );
+
   els.leaveMultiplayerRoomBtn?.addEventListener(
     "click",
     () => leaveMultiplayerRoom()
@@ -938,6 +1015,13 @@ function hasActiveMultiplayerRoom() {
   return Boolean(state.multiplayer.roomId);
 }
 
+function hasActiveHideSeekRound() {
+  return Boolean(
+    state.hideSeek.roundId &&
+    ["escape", "hunt"].includes(state.hideSeek.phase)
+  );
+}
+
 function openMultiplayerPanel() {
   renderMultiplayerState();
   openPanel("multiplayerPanel");
@@ -950,7 +1034,9 @@ function renderMultiplayerState() {
   const busy =
     Boolean(state.multiplayer.creating) ||
     Boolean(state.multiplayer.joining) ||
-    Boolean(state.multiplayer.leaving);
+    Boolean(state.multiplayer.leaving) ||
+    Boolean(state.hideSeek.starting) ||
+    Boolean(state.hideSeek.leaving);
 
   els.multiplayerBtn?.classList.toggle("multiplayer-active", active);
 
@@ -996,6 +1082,10 @@ function renderMultiplayerState() {
     if (!active) {
       els.multiplayerStatusText.textContent =
         "Multiplayer Mode is off.";
+    } else if (hasActiveHideSeekRound()) {
+      els.multiplayerStatusText.textContent = state.isRecording
+        ? "Hide & Seek is active. Start Drive still paints and saves only your own orange roads."
+        : "Hide & Seek is active. Normal coloured dots are paused while the secure game view is running.";
     } else if (state.isRecording) {
       els.multiplayerStatusText.textContent =
         "Start Drive is running. Your own roads still paint orange and your temporary dot is shared.";
@@ -1006,6 +1096,7 @@ function renderMultiplayerState() {
   }
 
   renderMultiplayerMembers();
+  renderHideSeekState();
 }
 
 function renderMultiplayerMembers() {
@@ -1039,14 +1130,22 @@ function renderMultiplayerMembers() {
       const colour = safeMultiplayerColour(member.dot_colour);
       const isMe = Boolean(member.is_me);
       const hasDot =
+        member.lat !== null &&
+        member.lat !== undefined &&
+        member.lng !== null &&
+        member.lng !== undefined &&
         Number.isFinite(Number(member.lat)) &&
         Number.isFinite(Number(member.lng));
 
-      const subText = isMe
-        ? "You"
-        : hasDot
-          ? `Dot updated ${formatMultiplayerAge(member.updated_at)}`
-          : "Waiting for location";
+      const subText = hasActiveHideSeekRound()
+        ? isMe
+          ? "You • Hide & Seek"
+          : "Hide & Seek"
+        : isMe
+          ? "You"
+          : hasDot
+            ? `Dot updated ${formatMultiplayerAge(member.updated_at)}`
+            : "Waiting for location";
 
       return `
         <div class="multiplayer-member-row">
@@ -1066,8 +1165,8 @@ function renderMultiplayerMembers() {
             </div>
           </div>
 
-          <div class="multiplayer-member-pill ${hasDot ? "online" : ""}">
-            ${hasDot ? "Live" : "Wait"}
+          <div class="multiplayer-member-pill ${hasDot || hasActiveHideSeekRound() ? "online" : ""}">
+            ${hasActiveHideSeekRound() ? "Game" : hasDot ? "Live" : "Wait"}
           </div>
         </div>
       `;
@@ -1170,6 +1269,11 @@ async function joinMultiplayerRoom() {
 }
 
 function startMultiplayerMode(room) {
+  resetHideSeekState({
+    clearRound: true,
+    render: false
+  });
+
   state.multiplayer.roomId = String(room.room_id || "");
   state.multiplayer.roomCode = String(room.room_code || "");
   state.multiplayer.expiresAt = room.expires_at || null;
@@ -1212,6 +1316,13 @@ async function leaveMultiplayerRoom(options = {}) {
   stopMultiplayerPolling();
   clearMultiplayerMarkers();
 
+  if (hasActiveHideSeekRound()) {
+    await leaveHideSeekRound({
+      quiet: true,
+      render: false
+    });
+  }
+
   if (
     leaveServer &&
     state.auth.client &&
@@ -1248,6 +1359,10 @@ function stopMultiplayerMode(options = {}) {
   stopMultiplayerLocationWatch();
   stopMultiplayerPolling();
   clearMultiplayerMarkers();
+  resetHideSeekState({
+    clearRound: true,
+    render: false
+  });
 
   state.multiplayer.creating = false;
   state.multiplayer.joining = false;
@@ -1308,9 +1423,8 @@ async function pollMultiplayerRoomState() {
     }
   );
 
-  state.multiplayer.polling = false;
-
   if (error) {
+    state.multiplayer.polling = false;
     console.error(error);
 
     stopMultiplayerMode({
@@ -1336,6 +1450,10 @@ async function pollMultiplayerRoomState() {
   }
 
   drawMultiplayerMarkers(state.multiplayer.members);
+
+  await pollHideSeekState();
+
+  state.multiplayer.polling = false;
   renderMultiplayerState();
 }
 
@@ -1386,6 +1504,7 @@ function onMultiplayerGpsPosition(position) {
   updateUserMarker(point);
 
   void maybeSendMultiplayerLocation(point);
+  maybeUpdateHideSeekRoute(point);
 }
 
 function onMultiplayerGpsError(error) {
@@ -1421,6 +1540,12 @@ async function maybeSendMultiplayerLocation(point, options = {}) {
     !Number.isFinite(Number(point.lng))
   ) {
     return false;
+  }
+
+  if (hasActiveHideSeekRound()) {
+    return maybeSendHideSeekLocation(point, {
+      force
+    });
   }
 
   const now = Date.now();
@@ -1477,7 +1602,14 @@ function drawMultiplayerMarkers(members) {
     const lat = Number(member.lat);
     const lng = Number(member.lng);
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    if (
+      member.lat === null ||
+      member.lat === undefined ||
+      member.lng === null ||
+      member.lng === undefined ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
       continue;
     }
 
@@ -1631,6 +1763,1158 @@ function multiplayerErrorMessage(error) {
 
   if (!message) {
     return "Multiplayer Mode had a problem";
+  }
+
+  return message.replace(/^Error:\s*/i, "");
+}
+
+/* ---------- Hide & Seek Mode ---------- */
+
+function resetHideSeekState(options = {}) {
+  const {
+    clearRound = true,
+    render = true
+  } = options;
+
+  stopHideSeekCountdown();
+  clearHideSeekVisuals();
+
+  state.hideSeek.starting = false;
+  state.hideSeek.polling = false;
+  state.hideSeek.updatingLocation = false;
+  state.hideSeek.leaving = false;
+  state.hideSeek.routeLoading = false;
+  state.hideSeek.preparationText = "";
+  state.hideSeek.unavailableMessage = "";
+  state.hideSeek.lastLocationSentAt = 0;
+
+  if (clearRound) {
+    state.hideSeek.roundId = null;
+    state.hideSeek.phase = "";
+    state.hideSeek.viewerRole = "";
+    state.hideSeek.winner = null;
+    state.hideSeek.players = [];
+    state.hideSeek.escapeEndsAt = null;
+    state.hideSeek.huntEndsAt = null;
+    state.hideSeek.serverOffsetMs = 0;
+    state.hideSeek.zonePoint = null;
+    state.hideSeek.zoneRadiusM = HIDE_SEEK_ZONE_RADIUS_M;
+    state.hideSeek.leaveWarningSeconds = 15;
+    state.hideSeek.findDistanceM = 50;
+    state.hideSeek.staleAfterSeconds = 300;
+    state.hideSeek.outsideWarningEndsAt = null;
+  }
+
+  applyHideSeekOwnMarkerStyle();
+
+  if (render) {
+    renderMultiplayerState();
+  }
+}
+
+function clearHideSeekVisuals() {
+  clearHideSeekRoute();
+  clearHideSeekMarkers();
+
+  if (state.hideSeek.zoneCircle && state.hideSeek.layer) {
+    state.hideSeek.layer.removeLayer(state.hideSeek.zoneCircle);
+  }
+
+  state.hideSeek.zoneCircle = null;
+  state.hideSeek.zonePoint = null;
+}
+
+function startHideSeekCountdown() {
+  stopHideSeekCountdown();
+
+  if (!hasActiveHideSeekRound()) return;
+
+  state.hideSeek.countdownTimer = window.setInterval(() => {
+    renderHideSeekState();
+  }, 1000);
+}
+
+function stopHideSeekCountdown() {
+  if (state.hideSeek.countdownTimer !== null) {
+    window.clearInterval(state.hideSeek.countdownTimer);
+    state.hideSeek.countdownTimer = null;
+  }
+}
+
+function renderHideSeekState() {
+  const roomActive = hasActiveMultiplayerRoom();
+  const roundActive = hasActiveHideSeekRound();
+  const hasRound = Boolean(state.hideSeek.roundId);
+  const memberCount = state.multiplayer.members.length;
+
+  els.hideSeekSetupBox?.classList.toggle(
+    "hidden",
+    !roomActive || roundActive
+  );
+
+  els.hideSeekGameBox?.classList.toggle(
+    "hidden",
+    !roomActive || !hasRound
+  );
+
+  if (els.startHideSeekBtn) {
+    els.startHideSeekBtn.disabled =
+      !roomActive ||
+      memberCount < 2 ||
+      state.hideSeek.starting ||
+      state.multiplayer.leaving;
+
+    els.startHideSeekBtn.textContent = state.hideSeek.starting
+      ? "Preparing Hide & Seek..."
+      : hasRound
+        ? "Start another round"
+        : "Start Hide & Seek";
+  }
+
+  if (els.hideSeekPreparationText) {
+    const preparationText =
+      state.hideSeek.preparationText ||
+      state.hideSeek.unavailableMessage ||
+      (memberCount < 2
+        ? "At least 2 riders must be in the room."
+        : "The app will choose one wolf and a road-based hiding zone.");
+
+    els.hideSeekPreparationText.textContent = preparationText;
+  }
+
+  if (!hasRound) {
+    renderHideSeekPlayers();
+    return;
+  }
+
+  if (els.hideSeekRoleBadge) {
+    const role = state.hideSeek.viewerRole || "player";
+
+    els.hideSeekRoleBadge.textContent =
+      role === "wolf" ? "Wolf" : role === "sheep" ? "Sheep" : "Player";
+
+    els.hideSeekRoleBadge.classList.toggle("wolf", role === "wolf");
+    els.hideSeekRoleBadge.classList.toggle("sheep", role === "sheep");
+  }
+
+  if (els.hideSeekPhaseBadge) {
+    els.hideSeekPhaseBadge.textContent = hideSeekPhaseLabel(
+      state.hideSeek.phase
+    );
+  }
+
+  if (els.hideSeekTimerValue) {
+    els.hideSeekTimerValue.textContent = formatHideSeekCountdown();
+  }
+
+  if (els.hideSeekGameStatus) {
+    els.hideSeekGameStatus.textContent = hideSeekGameStatusText();
+  }
+
+  const warningSeconds = hideSeekOutsideWarningSeconds();
+
+  if (els.hideSeekZoneWarning) {
+    els.hideSeekZoneWarning.classList.toggle(
+      "hidden",
+      warningSeconds === null
+    );
+
+    if (warningSeconds !== null) {
+      els.hideSeekZoneWarning.textContent =
+        `Return to the hiding zone in ${warningSeconds}s or you are out.`;
+    }
+  }
+
+  if (els.leaveHideSeekBtn) {
+    const me = getMyHideSeekPlayer();
+
+    els.leaveHideSeekBtn.classList.toggle(
+      "hidden",
+      !roundActive || me?.player_status !== "active"
+    );
+
+    els.leaveHideSeekBtn.disabled = state.hideSeek.leaving;
+    els.leaveHideSeekBtn.textContent = state.hideSeek.leaving
+      ? "Leaving game..."
+      : "Leave Hide & Seek";
+  }
+
+  renderHideSeekPlayers();
+}
+
+function renderHideSeekPlayers() {
+  if (!els.hideSeekPlayersList) return;
+
+  const players = Array.isArray(state.hideSeek.players)
+    ? state.hideSeek.players
+    : [];
+
+  if (players.length === 0) {
+    els.hideSeekPlayersList.innerHTML = `
+      <div class="empty-state">
+        Roles appear when the round starts.
+      </div>
+    `;
+    return;
+  }
+
+  els.hideSeekPlayersList.innerHTML = players
+    .map((player) => {
+      const role = player.role === "wolf" ? "wolf" : "sheep";
+      const status = String(player.player_status || "active");
+      const name = escapeHtml(player.display_name || "Road user");
+      const isMe = Boolean(player.is_me);
+      const statusLabel = hideSeekPlayerStatusLabel(player);
+
+      return `
+        <div class="hide-seek-player-row">
+          <span
+            class="hide-seek-player-dot ${role} ${escapeHtml(status)}"
+            aria-hidden="true"
+          ></span>
+
+          <div class="hide-seek-player-main">
+            <div class="hide-seek-player-name">
+              ${name}${isMe ? " <span>You</span>" : ""}
+            </div>
+
+            <div class="hide-seek-player-sub">
+              ${role === "wolf" ? "Wolf" : "Sheep"}
+            </div>
+          </div>
+
+          <div class="hide-seek-player-status ${escapeHtml(status)}">
+            ${escapeHtml(statusLabel)}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function hideSeekPlayerStatusLabel(player) {
+  const status = String(player?.player_status || "active");
+
+  if (status === "found") return "Found";
+  if (status === "out") return "Out";
+  if (status === "survived") return "Safe";
+
+  if (player?.role === "wolf") {
+    return state.hideSeek.phase === "escape" ? "Waiting" : "Hunting";
+  }
+
+  return "Hidden";
+}
+
+function hideSeekPhaseLabel(phase) {
+  if (phase === "escape") return "Escape";
+  if (phase === "hunt") return "Hunt";
+  if (phase === "finished") return "Finished";
+  if (phase === "cancelled") return "Cancelled";
+  return "Waiting";
+}
+
+function hideSeekGameStatusText() {
+  const me = getMyHideSeekPlayer();
+
+  if (state.hideSeek.phase === "finished") {
+    return state.hideSeek.winner === "wolf"
+      ? "The wolf found every sheep. Wolf wins."
+      : "At least one sheep stayed hidden. Sheep win.";
+  }
+
+  if (state.hideSeek.phase === "cancelled") {
+    return "The round ended because the Multiplayer room closed.";
+  }
+
+  if (me?.player_status === "found") {
+    return "You were found. Your last game dot is now visible to everyone.";
+  }
+
+  if (me?.player_status === "out") {
+    return "You are out. Your last game dot is now visible to everyone.";
+  }
+
+  if (state.hideSeek.phase === "escape") {
+    return state.hideSeek.viewerRole === "wolf"
+      ? "Sheep are hiding... Their locations and hiding zone are private."
+      : "Reach the blue hiding zone before the escape timer reaches zero.";
+  }
+
+  if (state.hideSeek.phase === "hunt") {
+    return state.hideSeek.viewerRole === "wolf"
+      ? "Search inside the zone. Hidden sheep remain private until found or out."
+      : "Stay inside the hiding zone and avoid the wolf until time runs out.";
+  }
+
+  return "Waiting for the Hide & Seek round.";
+}
+
+function formatHideSeekCountdown() {
+  let deadline = null;
+
+  if (state.hideSeek.phase === "escape") {
+    deadline = state.hideSeek.escapeEndsAt;
+  } else if (state.hideSeek.phase === "hunt") {
+    deadline = state.hideSeek.huntEndsAt;
+  }
+
+  const deadlineMs = Date.parse(deadline || "");
+
+  if (!Number.isFinite(deadlineMs)) {
+    return "00:00";
+  }
+
+  const serverNow = Date.now() + state.hideSeek.serverOffsetMs;
+  const seconds = Math.max(0, Math.ceil((deadlineMs - serverNow) / 1000));
+  const minutesPart = Math.floor(seconds / 60);
+  const secondsPart = String(seconds % 60).padStart(2, "0");
+
+  return `${String(minutesPart).padStart(2, "0")}:${secondsPart}`;
+}
+
+function hideSeekOutsideWarningSeconds() {
+  const warningMs = Date.parse(state.hideSeek.outsideWarningEndsAt || "");
+
+  if (!Number.isFinite(warningMs) || !hasActiveHideSeekRound()) {
+    return null;
+  }
+
+  const serverNow = Date.now() + state.hideSeek.serverOffsetMs;
+
+  return Math.max(0, Math.ceil((warningMs - serverNow) / 1000));
+}
+
+function getMyHideSeekPlayer() {
+  return state.hideSeek.players.find((player) => player.is_me) || null;
+}
+
+async function startHideSeekRound() {
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    state.hideSeek.starting ||
+    hasActiveHideSeekRound()
+  ) {
+    return;
+  }
+
+  if (state.multiplayer.members.length < 2) {
+    showToast("Hide & Seek needs at least 2 riders");
+    return;
+  }
+
+  const safetyAccepted = window.confirm(
+    "Play safely. Follow road rules. Do not speed. Do not stop somewhere dangerous. Leave the zone if needed.\n\nStart Hide & Seek?"
+  );
+
+  if (!safetyAccepted) return;
+
+  state.hideSeek.starting = true;
+  state.hideSeek.preparationText = "Getting a clean GPS location...";
+  state.hideSeek.unavailableMessage = "";
+  renderMultiplayerState();
+
+  try {
+    const startPoint = await getFreshRouteStartPoint();
+
+    if (
+      !startPoint ||
+      !Number.isFinite(Number(startPoint.lat)) ||
+      !Number.isFinite(Number(startPoint.lng)) ||
+      Number(startPoint.accuracy) > MAX_GPS_ACCURACY_M
+    ) {
+      throw new Error("Need GPS accuracy of 35 metres or better before starting.");
+    }
+
+    state.hideSeek.preparationText = "Loading nearby road chunks...";
+    renderHideSeekState();
+
+    const roadsReady = await ensureRoadsNearPoint(startPoint, {
+      replaceIfFar: true,
+      quiet: false
+    });
+
+    if (!roadsReady || state.roadSegments.length === 0) {
+      throw new Error("Could not load nearby roads for a hiding zone.");
+    }
+
+    state.hideSeek.preparationText = "Checking road-based hiding zones...";
+    renderHideSeekState();
+
+    const localCandidates = buildHideSeekZoneCandidates(startPoint);
+
+    if (localCandidates.length < HIDE_SEEK_ZONE_MIN_CANDIDATES) {
+      throw new Error(
+        "Not enough suitable roads nearby. Move to another area and try again."
+      );
+    }
+
+    const routeableCandidates = await filterRouteableHideSeekCandidates(
+      startPoint,
+      localCandidates
+    );
+
+    if (routeableCandidates.length < HIDE_SEEK_ZONE_MIN_CANDIDATES) {
+      throw new Error(
+        "Not enough reachable hiding zones were found. Move to another area and try again."
+      );
+    }
+
+    state.hideSeek.preparationText = "Randomly choosing the wolf and zone...";
+    renderHideSeekState();
+
+    const { data, error } = await state.auth.client.rpc(
+      "start_hide_seek_round",
+      {
+        p_room_id: state.multiplayer.roomId,
+        p_start_lat: Number(startPoint.lat),
+        p_start_lng: Number(startPoint.lng),
+        p_zone_candidates: routeableCandidates.map((candidate) => ({
+          lat: candidate.lat,
+          lng: candidate.lng,
+          road_count: candidate.road_count,
+          routeable: true
+        })),
+        p_safety_ack: true
+      }
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    const roundId = Array.isArray(data) ? data[0] : data;
+
+    if (!roundId) {
+      throw new Error("Could not read the new Hide & Seek round.");
+    }
+
+    state.hideSeek.roundId = String(roundId);
+    state.hideSeek.preparationText = "";
+
+    await pollHideSeekState({ force: true });
+
+    if (state.currentPoint) {
+      void maybeSendHideSeekLocation(state.currentPoint, {
+        force: true
+      });
+    }
+
+    showToast("Hide & Seek started");
+  } catch (error) {
+    console.error(error);
+    showToast(hideSeekErrorMessage(error));
+    state.hideSeek.preparationText = hideSeekErrorMessage(error);
+  } finally {
+    state.hideSeek.starting = false;
+    renderMultiplayerState();
+  }
+}
+
+function buildHideSeekZoneCandidates(startPoint) {
+  const roadPoints = state.roadSegments
+    .map((segment) => roadSegmentMidpoint(segment))
+    .filter(Boolean);
+
+  const pool = roadPoints.filter((point) => {
+    const distance = haversine(startPoint, point);
+
+    return (
+      distance >= HIDE_SEEK_ZONE_MIN_START_DISTANCE_M &&
+      distance <= HIDE_SEEK_ZONE_LOCAL_MAX_DISTANCE_M
+    );
+  });
+
+  shuffleHideSeekArray(pool);
+
+  const selected = [];
+
+  for (const point of pool) {
+    if (
+      selected.some(
+        (candidate) =>
+          haversine(candidate, point) < HIDE_SEEK_CANDIDATE_SPACING_M
+      )
+    ) {
+      continue;
+    }
+
+    const roadCount = countNearbyHideSeekRoadChunks(point, roadPoints);
+
+    if (roadCount < HIDE_SEEK_ZONE_MIN_ROAD_CHUNKS) {
+      continue;
+    }
+
+    selected.push({
+      lat: Number(point.lat.toFixed(6)),
+      lng: Number(point.lng.toFixed(6)),
+      road_count: roadCount,
+      routeable: false
+    });
+
+    if (selected.length >= HIDE_SEEK_ZONE_MAX_CANDIDATES) {
+      break;
+    }
+  }
+
+  return selected;
+}
+
+function roadSegmentMidpoint(segment) {
+  if (!validCoords(segment?.coords)) return null;
+
+  const a = segment.coords[0];
+  const b = segment.coords[segment.coords.length - 1];
+
+  return {
+    lat: (Number(a[0]) + Number(b[0])) / 2,
+    lng: (Number(a[1]) + Number(b[1])) / 2
+  };
+}
+
+function countNearbyHideSeekRoadChunks(point, roadPoints) {
+  let count = 0;
+
+  for (const roadPoint of roadPoints) {
+    if (haversine(point, roadPoint) <= HIDE_SEEK_ZONE_RADIUS_M) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function shuffleHideSeekArray(values) {
+  for (let index = values.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const current = values[index];
+
+    values[index] = values[swapIndex];
+    values[swapIndex] = current;
+  }
+}
+
+async function filterRouteableHideSeekCandidates(startPoint, candidates) {
+  const limitedCandidates = candidates.slice(
+    0,
+    HIDE_SEEK_ZONE_MAX_CANDIDATES
+  );
+
+  const coords = [startPoint, ...limitedCandidates]
+    .map((point) => `${point.lng},${point.lat}`)
+    .join(";");
+
+  const url =
+    `https://router.project-osrm.org/table/v1/driving/${coords}` +
+    "?sources=0&annotations=duration,distance";
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Hiding-zone routing returned ${response.status}.`);
+  }
+
+  const data = await response.json();
+
+  if (data.code !== "Ok") {
+    throw new Error(data.message || "Could not check hiding-zone routes.");
+  }
+
+  const durations = data.durations?.[0] || [];
+  const distances = data.distances?.[0] || [];
+
+  return limitedCandidates
+    .map((candidate, index) => ({
+      ...candidate,
+      routeable:
+        Number.isFinite(Number(durations[index + 1])) &&
+        Number.isFinite(Number(distances[index + 1])) &&
+        Number(durations[index + 1]) <= 360 &&
+        Number(distances[index + 1]) <= 4500
+    }))
+    .filter((candidate) => candidate.routeable);
+}
+
+async function pollHideSeekState(options = {}) {
+  const { force = false } = options;
+
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    state.hideSeek.polling ||
+    (!force && !navigator.onLine)
+  ) {
+    return;
+  }
+
+  state.hideSeek.polling = true;
+
+  const { data, error } = await state.auth.client.rpc(
+    "get_hide_seek_state",
+    {
+      p_room_id: state.multiplayer.roomId
+    }
+  );
+
+  state.hideSeek.polling = false;
+
+  if (error) {
+    console.error(error);
+
+    const message = hideSeekErrorMessage(error);
+
+    if (/started before you joined/i.test(message)) {
+      state.hideSeek.unavailableMessage =
+        "A round is already running. You can start or join the next round.";
+    }
+
+    renderHideSeekState();
+    return;
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+
+  if (rows.length === 0) {
+    if (state.hideSeek.starting) {
+      renderHideSeekState();
+      return;
+    }
+
+    resetHideSeekState({
+      clearRound: true,
+      render: false
+    });
+    renderHideSeekState();
+    return;
+  }
+
+  applyHideSeekRows(rows);
+}
+
+function applyHideSeekRows(rows) {
+  const first = rows[0];
+  const previousRoundId = state.hideSeek.roundId;
+  const previousPhase = state.hideSeek.phase;
+  const previousRole = state.hideSeek.viewerRole;
+
+  state.hideSeek.roundId = String(first.round_id || "");
+  state.hideSeek.phase = String(first.phase || "");
+  state.hideSeek.viewerRole = String(first.viewer_role || "");
+  state.hideSeek.winner = first.winner || null;
+  state.hideSeek.players = rows;
+  state.hideSeek.escapeEndsAt = first.escape_ends_at || null;
+  state.hideSeek.huntEndsAt = first.hunt_ends_at || null;
+  state.hideSeek.zoneRadiusM =
+    Number(first.zone_radius_m) || HIDE_SEEK_ZONE_RADIUS_M;
+  state.hideSeek.leaveWarningSeconds =
+    Number(first.leave_warning_seconds) || 15;
+  state.hideSeek.findDistanceM = Number(first.find_distance_m) || 50;
+  state.hideSeek.staleAfterSeconds =
+    Number(first.stale_after_seconds) || 300;
+  state.hideSeek.unavailableMessage = "";
+
+  const serverNowMs = Date.parse(first.server_now || "");
+
+  if (Number.isFinite(serverNowMs)) {
+    state.hideSeek.serverOffsetMs = serverNowMs - Date.now();
+  }
+
+  const hasZoneValues =
+    first.zone_lat !== null &&
+    first.zone_lat !== undefined &&
+    first.zone_lng !== null &&
+    first.zone_lng !== undefined;
+
+  const zoneLat = hasZoneValues ? Number(first.zone_lat) : NaN;
+  const zoneLng = hasZoneValues ? Number(first.zone_lng) : NaN;
+
+  state.hideSeek.zonePoint =
+    Number.isFinite(zoneLat) && Number.isFinite(zoneLng)
+      ? { lat: zoneLat, lng: zoneLng }
+      : null;
+
+  const me = getMyHideSeekPlayer();
+
+  state.hideSeek.outsideWarningEndsAt =
+    me?.outside_warning_ends_at || null;
+
+  if (hasActiveHideSeekRound()) {
+    drawHideSeekZone();
+    drawHideSeekMarkers(rows);
+  } else {
+    clearHideSeekVisuals();
+  }
+
+  applyHideSeekOwnMarkerStyle();
+
+  if (
+    state.hideSeek.viewerRole === "sheep" &&
+    state.hideSeek.phase === "escape" &&
+    state.hideSeek.zonePoint
+  ) {
+    void ensureHideSeekRoute();
+  } else {
+    clearHideSeekRoute();
+  }
+
+  if (hasActiveHideSeekRound()) {
+    startHideSeekCountdown();
+  } else {
+    stopHideSeekCountdown();
+  }
+
+  const roundChanged = previousRoundId !== state.hideSeek.roundId;
+  const phaseChanged = previousPhase !== state.hideSeek.phase;
+  const roleChanged = previousRole !== state.hideSeek.viewerRole;
+
+  if (roundChanged || roleChanged) {
+    showToast(
+      state.hideSeek.viewerRole === "wolf"
+        ? "You are the wolf"
+        : "You are a sheep"
+    );
+  } else if (phaseChanged && state.hideSeek.phase === "hunt") {
+    showToast("The hunt has started");
+  } else if (phaseChanged && state.hideSeek.phase === "finished") {
+    showToast(
+      state.hideSeek.winner === "wolf"
+        ? "Wolf wins"
+        : "Sheep win"
+    );
+  }
+
+  if (roundChanged && state.currentPoint) {
+    void maybeSendHideSeekLocation(state.currentPoint, {
+      force: true
+    });
+  }
+
+  renderMultiplayerState();
+}
+
+async function maybeSendHideSeekLocation(point, options = {}) {
+  const { force = false } = options;
+  const me = getMyHideSeekPlayer();
+
+  if (
+    !hasActiveHideSeekRound() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    !navigator.onLine ||
+    me?.player_status !== "active"
+  ) {
+    return false;
+  }
+
+  if (
+    !point ||
+    !Number.isFinite(Number(point.lat)) ||
+    !Number.isFinite(Number(point.lng)) ||
+    !Number.isFinite(Number(point.accuracy)) ||
+    Number(point.accuracy) > MAX_GPS_ACCURACY_M
+  ) {
+    return false;
+  }
+
+  const now = Date.now();
+
+  if (
+    !force &&
+    now - state.hideSeek.lastLocationSentAt <
+      HIDE_SEEK_LOCATION_SEND_MIN_MS
+  ) {
+    return false;
+  }
+
+  if (state.hideSeek.updatingLocation) {
+    return false;
+  }
+
+  state.hideSeek.lastLocationSentAt = now;
+  state.hideSeek.updatingLocation = true;
+
+  const { data, error } = await state.auth.client.rpc(
+    "update_hide_seek_location",
+    {
+      p_round_id: state.hideSeek.roundId,
+      p_lat: Number(point.lat),
+      p_lng: Number(point.lng),
+      p_accuracy: Number(point.accuracy)
+    }
+  );
+
+  state.hideSeek.updatingLocation = false;
+
+  if (error) {
+    console.error(error);
+    return false;
+  }
+
+  void pollHideSeekState();
+
+  return Boolean(data);
+}
+
+async function leaveHideSeekRound(options = {}) {
+  const {
+    quiet = false,
+    render = true
+  } = options;
+
+  if (
+    !state.hideSeek.roundId ||
+    !state.auth.client ||
+    !state.auth.user ||
+    state.hideSeek.leaving
+  ) {
+    return;
+  }
+
+  state.hideSeek.leaving = true;
+
+  if (render) {
+    renderMultiplayerState();
+  }
+
+  const { error } = await state.auth.client.rpc(
+    "leave_hide_seek_round",
+    {
+      p_round_id: state.hideSeek.roundId
+    }
+  );
+
+  state.hideSeek.leaving = false;
+
+  if (error) {
+    console.error(error);
+
+    if (!quiet) {
+      showToast(hideSeekErrorMessage(error));
+    }
+
+    if (render) {
+      renderMultiplayerState();
+    }
+    return;
+  }
+
+  if (!quiet) {
+    showToast("Left Hide & Seek");
+  }
+
+  if (render) {
+    await pollHideSeekState({ force: true });
+    renderMultiplayerState();
+  }
+}
+
+function drawHideSeekZone() {
+  if (!state.hideSeek.layer) return;
+
+  if (!state.hideSeek.zonePoint) {
+    if (state.hideSeek.zoneCircle) {
+      state.hideSeek.layer.removeLayer(state.hideSeek.zoneCircle);
+      state.hideSeek.zoneCircle = null;
+    }
+    return;
+  }
+
+  const latlng = [
+    state.hideSeek.zonePoint.lat,
+    state.hideSeek.zonePoint.lng
+  ];
+
+  if (!state.hideSeek.zoneCircle) {
+    state.hideSeek.zoneCircle = L.circle(latlng, {
+      radius: state.hideSeek.zoneRadiusM,
+      color: HIDE_SEEK_SHEEP_COLOUR,
+      opacity: 0.9,
+      fillColor: HIDE_SEEK_SHEEP_COLOUR,
+      fillOpacity: 0.08,
+      weight: 3,
+      dashArray: "10 8",
+      interactive: false
+    }).addTo(state.hideSeek.layer);
+  } else {
+    state.hideSeek.zoneCircle.setLatLng(latlng);
+    state.hideSeek.zoneCircle.setRadius(state.hideSeek.zoneRadiusM);
+  }
+}
+
+function drawHideSeekMarkers(players) {
+  if (!state.hideSeek.layer || !state.map) return;
+
+  const seenIds = new Set();
+
+  for (const player of players || []) {
+    const userId = String(player.user_id || "");
+
+    if (!userId || player.is_me) continue;
+
+    const lat = Number(player.lat);
+    const lng = Number(player.lng);
+
+    if (
+      player.lat === null ||
+      player.lat === undefined ||
+      player.lng === null ||
+      player.lng === undefined ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      continue;
+    }
+
+    const status = String(player.player_status || "active");
+    const role = player.role === "wolf" ? "wolf" : "sheep";
+
+    const visibleByGameRules =
+      state.hideSeek.phase === "hunt" &&
+      (
+        (
+          state.hideSeek.viewerRole === "sheep" &&
+          role === "wolf"
+        ) ||
+        (
+          role === "sheep" &&
+          ["found", "out"].includes(status)
+        )
+      );
+
+    if (!visibleByGameRules) {
+      continue;
+    }
+
+    const colour =
+      status === "found" || status === "out"
+        ? HIDE_SEEK_OUT_COLOUR
+        : role === "wolf"
+          ? HIDE_SEEK_WOLF_COLOUR
+          : HIDE_SEEK_SHEEP_COLOUR;
+
+    seenIds.add(userId);
+
+    const icon = L.divIcon({
+      className: "multiplayer-dot-icon hide-seek-dot-icon",
+      html: `
+        <div
+          class="hide-seek-leaflet-dot ${role} ${escapeHtml(status)}"
+          style="--dot-colour: ${colour};"
+        ></div>
+      `,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13]
+    });
+
+    const tooltip = `${escapeHtml(player.display_name || "Player")} • ${
+      role === "wolf" ? "Wolf" : hideSeekPlayerStatusLabel(player)
+    }`;
+
+    const existingMarker = state.hideSeek.markers.get(userId);
+
+    if (existingMarker) {
+      existingMarker.setLatLng([lat, lng]);
+      existingMarker.setIcon(icon);
+      existingMarker.setTooltipContent(tooltip);
+    } else {
+      const marker = L.marker([lat, lng], {
+        icon,
+        pane: "multiplayerPane",
+        interactive: false
+      }).addTo(state.hideSeek.layer);
+
+      marker.bindTooltip(tooltip, {
+        sticky: true
+      });
+
+      state.hideSeek.markers.set(userId, marker);
+    }
+  }
+
+  for (const [userId, marker] of state.hideSeek.markers.entries()) {
+    if (!seenIds.has(userId)) {
+      state.hideSeek.layer.removeLayer(marker);
+      state.hideSeek.markers.delete(userId);
+    }
+  }
+}
+
+function clearHideSeekMarkers() {
+  if (state.hideSeek.layer) {
+    for (const marker of state.hideSeek.markers.values()) {
+      state.hideSeek.layer.removeLayer(marker);
+    }
+  }
+
+  state.hideSeek.markers.clear();
+}
+
+function applyHideSeekOwnMarkerStyle() {
+  const colour =
+    hasActiveHideSeekRound() && state.hideSeek.viewerRole === "wolf"
+      ? HIDE_SEEK_WOLF_COLOUR
+      : HIDE_SEEK_SHEEP_COLOUR;
+
+  state.userMarker?.setStyle({
+    color: "#eef7ff",
+    fillColor: colour
+  });
+
+  state.accuracyCircle?.setStyle({
+    color: colour,
+    fillColor: colour
+  });
+}
+
+async function ensureHideSeekRoute(options = {}) {
+  const { force = false } = options;
+
+  if (
+    state.hideSeek.viewerRole !== "sheep" ||
+    state.hideSeek.phase !== "escape" ||
+    !state.hideSeek.zonePoint
+  ) {
+    clearHideSeekRoute();
+    return;
+  }
+
+  if (state.hideSeek.routeLoading) {
+    return;
+  }
+
+  const routeKey =
+    `${state.hideSeek.roundId}:` +
+    `${state.hideSeek.zonePoint.lat.toFixed(6)},` +
+    `${state.hideSeek.zonePoint.lng.toFixed(6)}`;
+
+  if (!force && state.hideSeek.routeLine && state.hideSeek.routeKey === routeKey) {
+    return;
+  }
+
+  const start = await getFreshRouteStartPoint();
+
+  if (!start) return;
+
+  const requestId = ++state.hideSeek.routeRequestId;
+  state.hideSeek.routeLoading = true;
+
+  try {
+    const route = await fetchRoadRoute(start, state.hideSeek.zonePoint);
+
+    if (
+      requestId !== state.hideSeek.routeRequestId ||
+      state.hideSeek.phase !== "escape" ||
+      state.hideSeek.viewerRole !== "sheep"
+    ) {
+      return;
+    }
+
+    drawHideSeekRoute(route.coords);
+
+    state.hideSeek.routeKey = routeKey;
+    state.hideSeek.lastRouteStartPoint = start;
+    state.hideSeek.lastRouteAt = Date.now();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    if (requestId === state.hideSeek.routeRequestId) {
+      state.hideSeek.routeLoading = false;
+    }
+  }
+}
+
+function drawHideSeekRoute(coords) {
+  clearHideSeekRoute({ keepRequest: true });
+
+  if (
+    !state.hideSeek.layer ||
+    !Array.isArray(coords) ||
+    coords.length < 2
+  ) {
+    return;
+  }
+
+  state.hideSeek.routeHalo = L.polyline(coords, {
+    color: "#eef7ff",
+    weight: 9,
+    opacity: 0.7,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false
+  }).addTo(state.hideSeek.layer);
+
+  state.hideSeek.routeLine = L.polyline(coords, {
+    color: HIDE_SEEK_SHEEP_COLOUR,
+    weight: 5,
+    opacity: 1,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false
+  }).addTo(state.hideSeek.layer);
+}
+
+function clearHideSeekRoute(options = {}) {
+  const { keepRequest = false } = options;
+
+  if (!keepRequest) {
+    state.hideSeek.routeRequestId += 1;
+    state.hideSeek.routeLoading = false;
+  }
+
+  if (state.hideSeek.routeHalo && state.hideSeek.layer) {
+    state.hideSeek.layer.removeLayer(state.hideSeek.routeHalo);
+  }
+
+  if (state.hideSeek.routeLine && state.hideSeek.layer) {
+    state.hideSeek.layer.removeLayer(state.hideSeek.routeLine);
+  }
+
+  state.hideSeek.routeHalo = null;
+  state.hideSeek.routeLine = null;
+  state.hideSeek.routeKey = "";
+  state.hideSeek.lastRouteStartPoint = null;
+  state.hideSeek.lastRouteAt = 0;
+}
+
+function maybeUpdateHideSeekRoute(point) {
+  if (
+    state.hideSeek.viewerRole !== "sheep" ||
+    state.hideSeek.phase !== "escape" ||
+    !state.hideSeek.zonePoint ||
+    !state.hideSeek.routeLine ||
+    !state.hideSeek.lastRouteStartPoint ||
+    Number(point?.accuracy) > MAX_GPS_ACCURACY_M
+  ) {
+    return;
+  }
+
+  const now = Date.now();
+
+  if (
+    now - state.hideSeek.lastRouteAt <
+      HIDE_SEEK_ROUTE_MIN_REROUTE_TIME_MS
+  ) {
+    return;
+  }
+
+  if (
+    haversine(point, state.hideSeek.lastRouteStartPoint) <
+      HIDE_SEEK_ROUTE_REROUTE_DISTANCE_M
+  ) {
+    return;
+  }
+
+  void ensureHideSeekRoute({ force: true });
+}
+
+function hideSeekErrorMessage(error) {
+  const message = String(error?.message || error || "");
+
+  if (!message) {
+    return "Hide & Seek had a problem";
   }
 
   return message.replace(/^Error:\s*/i, "");
@@ -1927,6 +3211,7 @@ function onGpsPosition(position) {
 
   unlockNearbySegments(point);
   maybeUpdateWaypointRoute(point);
+  maybeUpdateHideSeekRoute(point);
   renderAllStats();
 
   if (!state.isLoadingRoads && !state.isRouting) {
@@ -1984,6 +3269,8 @@ function updateUserMarker(point) {
     state.accuracyCircle.setLatLng(latlng);
     state.accuracyCircle.setRadius(point.accuracy || 20);
   }
+
+  applyHideSeekOwnMarkerStyle();
    
    state.accuracyCircle?.bringToFront();
   state.userMarker?.bringToFront();
