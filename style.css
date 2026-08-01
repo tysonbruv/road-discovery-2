@@ -1,5 +1,5 @@
-/* Road Discovery AU v38 stylesheet
-   Checkpoint 10: Hide & Seek Mode
+/* Road Discovery AU v39 stylesheet
+   Checkpoint 10: Hide & Seek role reveal and signals
 */
 
 :root {
@@ -2517,5 +2517,320 @@ button:disabled.add-friend-main-btn {
   .hide-seek-player-status {
     grid-column: 2;
     justify-self: start;
+  }
+}
+
+
+/* -------------------------------------------------- */
+/* Checkpoint 10 v2 map HUD and wolf signals         */
+/* -------------------------------------------------- */
+
+.hide-seek-role-badge.choosing {
+  border-color: rgba(255, 176, 74, 0.34);
+  background: rgba(255, 176, 74, 0.1);
+  color: rgba(255, 231, 201, 0.94);
+}
+
+.hide-seek-player-dot.choosing {
+  background: #9aa3b2;
+  box-shadow: 0 0 14px rgba(154, 163, 178, 0.24);
+}
+
+.hide-seek-signal-panel {
+  margin-top: 13px;
+  padding: 11px;
+  border: 1px solid rgba(255, 176, 74, 0.26);
+  border-radius: 15px;
+  background: rgba(255, 176, 74, 0.065);
+}
+
+.hide-seek-signal-status {
+  color: rgba(255, 231, 201, 0.9);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.hide-seek-signal-status.incoming,
+.hide-seek-map-signal-status.incoming {
+  color: #fff1dc;
+  animation:
+    hide-seek-signal-pulse
+    0.8s
+    ease-in-out
+    infinite
+    alternate;
+}
+
+.hide-seek-signal-list,
+.hide-seek-map-signal-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.hide-seek-signal-clue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 31px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 176, 74, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 176, 74, 0.1);
+  color: rgba(255, 238, 215, 0.96);
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.hide-seek-signal-clue strong {
+  color: #ffffff;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.hide-seek-signal-clue.close {
+  border-color: rgba(255, 77, 77, 0.5);
+  background: rgba(255, 77, 77, 0.17);
+  color: rgba(255, 225, 225, 0.98);
+}
+
+.hide-seek-signal-clue.medium {
+  border-color: rgba(255, 176, 74, 0.42);
+}
+
+.hide-seek-signal-clue.far {
+  border-color: rgba(75, 179, 255, 0.32);
+  background: rgba(75, 179, 255, 0.1);
+  color: rgba(219, 241, 255, 0.94);
+}
+
+/* Hide & Seek information displayed directly over the map */
+
+.hide-seek-map-hud {
+  position: absolute;
+  z-index: 1080;
+  top: calc(174px + var(--safe-top));
+  left: 50%;
+  width: min(290px, calc(100% - 142px));
+  transform: translateX(-50%);
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  background: rgba(5, 7, 10, 0.86);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow:
+    var(--shadow-soft),
+    0 0 28px rgba(75, 179, 255, 0.1);
+  text-align: center;
+  pointer-events: none;
+}
+
+.hide-seek-map-hud-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.hide-seek-map-role,
+.hide-seek-map-phase {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 4px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.hide-seek-map-role.wolf {
+  border-color: rgba(255, 77, 77, 0.5);
+  background: rgba(255, 77, 77, 0.16);
+  color: rgba(255, 225, 225, 0.98);
+}
+
+.hide-seek-map-role.sheep {
+  border-color: rgba(75, 179, 255, 0.46);
+  background: rgba(75, 179, 255, 0.15);
+  color: rgba(219, 241, 255, 0.98);
+}
+
+.hide-seek-map-role.choosing {
+  border-color: rgba(255, 176, 74, 0.42);
+  background: rgba(255, 176, 74, 0.13);
+  color: rgba(255, 231, 201, 0.96);
+}
+
+.hide-seek-map-timer {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 28px;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 22px rgba(75, 179, 255, 0.2);
+}
+
+.hide-seek-map-signal-status {
+  margin-top: 6px;
+  color: rgba(255, 231, 201, 0.9);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.hide-seek-map-signal-list {
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.hide-seek-map-signal-list .hide-seek-signal-clue {
+  min-height: 27px;
+  padding: 4px 7px;
+  font-size: 9px;
+}
+
+.hide-seek-map-signal-list .hide-seek-signal-clue strong {
+  font-size: 16px;
+}
+
+/* Three-second wolf/sheep reveal */
+
+.hide-seek-role-reveal-overlay {
+  position: absolute;
+  z-index: 1900;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding:
+    calc(20px + var(--safe-top))
+    calc(20px + var(--safe-right))
+    calc(20px + var(--safe-bottom))
+    calc(20px + var(--safe-left));
+  background: rgba(0, 0, 0, 0.46);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  pointer-events: none;
+}
+
+.hide-seek-role-reveal-card {
+  width: min(390px, 100%);
+  padding: 28px 18px;
+  border: 1px solid rgba(75, 179, 255, 0.46);
+  border-radius: 26px;
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(75, 179, 255, 0.2),
+      transparent 48%
+    ),
+    rgba(5, 10, 15, 0.96);
+  box-shadow:
+    var(--shadow),
+    0 0 55px rgba(75, 179, 255, 0.2);
+  text-align: center;
+  animation: hide-seek-role-reveal 0.34s ease-out both;
+}
+
+.hide-seek-role-reveal-overlay.wolf
+.hide-seek-role-reveal-card {
+  border-color: rgba(255, 77, 77, 0.58);
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(255, 77, 77, 0.24),
+      transparent 50%
+    ),
+    rgba(15, 5, 7, 0.97);
+  box-shadow:
+    var(--shadow),
+    0 0 60px rgba(255, 77, 77, 0.24);
+}
+
+.hide-seek-role-reveal-kicker {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.hide-seek-role-reveal-text {
+  margin-top: 9px;
+  color: rgba(219, 241, 255, 0.99);
+  font-size: clamp(34px, 10vw, 54px);
+  font-weight: 950;
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  text-transform: uppercase;
+}
+
+.hide-seek-role-reveal-overlay.wolf
+.hide-seek-role-reveal-text {
+  color: rgba(255, 225, 225, 0.99);
+}
+
+@keyframes hide-seek-role-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes hide-seek-signal-pulse {
+  from {
+    opacity: 0.62;
+    transform: scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1.015);
+  }
+}
+
+@media (min-width: 900px) {
+  .hide-seek-map-hud {
+    top: calc(18px + var(--safe-top));
+    width: 300px;
+  }
+}
+
+@media (max-width: 380px) {
+  .hide-seek-map-hud {
+    left: calc(12px + var(--safe-left));
+    right: calc(68px + var(--safe-right));
+    width: auto;
+    transform: none;
+  }
+
+  .hide-seek-map-timer {
+    font-size: 25px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hide-seek-signal-status.incoming,
+  .hide-seek-map-signal-status.incoming,
+  .hide-seek-role-reveal-card {
+    animation: none;
   }
 }
