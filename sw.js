@@ -1,20 +1,22 @@
 "use strict";
 
 /*
-  Road Discovery AU v46 service worker
+  Road Discovery AU v47 service worker
 
   Checkpoint 10:
-  Hide & Seek Mode inside Multiplayer.
+  Hide & Seek north-up navigation, heading and
+  three-second sheep map pings.
 
   Expected frontend versions:
-  - app.js?v=46
-  - style.css?v=39
+  - app.js?v=47
+  - style.css?v=40
 
-  Previous files are recognised during the update so the site can
-  upgrade safely while GitHub files are replaced one at a time.
+  Previous files are recognised during the update so
+  the site can upgrade safely while GitHub files are
+  replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v46";
+const CACHE_NAME = "road-discovery-au-v47";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,6 +26,10 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=40",
+  "./app.js?v=47",
+
+  /* Previous Hide & Seek version. */
   "./style.css?v=39",
   "./app.js?v=46",
 
@@ -31,13 +37,20 @@ const VERSIONED_APP_FILES = [
   "./style.css?v=38",
   "./app.js?v=45",
 
-  /* Temporary fallbacks during a one-file-at-a-time upload. */
+  /*
+    Temporary fallbacks during a one-file-at-a-time
+    upload.
+  */
   "./app.js?v=44",
   "./style.css?v=37",
   "./app.js?v=43",
   "./style.css?v=36",
   "./app.js?v=42"
 ];
+
+/* -------------------------------------------------- */
+/* Install                                            */
+/* -------------------------------------------------- */
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -47,21 +60,28 @@ self.addEventListener("install", (event) => {
         await cache.addAll(CORE_APP_SHELL);
 
         await Promise.all(
-          VERSIONED_APP_FILES.map(async (file) => {
-            try {
-              await cache.add(file);
-            } catch (error) {
-              console.warn(
-                `Could not pre-cache ${file}. It will be cached when available.`,
-                error
-              );
+          VERSIONED_APP_FILES.map(
+            async (file) => {
+              try {
+                await cache.add(file);
+              } catch (error) {
+                console.warn(
+                  `Could not pre-cache ${file}. ` +
+                  "It will be cached when available.",
+                  error
+                );
+              }
             }
-          })
+          )
         );
       })
       .then(() => self.skipWaiting())
   );
 });
+
+/* -------------------------------------------------- */
+/* Activate                                           */
+/* -------------------------------------------------- */
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
@@ -84,6 +104,10 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+/* -------------------------------------------------- */
+/* Fetch                                              */
+/* -------------------------------------------------- */
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
 
@@ -94,12 +118,22 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   /*
-    Do not intercept external tiles, road data,
-    routing, Leaflet or Supabase.
+    Do not intercept external requests such as:
+
+    - Leaflet files
+    - Leaflet rotation extension
+    - Supabase client library
+    - CARTO map tiles
+    - Overpass road data
+    - OSRM waypoint routes
   */
   if (url.origin !== self.location.origin) {
     return;
   }
+
+  /* ------------------------------------------------ */
+  /* Page navigation                                  */
+  /* ------------------------------------------------ */
 
   if (request.mode === "navigate") {
     event.respondWith(
@@ -126,9 +160,11 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(async () => {
           return (
-            (await caches.match(
-              "./index.html"
-            )) ||
+            (
+              await caches.match(
+                "./index.html"
+              )
+            ) ||
             (await caches.match("./"))
           );
         })
@@ -136,6 +172,10 @@ self.addEventListener("fetch", (event) => {
 
     return;
   }
+
+  /* ------------------------------------------------ */
+  /* Local application files                          */
+  /* ------------------------------------------------ */
 
   event.respondWith(
     fetch(request)
@@ -160,6 +200,9 @@ self.addEventListener("fetch", (event) => {
         return networkResponse;
       })
       .catch(async () => {
+        /*
+          First try the exact requested file.
+        */
         const exactCachedResponse =
           await caches.match(request);
 
@@ -167,24 +210,41 @@ self.addEventListener("fetch", (event) => {
           return exactCachedResponse;
         }
 
+        /*
+          Handle requests made without a version
+          query string.
+        */
         if (
           url.pathname.endsWith(
             "/style.css"
           )
         ) {
           return (
-            (await caches.match(
-              "./style.css?v=39"
-            )) ||
-            (await caches.match(
-              "./style.css?v=38"
-            )) ||
-            (await caches.match(
-              "./style.css?v=37"
-            )) ||
-            (await caches.match(
-              "./style.css?v=36"
-            )) ||
+            (
+              await caches.match(
+                "./style.css?v=40"
+              )
+            ) ||
+            (
+              await caches.match(
+                "./style.css?v=39"
+              )
+            ) ||
+            (
+              await caches.match(
+                "./style.css?v=38"
+              )
+            ) ||
+            (
+              await caches.match(
+                "./style.css?v=37"
+              )
+            ) ||
+            (
+              await caches.match(
+                "./style.css?v=36"
+              )
+            ) ||
             Response.error()
           );
         }
@@ -195,21 +255,36 @@ self.addEventListener("fetch", (event) => {
           )
         ) {
           return (
-            (await caches.match(
-              "./app.js?v=46"
-            )) ||
-            (await caches.match(
-              "./app.js?v=45"
-            )) ||
-            (await caches.match(
-              "./app.js?v=44"
-            )) ||
-            (await caches.match(
-              "./app.js?v=43"
-            )) ||
-            (await caches.match(
-              "./app.js?v=42"
-            )) ||
+            (
+              await caches.match(
+                "./app.js?v=47"
+              )
+            ) ||
+            (
+              await caches.match(
+                "./app.js?v=46"
+              )
+            ) ||
+            (
+              await caches.match(
+                "./app.js?v=45"
+              )
+            ) ||
+            (
+              await caches.match(
+                "./app.js?v=44"
+              )
+            ) ||
+            (
+              await caches.match(
+                "./app.js?v=43"
+              )
+            ) ||
+            (
+              await caches.match(
+                "./app.js?v=42"
+              )
+            ) ||
             Response.error()
           );
         }
@@ -220,9 +295,11 @@ self.addEventListener("fetch", (event) => {
           )
         ) {
           return (
-            (await caches.match(
-              "./manifest.json"
-            )) ||
+            (
+              await caches.match(
+                "./manifest.json"
+              )
+            ) ||
             Response.error()
           );
         }
@@ -233,9 +310,11 @@ self.addEventListener("fetch", (event) => {
           )
         ) {
           return (
-            (await caches.match(
-              "./icon.svg"
-            )) ||
+            (
+              await caches.match(
+                "./icon.svg"
+              )
+            ) ||
             Response.error()
           );
         }
