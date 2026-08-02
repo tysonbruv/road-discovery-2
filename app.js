@@ -11021,3 +11021,398 @@ finishDrive = function () {
 
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v54 Drive preparation overlay   */
+/* Append this block once to the bottom of app.js v53 */
+/* ================================================== */
+
+const roadDiscoveryV54 = {
+  startDrive,
+  ensureRoadsNearPoint
+};
+
+Object.assign(state, {
+  drivePreparationOverlayActive: false,
+  drivePreparationStage: ""
+});
+
+function rd54EnsureDrivePreparationOverlay() {
+  let overlay =
+    $("drivePreparationOverlay");
+
+  if (overlay) return overlay;
+
+  const appShell = $("appShell");
+
+  if (!appShell) return null;
+
+  overlay =
+    document.createElement("section");
+
+  overlay.id =
+    "drivePreparationOverlay";
+
+  overlay.className =
+    "drive-preparation-overlay hidden";
+
+  overlay.setAttribute(
+    "role",
+    "dialog"
+  );
+
+  overlay.setAttribute(
+    "aria-modal",
+    "true"
+  );
+
+  overlay.setAttribute(
+    "aria-labelledby",
+    "drivePreparationTitle"
+  );
+
+  overlay.innerHTML = `
+    <div class="drive-preparation-card">
+      <div
+        class="drive-preparation-spinner"
+        aria-hidden="true"
+      ></div>
+
+      <h2 id="drivePreparationTitle">
+        Preparing Drive
+      </h2>
+
+      <p
+        id="drivePreparationMessage"
+        class="drive-preparation-message"
+      >
+        Please wait while Road Discovery gets ready.
+      </p>
+
+      <ol
+        class="drive-preparation-stages"
+        aria-live="polite"
+      >
+        <li data-drive-stage="gps">
+          <span class="drive-preparation-stage-mark">
+            1
+          </span>
+
+          <span>
+            Finding a clean GPS location
+          </span>
+        </li>
+
+        <li data-drive-stage="roads">
+          <span class="drive-preparation-stage-mark">
+            2
+          </span>
+
+          <span>
+            Loading nearby roads
+          </span>
+        </li>
+
+        <li data-drive-stage="ready">
+          <span class="drive-preparation-stage-mark">
+            3
+          </span>
+
+          <span>
+            Preparing road discovery
+          </span>
+        </li>
+      </ol>
+
+      <p class="drive-preparation-safety">
+        Start your drive while safely stopped.
+        Do not interact with the app while driving.
+      </p>
+
+      <div
+        id="drivePreparationActions"
+        class="drive-preparation-actions hidden"
+      >
+        <button
+          id="retryDrivePreparationBtn"
+          class="drive-preparation-retry-btn"
+          type="button"
+        >
+          Try Again
+        </button>
+
+        <button
+          id="cancelDrivePreparationBtn"
+          class="drive-preparation-cancel-btn"
+          type="button"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  `;
+
+  appShell.appendChild(overlay);
+
+  $("retryDrivePreparationBtn")
+    ?.addEventListener("click", () => {
+      rd54HideDrivePreparationOverlay();
+
+      window.setTimeout(() => {
+        void startDrive();
+      }, 0);
+    });
+
+  $("cancelDrivePreparationBtn")
+    ?.addEventListener("click", () => {
+      rd54HideDrivePreparationOverlay();
+    });
+
+  return overlay;
+}
+
+function rd54SetDrivePreparationText(
+  title,
+  message
+) {
+  const titleElement =
+    $("drivePreparationTitle");
+
+  const messageElement =
+    $("drivePreparationMessage");
+
+  if (titleElement) {
+    titleElement.textContent = title;
+  }
+
+  if (messageElement) {
+    messageElement.textContent = message;
+  }
+}
+
+function rd54SetDrivePreparationStage(
+  stage
+) {
+  const stages = [
+    "gps",
+    "roads",
+    "ready"
+  ];
+
+  const activeIndex =
+    stages.indexOf(stage);
+
+  state.drivePreparationStage = stage;
+
+  for (
+    const item of
+    document.querySelectorAll(
+      "[data-drive-stage]"
+    )
+  ) {
+    const itemStage =
+      item.getAttribute(
+        "data-drive-stage"
+      );
+
+    const itemIndex =
+      stages.indexOf(itemStage);
+
+    item.classList.toggle(
+      "active",
+      itemStage === stage
+    );
+
+    item.classList.toggle(
+      "complete",
+      activeIndex >= 0 &&
+      itemIndex < activeIndex
+    );
+  }
+}
+
+function rd54ShowDrivePreparationOverlay() {
+  const overlay =
+    rd54EnsureDrivePreparationOverlay();
+
+  if (!overlay) return;
+
+  state.drivePreparationOverlayActive =
+    true;
+
+  overlay.classList.remove(
+    "hidden",
+    "error",
+    "success"
+  );
+
+  $("drivePreparationActions")
+    ?.classList.add("hidden");
+
+  rd54SetDrivePreparationText(
+    "Preparing Drive",
+    "Please wait while Road Discovery gets your location and loads nearby roads."
+  );
+
+  rd54SetDrivePreparationStage("gps");
+}
+
+function rd54HideDrivePreparationOverlay() {
+  state.drivePreparationOverlayActive =
+    false;
+
+  state.drivePreparationStage = "";
+
+  const overlay =
+    $("drivePreparationOverlay");
+
+  overlay?.classList.add("hidden");
+
+  overlay?.classList.remove(
+    "error",
+    "success"
+  );
+}
+
+function rd54ShowDrivePreparationFailure() {
+  const overlay =
+    rd54EnsureDrivePreparationOverlay();
+
+  if (!overlay) return;
+
+  const driveStatus = String(
+    els.driveStatus?.textContent || ""
+  ).toLowerCase();
+
+  const roadsFailed =
+    driveStatus.includes("road") ||
+    state.drivePreparationStage ===
+      "roads" ||
+    state.drivePreparationStage ===
+      "ready";
+
+  overlay.classList.remove("success");
+  overlay.classList.add("error");
+
+  rd54SetDrivePreparationText(
+    roadsFailed
+      ? "Roads couldn't load"
+      : "Drive couldn't start",
+
+    roadsFailed
+      ? "Check your internet connection or reception, then try again when safely stopped."
+      : "A clean GPS location couldn't be found. Move outside, check location permission and try again when safely stopped."
+  );
+
+  $("drivePreparationActions")
+    ?.classList.remove("hidden");
+}
+
+function rd54ShowDrivePreparationSuccess() {
+  const overlay =
+    $("drivePreparationOverlay");
+
+  if (!overlay) return;
+
+  overlay.classList.remove("error");
+  overlay.classList.add("success");
+
+  rd54SetDrivePreparationStage("ready");
+
+  for (
+    const item of
+    document.querySelectorAll(
+      "[data-drive-stage]"
+    )
+  ) {
+    item.classList.remove("active");
+    item.classList.add("complete");
+  }
+
+  rd54SetDrivePreparationText(
+    "Drive ready",
+    "Road discovery is now active."
+  );
+}
+
+ensureRoadsNearPoint =
+  async function (
+    point,
+    options = {}
+  ) {
+    const preparingDrive =
+      state.drivePreparationOverlayActive &&
+      state.driveRoadLayersPreparing &&
+      !state.isRecording;
+
+    if (preparingDrive) {
+      rd54SetDrivePreparationStage(
+        "roads"
+      );
+
+      rd54SetDrivePreparationText(
+        "Preparing Drive",
+        "Loading nearby roads. This may take a few seconds."
+      );
+    }
+
+    const result =
+      await roadDiscoveryV54
+        .ensureRoadsNearPoint(
+          point,
+          options
+        );
+
+    if (preparingDrive && result) {
+      rd54SetDrivePreparationStage(
+        "ready"
+      );
+
+      rd54SetDrivePreparationText(
+        "Preparing Drive",
+        "Nearby roads loaded. Preparing road discovery."
+      );
+    }
+
+    return result;
+  };
+
+startDrive = async function () {
+  if (state.isRecording) {
+    return roadDiscoveryV54.startDrive();
+  }
+
+  if (
+    state.drivePreparationOverlayActive ||
+    state.driveRoadLayersPreparing
+  ) {
+    return;
+  }
+
+  rd54ShowDrivePreparationOverlay();
+
+  try {
+    const result =
+      await roadDiscoveryV54.startDrive();
+
+    if (state.isRecording) {
+      rd54ShowDrivePreparationSuccess();
+
+      window.setTimeout(() => {
+        if (state.isRecording) {
+          rd54HideDrivePreparationOverlay();
+        }
+      }, 650);
+    } else {
+      rd54ShowDrivePreparationFailure();
+    }
+
+    return result;
+  } catch (error) {
+    console.error(error);
+
+    rd54ShowDrivePreparationFailure();
+
+    return undefined;
+  }
+};
