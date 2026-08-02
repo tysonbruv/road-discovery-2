@@ -10130,3 +10130,446 @@ drawHideSeekRoute = function (coords) {
 
   hs49ScheduleNavigationRedraw();
 };
+
+/* ================================================== */
+/* Road Discovery AU v50 unified navigation marker   */
+/* Append this block once to the bottom of app.js v49 */
+/* ================================================== */
+
+const HS50_ROUTE_MIN_REROUTE_TIME_MS = 15000;
+const HS50_ROUTE_REROUTE_DISTANCE_M = 40;
+const HS50_ROUTE_OFF_ROUTE_DISTANCE_M = 45;
+
+const hideSeekV50 = {
+  initMap
+};
+
+Object.assign(state, {
+  hs50OriginalPanTo: null,
+  hs50WaypointReroutePending: false,
+  hs50HideSeekReroutePending: false
+});
+
+/* -------------------------------------------------- */
+/* Stable map following                               */
+/* -------------------------------------------------- */
+
+initMap = function () {
+  hideSeekV50.initMap();
+
+  if (!state.map || typeof state.map.panTo !== "function") {
+    return;
+  }
+
+  /*
+    Leaflet Rotate and iPhone Safari can briefly render paths and
+    markers in different frames when a new animated pan starts while
+    the bearing is also changing. Keep heading-up following immediate
+    and stable. North-up manual panning keeps Leaflet's normal options.
+  */
+  state.hs50OriginalPanTo = state.map.panTo.bind(state.map);
+
+  state.map.panTo = function (latlng, options = {}) {
+    const headingFollowActive =
+      state.followUser &&
+      state.mapHeadingMode === "heading" &&
+      hs47NavigationIsActive();
+
+    return state.hs50OriginalPanTo(
+      latlng,
+      headingFollowActive
+        ? {
+            ...options,
+            animate: false
+          }
+        : options
+    );
+  };
+};
+
+hs47ApplyHeadingView = function (point) {
+  const heading = hs47NormaliseDegrees(
+    state.userHeadingDegrees
+  );
+
+  if (
+    heading === null ||
+    !state.followUser ||
+    state.mapHeadingMode !== "heading" ||
+    !hs47NavigationIsActive()
+  ) {
+    hs47StyleHeadingMarker();
+    return;
+  }
+
+  /*
+    Compass events only change the bearing. GPS events perform the
+    actual centring through the existing GPS follow code. This avoids
+    starting a map pan on every compass event.
+  */
+  hs47SetMapBearing(-heading);
+  hs47StyleHeadingMarker();
+};
+
+/* -------------------------------------------------- */
+/* One combined position + direction marker          */
+/* -------------------------------------------------- */
+
+function hs50OwnMarkerColour() {
+  if (
+    hasActiveHideSeekRound() &&
+    state.hideSeek.phase === "starting"
+  ) {
+    return HIDE_SEEK_OUT_COLOUR;
+  }
+
+  if (
+    hasActiveHideSeekRound() &&
+    state.hideSeek.viewerRole === "wolf"
+  ) {
+    return HIDE_SEEK_WOLF_COLOUR;
+  }
+
+  return HIDE_SEEK_SHEEP_COLOUR;
+}
+
+function hs50OwnMarkerHaloColour() {
+  if (
+    hasActiveHideSeekRound() &&
+    state.hideSeek.phase === "starting"
+  ) {
+    return "rgba(154, 163, 178, 0.24)";
+  }
+
+  if (
+    hasActiveHideSeekRound() &&
+    state.hideSeek.viewerRole === "wolf"
+  ) {
+    return "rgba(255, 77, 77, 0.24)";
+  }
+
+  return "rgba(75, 179, 255, 0.24)";
+}
+
+function hs50CombinedMarkerIcon() {
+  return L.divIcon({
+    className: "road-user-combined-icon",
+    html: `
+      <span class="road-user-combined" aria-hidden="true">
+        <span class="road-user-combined-heading">
+          <span class="road-user-combined-arrow"></span>
+        </span>
+        <span class="road-user-combined-halo"></span>
+        <span class="road-user-combined-dot"></span>
+      </span>
+    `,
+    iconSize: [52, 52],
+    iconAnchor: [26, 26]
+  });
+}
+
+function hs50RemoveSeparateDot() {
+  if (!state.userMarker) return;
+
+  try {
+    state.map?.removeLayer(state.userMarker);
+  } catch (error) {
+    console.error(error);
+  }
+
+  state.userMarker = null;
+}
+
+hs47DrawHeadingMarker = function (point) {
+  if (
+    !state.map ||
+    !Number.isFinite(Number(point?.lat)) ||
+    !Number.isFinite(Number(point?.lng))
+  ) {
+    return;
+  }
+
+  hs50RemoveSeparateDot();
+
+  const latlng = [Number(point.lat), Number(point.lng)];
+
+  if (!state.userHeadingMarker) {
+    state.userHeadingMarker = L.marker(latlng, {
+      icon: hs50CombinedMarkerIcon(),
+      pane: "userLocationPane",
+      interactive: false,
+      keyboard: false,
+      zIndexOffset: 40
+    }).addTo(state.map);
+  } else {
+    const markerElement = state.userHeadingMarker.getElement?.();
+
+    if (!markerElement?.classList?.contains("road-user-combined-icon")) {
+      state.userHeadingMarker.setIcon(hs50CombinedMarkerIcon());
+    }
+
+    state.userHeadingMarker.setLatLng(latlng);
+    state.userHeadingMarker.setOpacity(1);
+  }
+
+  hs47StyleHeadingMarker();
+};
+
+hs47StyleHeadingMarker = function () {
+  const element = state.userHeadingMarker?.getElement?.();
+
+  if (!element) return;
+
+  const heading = hs47NormaliseDegrees(
+    state.userHeadingDegrees
+  );
+
+  const screenHeading =
+    heading === null
+      ? 0
+      : hs47NormaliseDegrees(heading + hs47MapBearing()) || 0;
+
+  element.style.setProperty(
+    "--road-heading",
+    `${screenHeading}deg`
+  );
+
+  element.style.setProperty(
+    "--road-marker-colour",
+    hs50OwnMarkerColour()
+  );
+
+  element.style.setProperty(
+    "--road-marker-halo",
+    hs50OwnMarkerHaloColour()
+  );
+
+  element.style.setProperty(
+    "--road-heading-visible",
+    heading === null ? "0" : "1"
+  );
+};
+
+function hs50UpdateAccuracyCircle(point) {
+  if (!state.map) return;
+
+  const latlng = [Number(point.lat), Number(point.lng)];
+  const accuracy = Number(point.accuracy);
+
+  const radius =
+    Number.isFinite(accuracy) && accuracy > 0
+      ? accuracy
+      : 20;
+
+  const colour = hs50OwnMarkerColour();
+
+  if (!state.accuracyCircle) {
+    state.accuracyCircle = L.circle(latlng, {
+      renderer: state.userAccuracySvgRenderer || undefined,
+      pane: "userAccuracyPane",
+      radius,
+      color: colour,
+      opacity: 0.35,
+      fillColor: colour,
+      fillOpacity: 0.06,
+      weight: 1,
+      interactive: false
+    }).addTo(state.map);
+  } else {
+    state.accuracyCircle.setLatLng(latlng);
+    state.accuracyCircle.setRadius(radius);
+
+    state.accuracyCircle.setStyle({
+      color: colour,
+      fillColor: colour
+    });
+  }
+
+  state.accuracyCircle.bringToFront?.();
+}
+
+updateUserMarker = function (point) {
+  if (
+    !state.map ||
+    !Number.isFinite(Number(point?.lat)) ||
+    !Number.isFinite(Number(point?.lng))
+  ) {
+    return;
+  }
+
+  /*
+    One authoritative point now drives the dot, arrow
+    and follow view.
+  */
+  state.currentPoint = point;
+
+  hs50RemoveSeparateDot();
+  hs50UpdateAccuracyCircle(point);
+
+  hs48UpdateGpsCourse(point);
+  hs48RefreshCompassListener();
+
+  const selectedHeading = hs48SelectedHeading();
+
+  if (selectedHeading !== null) {
+    state.userHeadingDegrees = selectedHeading;
+  }
+
+  hs47DrawHeadingMarker(point);
+  hs47ApplyHeadingView(point);
+  hs49ScheduleNavigationRedraw();
+};
+
+applyHideSeekOwnMarkerStyle = function () {
+  const colour = hs50OwnMarkerColour();
+
+  state.accuracyCircle?.setStyle?.({
+    color: colour,
+    fillColor: colour
+  });
+
+  hs47StyleHeadingMarker();
+};
+
+/* -------------------------------------------------- */
+/* Route refresh while travelling                    */
+/* -------------------------------------------------- */
+
+function hs50FlatRouteCoords(line) {
+  const result = [];
+
+  function add(value) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        add(item);
+      }
+
+      return;
+    }
+
+    const lat = Number(value?.lat);
+    const lng = Number(value?.lng);
+
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      result.push([lat, lng]);
+    }
+  }
+
+  add(line?.getLatLngs?.() || []);
+
+  return result;
+}
+
+function hs50DistanceFromRouteM(point, line) {
+  const coords = hs50FlatRouteCoords(line);
+
+  if (coords.length < 2) {
+    return Infinity;
+  }
+
+  let closest = Infinity;
+
+  for (let index = 1; index < coords.length; index += 1) {
+    closest = Math.min(
+      closest,
+      pointToSegmentDistance(
+        point,
+        coords[index - 1],
+        coords[index]
+      )
+    );
+
+    if (closest <= 8) {
+      break;
+    }
+  }
+
+  return closest;
+}
+
+function hs50RouteNeedsRefresh(point, line, lastStart, lastAt) {
+  const accuracy = Number(point?.accuracy);
+
+  if (
+    !line ||
+    !lastStart ||
+    !Number.isFinite(accuracy) ||
+    accuracy > MAX_GPS_ACCURACY_M ||
+    Date.now() - Number(lastAt || 0) <
+      HS50_ROUTE_MIN_REROUTE_TIME_MS
+  ) {
+    return false;
+  }
+
+  const moved = haversine(point, lastStart);
+
+  if (moved >= HS50_ROUTE_REROUTE_DISTANCE_M) {
+    return true;
+  }
+
+  return (
+    hs50DistanceFromRouteM(point, line) >=
+    HS50_ROUTE_OFF_ROUTE_DISTANCE_M
+  );
+}
+
+maybeUpdateWaypointRoute = function (point) {
+  if (!state.waypointPoint) return;
+
+  if (
+    haversine(point, state.waypointPoint) <=
+    ROUTE_ARRIVAL_RADIUS_M
+  ) {
+    clearWaypoint(false);
+    showToast("Waypoint reached");
+    return;
+  }
+
+  if (
+    state.isRouting ||
+    state.hs50WaypointReroutePending ||
+    !hs50RouteNeedsRefresh(
+      point,
+      state.routeLine,
+      state.lastRouteStartPoint,
+      state.lastRouteAt
+    )
+  ) {
+    return;
+  }
+
+  state.hs50WaypointReroutePending = true;
+
+  void routeToWaypoint({
+    fit: false,
+    silent: true
+  }).finally(() => {
+    state.hs50WaypointReroutePending = false;
+  });
+};
+
+maybeUpdateHideSeekRoute = function (point) {
+  if (
+    state.hideSeek.viewerRole !== "sheep" ||
+    state.hideSeek.phase !== "escape" ||
+    !state.hideSeek.zonePoint ||
+    state.hideSeek.routeLoading ||
+    state.hs50HideSeekReroutePending ||
+    !hs50RouteNeedsRefresh(
+      point,
+      state.hideSeek.routeLine,
+      state.hideSeek.lastRouteStartPoint,
+      state.hideSeek.lastRouteAt
+    )
+  ) {
+    return;
+  }
+
+  state.hs50HideSeekReroutePending = true;
+
+  void ensureHideSeekRoute({
+    force: true
+  }).finally(() => {
+    state.hs50HideSeekReroutePending = false;
+  });
+};
