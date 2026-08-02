@@ -1,22 +1,22 @@
 "use strict";
 
 /*
-  Road Discovery AU v47 service worker
+  Road Discovery AU v48 service worker
 
   Checkpoint 10:
-  Hide & Seek north-up navigation, heading and
-  three-second sheep map pings.
+  Hide & Seek navigation, heading, map pings,
+  and bottom-left navigation controls.
 
   Expected frontend versions:
   - app.js?v=47
-  - style.css?v=40
+  - style.css?v=41
 
   Previous files are recognised during the update so
   the site can upgrade safely while GitHub files are
   replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v47";
+const CACHE_NAME = "road-discovery-au-v48";
 
 const CORE_APP_SHELL = [
   "./",
@@ -26,6 +26,7 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=41",
   "./style.css?v=40",
   "./app.js?v=47",
 
@@ -200,9 +201,6 @@ self.addEventListener("fetch", (event) => {
         return networkResponse;
       })
       .catch(async () => {
-        /*
-          First try the exact requested file.
-        */
         const exactCachedResponse =
           await caches.match(request);
 
@@ -210,16 +208,17 @@ self.addEventListener("fetch", (event) => {
           return exactCachedResponse;
         }
 
-        /*
-          Handle requests made without a version
-          query string.
-        */
         if (
           url.pathname.endsWith(
             "/style.css"
           )
         ) {
           return (
+            (
+              await caches.match(
+                "./style.css?v=41"
+              )
+            ) ||
             (
               await caches.match(
                 "./style.css?v=40"
