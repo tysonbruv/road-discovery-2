@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v48
+/* Road Discovery AU v49
    Checkpoint 10: Hide & Seek Mode inside Multiplayer.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -9736,3 +9736,397 @@ if (hs48StoredCompassPermission()) {
 }
 
 hs48RefreshCompassListener();
+
+/* ================================================== */
+/* Road Discovery AU v49 rotation alignment fix       */
+/* Append this block once to the bottom of app.js v48 */
+/* ================================================== */
+
+const hideSeekV49 = {
+  initMap,
+  updateUserMarker
+};
+
+Object.assign(state, {
+  navigationSvgRenderer: null,
+  userLocationSvgRenderer: null,
+  userAccuracySvgRenderer: null,
+  navigationRedrawFrame: null
+});
+
+initMap = function () {
+  hideSeekV49.initMap();
+
+  if (
+    !state.map ||
+    typeof L?.svg !== "function"
+  ) {
+    return;
+  }
+
+  /*
+    Keep the thousands of road chunks on the existing
+    Canvas renderer.
+
+    Only navigation paths use SVG so they remain
+    aligned while the map bearing changes.
+  */
+  state.navigationSvgRenderer = L.svg({
+    padding: 0.5
+  });
+
+  state.userLocationSvgRenderer = L.svg({
+    pane: "userLocationPane",
+    padding: 0.5
+  });
+
+  state.userAccuracySvgRenderer = L.svg({
+    pane: "userAccuracyPane",
+    padding: 0.5
+  });
+
+  state.map.on(
+    "rotate move zoomend resize",
+    () => {
+      hs49ScheduleNavigationRedraw();
+    }
+  );
+};
+
+function hs49MovePathToRenderer(
+  path,
+  renderer,
+  owner
+) {
+  if (
+    !path ||
+    !renderer ||
+    !owner ||
+    path.options?.renderer === renderer
+  ) {
+    return;
+  }
+
+  const wasAdded =
+    typeof owner.hasLayer === "function" &&
+    owner.hasLayer(path);
+
+  if (wasAdded) {
+    owner.removeLayer(path);
+  }
+
+  path.options.renderer = renderer;
+
+  if (wasAdded) {
+    owner.addLayer(path);
+  }
+}
+
+function hs49RedrawNavigationPaths() {
+  const paths = [
+    state.userMarker,
+    state.accuracyCircle,
+    state.waypointMarker,
+    state.routeHalo,
+    state.routeLine,
+    state.hideSeek.zoneCircle,
+    state.hideSeek.routeHalo,
+    state.hideSeek.routeLine
+  ];
+
+  for (const path of paths) {
+    path?.redraw?.();
+  }
+
+  state.userHeadingMarker?.update?.();
+
+  for (
+    const marker of
+    state.hideSeek.signalPingMarkers || []
+  ) {
+    marker?.update?.();
+  }
+}
+
+function hs49ScheduleNavigationRedraw() {
+  if (
+    state.navigationRedrawFrame !== null
+  ) {
+    return;
+  }
+
+  if (!window.requestAnimationFrame) {
+    hs49RedrawNavigationPaths();
+    return;
+  }
+
+  state.navigationRedrawFrame =
+    window.requestAnimationFrame(() => {
+      state.navigationRedrawFrame = null;
+      hs49RedrawNavigationPaths();
+    });
+}
+
+/* -------------------------------------------------- */
+/* Stable single-step bearing updates                 */
+/* -------------------------------------------------- */
+
+hs47SetMapBearing = function (
+  targetValue
+) {
+  if (
+    !state.map ||
+    typeof state.map.setBearing !== "function"
+  ) {
+    hs47UpdateNorthIndicator();
+    hs47StyleHeadingMarker();
+    return;
+  }
+
+  const target =
+    hs47NormaliseDegrees(
+      targetValue
+    ) || 0;
+
+  const current = hs47MapBearing();
+
+  const turn =
+    hs47ShortestBearingTurn(
+      current,
+      target
+    );
+
+  hs47CancelBearingAnimation();
+
+  /*
+    One stable rotation per sensor update prevents
+    the route and marker renderers from separating.
+  */
+  if (Math.abs(turn) >= 0.75) {
+    state.map.setBearing(target);
+  }
+
+  hs47UpdateNorthIndicator();
+  hs47StyleHeadingMarker();
+  hs49ScheduleNavigationRedraw();
+};
+
+/* -------------------------------------------------- */
+/* User marker and accuracy circle                    */
+/* -------------------------------------------------- */
+
+updateUserMarker = function (point) {
+  hideSeekV49.updateUserMarker(point);
+
+  hs49MovePathToRenderer(
+    state.userMarker,
+    state.userLocationSvgRenderer,
+    state.map
+  );
+
+  hs49MovePathToRenderer(
+    state.accuracyCircle,
+    state.userAccuracySvgRenderer,
+    state.map
+  );
+
+  state.accuracyCircle?.bringToFront?.();
+  state.userMarker?.bringToFront?.();
+
+  state.userHeadingMarker
+    ?.setZIndexOffset?.(20);
+
+  hs49ScheduleNavigationRedraw();
+};
+
+/* -------------------------------------------------- */
+/* Normal waypoint paths                              */
+/* -------------------------------------------------- */
+
+drawWaypointMarker = function (point) {
+  if (!state.routeLayer) return;
+
+  const latlng = [
+    point.lat,
+    point.lng
+  ];
+
+  if (!state.waypointMarker) {
+    state.waypointMarker =
+      L.circleMarker(latlng, {
+        renderer:
+          state.navigationSvgRenderer ||
+          undefined,
+
+        radius: 9,
+        color: "#eef7ff",
+        weight: 4,
+        fillColor: ROUTE_BLUE,
+        fillOpacity: 1
+      }).addTo(state.routeLayer);
+
+    state.waypointMarker.bindTooltip(
+      "Waypoint",
+      {
+        sticky: true
+      }
+    );
+  } else {
+    state.waypointMarker.setLatLng(
+      latlng
+    );
+  }
+
+  hs49ScheduleNavigationRedraw();
+};
+
+drawRouteLine = function (coords) {
+  clearRouteLine();
+
+  if (
+    !state.routeLayer ||
+    !Array.isArray(coords) ||
+    coords.length < 2
+  ) {
+    return;
+  }
+
+  const renderer =
+    state.navigationSvgRenderer ||
+    undefined;
+
+  state.routeHalo = L.polyline(
+    coords,
+    {
+      renderer,
+      color: "#eef7ff",
+      weight: 9,
+      opacity: 0.72,
+      lineCap: "round",
+      lineJoin: "round",
+      interactive: false
+    }
+  ).addTo(state.routeLayer);
+
+  state.routeLine = L.polyline(
+    coords,
+    {
+      renderer,
+      color: ROUTE_BLUE,
+      weight: 5,
+      opacity: 1,
+      lineCap: "round",
+      lineJoin: "round",
+      interactive: false
+    }
+  ).addTo(state.routeLayer);
+
+  state.waypointMarker
+    ?.bringToFront?.();
+
+  hs49ScheduleNavigationRedraw();
+};
+
+/* -------------------------------------------------- */
+/* Hide & Seek zone and route                         */
+/* -------------------------------------------------- */
+
+drawHideSeekZone = function () {
+  if (!state.hideSeek.layer) return;
+
+  if (!state.hideSeek.zonePoint) {
+    if (state.hideSeek.zoneCircle) {
+      state.hideSeek.layer.removeLayer(
+        state.hideSeek.zoneCircle
+      );
+
+      state.hideSeek.zoneCircle = null;
+    }
+
+    return;
+  }
+
+  const latlng = [
+    state.hideSeek.zonePoint.lat,
+    state.hideSeek.zonePoint.lng
+  ];
+
+  if (!state.hideSeek.zoneCircle) {
+    state.hideSeek.zoneCircle =
+      L.circle(latlng, {
+        renderer:
+          state.navigationSvgRenderer ||
+          undefined,
+
+        radius:
+          state.hideSeek.zoneRadiusM,
+
+        color:
+          HIDE_SEEK_SHEEP_COLOUR,
+
+        opacity: 0.9,
+
+        fillColor:
+          HIDE_SEEK_SHEEP_COLOUR,
+
+        fillOpacity: 0.08,
+        weight: 3,
+        dashArray: "10 8",
+        interactive: false
+      }).addTo(state.hideSeek.layer);
+  } else {
+    state.hideSeek.zoneCircle.setLatLng(
+      latlng
+    );
+
+    state.hideSeek.zoneCircle.setRadius(
+      state.hideSeek.zoneRadiusM
+    );
+  }
+
+  hs49ScheduleNavigationRedraw();
+};
+
+drawHideSeekRoute = function (coords) {
+  clearHideSeekRoute({
+    keepRequest: true
+  });
+
+  if (
+    !state.hideSeek.layer ||
+    !Array.isArray(coords) ||
+    coords.length < 2
+  ) {
+    return;
+  }
+
+  const renderer =
+    state.navigationSvgRenderer ||
+    undefined;
+
+  state.hideSeek.routeHalo =
+    L.polyline(coords, {
+      renderer,
+      color: "#eef7ff",
+      weight: 9,
+      opacity: 0.7,
+      lineCap: "round",
+      lineJoin: "round",
+      interactive: false
+    }).addTo(state.hideSeek.layer);
+
+  state.hideSeek.routeLine =
+    L.polyline(coords, {
+      renderer,
+      color:
+        HIDE_SEEK_SHEEP_COLOUR,
+
+      weight: 5,
+      opacity: 1,
+      lineCap: "round",
+      lineJoin: "round",
+      interactive: false
+    }).addTo(state.hideSeek.layer);
+
+  hs49ScheduleNavigationRedraw();
+};
