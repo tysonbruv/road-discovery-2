@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v50 service worker
+  Road Discovery AU v51 service worker
 
   Checkpoint 10:
-  Rotation-aligned navigation and three-second Hide & Seek map pings.
+  Unified location/direction marker and active route refreshing.
 
   Expected frontend versions:
-  - app.js?v=49
-  - style.css?v=41
+  - app.js?v=50
+  - style.css?v=42
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v50";
+const CACHE_NAME = "road-discovery-au-v51";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,6 +24,8 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=42",
+  "./app.js?v=50",
   "./style.css?v=41",
   "./app.js?v=49",
   "./app.js?v=48",
@@ -146,6 +148,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/style.css")) {
           return (
+            (await caches.match("./style.css?v=42")) ||
             (await caches.match("./style.css?v=41")) ||
             (await caches.match("./style.css?v=40")) ||
             (await caches.match("./style.css?v=39")) ||
@@ -158,6 +161,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=50")) ||
             (await caches.match("./app.js?v=49")) ||
             (await caches.match("./app.js?v=48")) ||
             (await caches.match("./app.js?v=47")) ||
