@@ -10573,3 +10573,16 @@ maybeUpdateHideSeekRoute = function (point) {
     state.hs50HideSeekReroutePending = false;
   });
 };
+
+/* ================================================== */
+/* Road Discovery AU v51 hide GPS accuracy circle    */
+/* Append this block once to the bottom of app.js v50 */
+/* ================================================== */
+
+hs50UpdateAccuracyCircle = function () {
+  if (state.accuracyCircle && state.map) {
+    state.map.removeLayer(state.accuracyCircle);
+  }
+
+  state.accuracyCircle = null;
+};
