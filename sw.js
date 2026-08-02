@@ -1,22 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v49 service worker
+  Road Discovery AU v50 service worker
 
   Checkpoint 10:
-  Hybrid compass/GPS heading and three-second
-  Hide & Seek map pings.
+  Rotation-aligned navigation and three-second Hide & Seek map pings.
 
   Expected frontend versions:
-  - app.js?v=48
+  - app.js?v=49
   - style.css?v=41
 
-  Previous files are recognised during the update so
-  the site can upgrade safely while GitHub files are
-  replaced one at a time.
+  Previous files are recognised during the update so the site can
+  upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v49";
+const CACHE_NAME = "road-discovery-au-v50";
 
 const CORE_APP_SHELL = [
   "./",
@@ -27,9 +25,8 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=41",
+  "./app.js?v=49",
   "./app.js?v=48",
-
-  /* Previous navigation version. */
   "./style.css?v=40",
   "./app.js?v=47",
 
@@ -41,20 +38,13 @@ const VERSIONED_APP_FILES = [
   "./style.css?v=38",
   "./app.js?v=45",
 
-  /*
-    Temporary fallbacks during a one-file-at-a-time
-    upload.
-  */
+  /* Temporary fallbacks during a one-file-at-a-time upload. */
   "./app.js?v=44",
   "./style.css?v=37",
   "./app.js?v=43",
   "./style.css?v=36",
   "./app.js?v=42"
 ];
-
-/* -------------------------------------------------- */
-/* Install                                            */
-/* -------------------------------------------------- */
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -64,28 +54,21 @@ self.addEventListener("install", (event) => {
         await cache.addAll(CORE_APP_SHELL);
 
         await Promise.all(
-          VERSIONED_APP_FILES.map(
-            async (file) => {
-              try {
-                await cache.add(file);
-              } catch (error) {
-                console.warn(
-                  `Could not pre-cache ${file}. ` +
-                  "It will be cached when available.",
-                  error
-                );
-              }
+          VERSIONED_APP_FILES.map(async (file) => {
+            try {
+              await cache.add(file);
+            } catch (error) {
+              console.warn(
+                `Could not pre-cache ${file}. It will be cached when available.`,
+                error
+              );
             }
-          )
+          })
         );
       })
       .then(() => self.skipWaiting())
   );
 });
-
-/* -------------------------------------------------- */
-/* Activate                                           */
-/* -------------------------------------------------- */
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
@@ -94,23 +77,13 @@ self.addEventListener("activate", (event) => {
       .then((cacheNames) => {
         return Promise.all(
           cacheNames
-            .filter(
-              (cacheName) =>
-                cacheName !== CACHE_NAME
-            )
-            .map(
-              (cacheName) =>
-                caches.delete(cacheName)
-            )
+            .filter((cacheName) => cacheName !== CACHE_NAME)
+            .map((cacheName) => caches.delete(cacheName))
         );
       })
       .then(() => self.clients.claim())
   );
 });
-
-/* -------------------------------------------------- */
-/* Fetch                                              */
-/* -------------------------------------------------- */
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
@@ -121,54 +94,28 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  /*
-    Do not intercept external requests such as:
-
-    - Leaflet files
-    - Leaflet rotation extension
-    - Supabase client library
-    - CARTO map tiles
-    - Overpass road data
-    - OSRM waypoint routes
-  */
+  /* Do not intercept external tiles, road data, routing or Supabase. */
   if (url.origin !== self.location.origin) {
     return;
   }
-
-  /* ------------------------------------------------ */
-  /* Page navigation                                  */
-  /* ------------------------------------------------ */
 
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
-          if (
-            networkResponse &&
-            networkResponse.ok
-          ) {
-            const responseCopy =
-              networkResponse.clone();
+          if (networkResponse && networkResponse.ok) {
+            const responseCopy = networkResponse.clone();
 
-            caches
-              .open(CACHE_NAME)
-              .then((cache) => {
-                cache.put(
-                  "./index.html",
-                  responseCopy
-                );
-              });
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put("./index.html", responseCopy);
+            });
           }
 
           return networkResponse;
         })
         .catch(async () => {
           return (
-            (
-              await caches.match(
-                "./index.html"
-              )
-            ) ||
+            (await caches.match("./index.html")) ||
             (await caches.match("./"))
           );
         })
@@ -177,151 +124,62 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  /* ------------------------------------------------ */
-  /* Local application files                          */
-  /* ------------------------------------------------ */
-
   event.respondWith(
     fetch(request)
       .then((networkResponse) => {
-        if (
-          networkResponse &&
-          networkResponse.ok
-        ) {
-          const responseCopy =
-            networkResponse.clone();
+        if (networkResponse && networkResponse.ok) {
+          const responseCopy = networkResponse.clone();
 
-          caches
-            .open(CACHE_NAME)
-            .then((cache) => {
-              cache.put(
-                request,
-                responseCopy
-              );
-            });
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseCopy);
+          });
         }
 
         return networkResponse;
       })
       .catch(async () => {
-        const exactCachedResponse =
-          await caches.match(request);
+        const exactCachedResponse = await caches.match(request);
 
         if (exactCachedResponse) {
           return exactCachedResponse;
         }
 
-        if (
-          url.pathname.endsWith(
-            "/style.css"
-          )
-        ) {
+        if (url.pathname.endsWith("/style.css")) {
           return (
-            (
-              await caches.match(
-                "./style.css?v=41"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./style.css?v=40"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./style.css?v=39"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./style.css?v=38"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./style.css?v=37"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./style.css?v=36"
-              )
-            ) ||
+            (await caches.match("./style.css?v=41")) ||
+            (await caches.match("./style.css?v=40")) ||
+            (await caches.match("./style.css?v=39")) ||
+            (await caches.match("./style.css?v=38")) ||
+            (await caches.match("./style.css?v=37")) ||
+            (await caches.match("./style.css?v=36")) ||
             Response.error()
           );
         }
 
-        if (
-          url.pathname.endsWith(
-            "/app.js"
-          )
-        ) {
+        if (url.pathname.endsWith("/app.js")) {
           return (
-            (
-              await caches.match(
-                "./app.js?v=48"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=47"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=46"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=45"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=44"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=43"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=42"
-              )
-            ) ||
+            (await caches.match("./app.js?v=49")) ||
+            (await caches.match("./app.js?v=48")) ||
+            (await caches.match("./app.js?v=47")) ||
+            (await caches.match("./app.js?v=46")) ||
+            (await caches.match("./app.js?v=45")) ||
+            (await caches.match("./app.js?v=44")) ||
+            (await caches.match("./app.js?v=43")) ||
+            (await caches.match("./app.js?v=42")) ||
             Response.error()
           );
         }
 
-        if (
-          url.pathname.endsWith(
-            "/manifest.json"
-          )
-        ) {
+        if (url.pathname.endsWith("/manifest.json")) {
           return (
-            (
-              await caches.match(
-                "./manifest.json"
-              )
-            ) ||
+            (await caches.match("./manifest.json")) ||
             Response.error()
           );
         }
 
-        if (
-          url.pathname.endsWith(
-            "/icon.svg"
-          )
-        ) {
+        if (url.pathname.endsWith("/icon.svg")) {
           return (
-            (
-              await caches.match(
-                "./icon.svg"
-              )
-            ) ||
+            (await caches.match("./icon.svg")) ||
             Response.error()
           );
         }
