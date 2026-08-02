@@ -10652,3 +10652,372 @@ hs47StyleHeadingMarker = function () {
     heading === null ? "0" : "1"
   );
 };
+
+/* ================================================== */
+/* Road Discovery AU v53 clean map + My Roads toggle */
+/* Append this block once to the bottom of app.js v52 */
+/* ================================================== */
+
+const RD53_MY_ROADS_VISIBLE_KEY =
+  "roadDiscoveryAU.myRoadsVisible.v1";
+
+const roadDiscoveryV53 = {
+  ensureLocateButton,
+  initMap,
+  locateUser,
+  startDrive,
+  finishDrive
+};
+
+Object.assign(state, {
+  myRoadsVisible: rd53LoadMyRoadsVisible(),
+  driveRoadLayersPreparing: false
+});
+
+/* -------------------------------------------------- */
+/* My Roads button                                    */
+/* -------------------------------------------------- */
+
+function rd53LoadMyRoadsVisible() {
+  try {
+    const stored = localStorage.getItem(
+      RD53_MY_ROADS_VISIBLE_KEY
+    );
+
+    return stored === null
+      ? true
+      : stored === "true";
+  } catch (error) {
+    console.error(error);
+    return true;
+  }
+}
+
+function rd53SaveMyRoadsVisible() {
+  try {
+    localStorage.setItem(
+      RD53_MY_ROADS_VISIBLE_KEY,
+      String(state.myRoadsVisible)
+    );
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function rd53EnsureMyRoadsButton() {
+  let button = $("myRoadsBtn");
+
+  if (!button) {
+    const toolStack =
+      document.querySelector(".tool-stack");
+
+    if (!toolStack) return;
+
+    button = document.createElement("button");
+    button.id = "myRoadsBtn";
+    button.className =
+      "tool-btn my-roads-toggle-btn";
+    button.type = "button";
+
+    button.innerHTML = `
+      <svg
+        class="my-roads-toggle-icon"
+        viewBox="0 0 32 32"
+        aria-hidden="true"
+      >
+        <path
+          d="M5 25 C10 17 14 24 19 15 C22 10 25 9 28 6"
+        ></path>
+      </svg>
+    `;
+
+    const friendsButton = $("friendsBtn");
+
+    if (
+      friendsButton &&
+      friendsButton.parentElement === toolStack
+    ) {
+      toolStack.insertBefore(
+        button,
+        friendsButton
+      );
+    } else {
+      toolStack.appendChild(button);
+    }
+
+    button.addEventListener("click", () => {
+      if (rd53DriveRoadLayersActive()) {
+        return;
+      }
+
+      state.myRoadsVisible =
+        !state.myRoadsVisible;
+
+      rd53SaveMyRoadsVisible();
+      rd53ApplyRoadLayerVisibility();
+
+      showToast(
+        state.myRoadsVisible
+          ? "My orange roads shown"
+          : "My orange roads hidden"
+      );
+    });
+  }
+
+  els.myRoadsBtn = button;
+  rd53UpdateMyRoadsButton();
+}
+
+ensureLocateButton = function () {
+  roadDiscoveryV53.ensureLocateButton();
+  rd53EnsureMyRoadsButton();
+};
+
+function rd53UpdateMyRoadsButton() {
+  const button =
+    els.myRoadsBtn || $("myRoadsBtn");
+
+  if (!button) return;
+
+  const driveActive =
+    rd53DriveRoadLayersActive();
+
+  const visuallyOn =
+    driveActive || state.myRoadsVisible;
+
+  button.classList.toggle(
+    "active",
+    visuallyOn
+  );
+
+  button.classList.toggle(
+    "drive-active",
+    driveActive
+  );
+
+  button.disabled = driveActive;
+
+  button.setAttribute(
+    "aria-pressed",
+    String(visuallyOn)
+  );
+
+  button.setAttribute(
+    "aria-label",
+    driveActive
+      ? "My orange roads are shown during Drive Mode"
+      : visuallyOn
+        ? "Hide my orange roads"
+        : "Show my orange roads"
+  );
+
+  button.title = driveActive
+    ? "My Roads • shown during Drive"
+    : visuallyOn
+      ? "My Roads • visible"
+      : "My Roads • hidden";
+}
+
+/* -------------------------------------------------- */
+/* Road layer visibility                              */
+/* -------------------------------------------------- */
+
+function rd53DriveRoadLayersActive() {
+  return Boolean(
+    state.isRecording ||
+    state.driveRoadLayersPreparing
+  );
+}
+
+function rd53SetMapLayerVisible(
+  layer,
+  visible
+) {
+  if (!state.map || !layer) return;
+
+  const isVisible =
+    state.map.hasLayer(layer);
+
+  if (visible && !isVisible) {
+    layer.addTo(state.map);
+  } else if (!visible && isVisible) {
+    state.map.removeLayer(layer);
+  }
+}
+
+function rd53ApplyRoadLayerVisibility() {
+  if (!state.map) return;
+
+  const driveActive =
+    rd53DriveRoadLayersActive();
+
+  /*
+    Grey discovery chunks and the trip line
+    only appear during Drive Mode.
+  */
+  rd53SetMapLayerVisible(
+    state.roadsLayer,
+    driveActive
+  );
+
+  rd53SetMapLayerVisible(
+    state.tripLayer,
+    driveActive
+  );
+
+  /*
+    Saved orange roads are controlled
+    separately outside Drive Mode.
+  */
+  rd53SetMapLayerVisible(
+    state.savedLayer,
+    driveActive || state.myRoadsVisible
+  );
+
+  rd53ApplySavedRoadZoomStyle();
+  rd53UpdateMyRoadsButton();
+}
+
+/* -------------------------------------------------- */
+/* Saved orange road styling                          */
+/* -------------------------------------------------- */
+
+function rd53SavedRoadStyle() {
+  const zoom =
+    Number(state.map?.getZoom?.());
+
+  if (
+    !Number.isFinite(zoom) ||
+    zoom >= 14
+  ) {
+    return {
+      weight: 5,
+      opacity: 0.95
+    };
+  }
+
+  if (zoom >= 13) {
+    return {
+      weight: 3,
+      opacity: 0.8
+    };
+  }
+
+  if (zoom >= 12) {
+    return {
+      weight: 2,
+      opacity: 0.68
+    };
+  }
+
+  return {
+    weight: 1.25,
+    opacity: 0.52
+  };
+}
+
+function rd53ApplySavedRoadZoomStyle() {
+  if (!state.savedLayer) return;
+
+  const style = rd53SavedRoadStyle();
+
+  state.savedLayer.eachLayer((layer) => {
+    layer?.setStyle?.(style);
+  });
+}
+
+drawSavedSegment = function (segment) {
+  if (
+    !state.savedLayer ||
+    !segment ||
+    !segment.id ||
+    !validCoords(segment.coords) ||
+    state.savedDrawnIds.has(segment.id)
+  ) {
+    return;
+  }
+
+  const zoomStyle =
+    rd53SavedRoadStyle();
+
+  L.polyline(segment.coords, {
+    color: ROAD_ORANGE,
+    weight: zoomStyle.weight,
+    opacity: zoomStyle.opacity,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false
+  }).addTo(state.savedLayer);
+
+  state.savedDrawnIds.add(segment.id);
+};
+
+/* -------------------------------------------------- */
+/* Map startup and GPS preview                        */
+/* -------------------------------------------------- */
+
+initMap = function () {
+  roadDiscoveryV53.initMap();
+
+  if (!state.map) return;
+
+  state.map.on("zoomend", () => {
+    rd53ApplySavedRoadZoomStyle();
+  });
+
+  /*
+    Start with a clean map:
+    no grey discovery chunks.
+  */
+  rd53ApplyRoadLayerVisibility();
+};
+
+locateUser = async function (
+  options = {}
+) {
+  const allowDiscoveryLoad =
+    rd53DriveRoadLayersActive();
+
+  return roadDiscoveryV53.locateUser({
+    ...options,
+
+    loadRoads:
+      Boolean(options.loadRoads) &&
+      allowDiscoveryLoad
+  });
+};
+
+/* -------------------------------------------------- */
+/* Drive Mode                                         */
+/* -------------------------------------------------- */
+
+startDrive = async function () {
+  if (state.driveRoadLayersPreparing) {
+    showToast("Drive is already starting");
+    return;
+  }
+
+  if (state.isRecording) {
+    return roadDiscoveryV53.startDrive();
+  }
+
+  state.driveRoadLayersPreparing = true;
+  rd53ApplyRoadLayerVisibility();
+
+  try {
+    return await roadDiscoveryV53.startDrive();
+  } finally {
+    state.driveRoadLayersPreparing = false;
+    rd53ApplyRoadLayerVisibility();
+  }
+};
+
+finishDrive = function () {
+  const result =
+    roadDiscoveryV53.finishDrive();
+
+  state.driveRoadLayersPreparing = false;
+  rd53ApplyRoadLayerVisibility();
+
+  return result;
+};
