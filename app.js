@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v47
+/* Road Discovery AU v48
    Checkpoint 10: Hide & Seek Mode inside Multiplayer.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -9044,3 +9044,695 @@ clearHideSeekVisuals = function () {
 
 hs47EnsureNorthIndicator();
 hs47ImproveLocateButton();
+
+/* ================================================== */
+/* Road Discovery AU v48 hybrid direction extension  */
+/* Append this block once to the bottom of app.js v47 */
+/* ================================================== */
+
+const HS48_COMPASS_STORAGE_KEY =
+  "roadDiscoveryAU.compassPermission.v1";
+
+const HS48_COMPASS_MAX_AGE_MS = 2200;
+const HS48_GPS_HEADING_MAX_AGE_MS = 8000;
+const HS48_COMPASS_APPLY_MIN_MS = 160;
+const HS48_GPS_ENTER_SPEED_MPS = 3.0;
+const HS48_GPS_EXIT_SPEED_MPS = 1.7;
+
+/*
+  Correct the v47 case where null could be interpreted
+  as zero degrees instead of an unknown heading.
+*/
+const hs48V47NormaliseDegrees =
+  hs47NormaliseDegrees;
+
+hs47NormaliseDegrees = function (value) {
+  if (
+    value === null ||
+    value === undefined ||
+    (
+      typeof value === "string" &&
+      value.trim() === ""
+    )
+  ) {
+    return null;
+  }
+
+  return hs48V47NormaliseDegrees(value);
+};
+
+const hideSeekV48 = {
+  updateUserMarker,
+  renderHideSeekState,
+  setWaypoint,
+  clearWaypoint,
+  startDrive,
+  finishDrive
+};
+
+Object.assign(state, {
+  compassPermission: "unknown",
+  compassPermissionRequesting: false,
+  compassListenerActive: false,
+  compassEventName: null,
+  compassHeadingDegrees: null,
+  compassHeadingUpdatedAt: 0,
+  compassLastAppliedAt: 0,
+
+  hybridHeadingSource: "gps",
+  hybridGpsHeadingDegrees: null,
+  hybridGpsHeadingUpdatedAt: 0,
+  hybridSpeedMps: null,
+  hybridPreviousPoint: null
+});
+
+function hs48StoredCompassPermission() {
+  try {
+    return (
+      localStorage.getItem(
+        HS48_COMPASS_STORAGE_KEY
+      ) === "granted"
+    );
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
+
+function hs48RememberCompassPermission(
+  granted
+) {
+  try {
+    if (granted) {
+      localStorage.setItem(
+        HS48_COMPASS_STORAGE_KEY,
+        "granted"
+      );
+    } else {
+      localStorage.removeItem(
+        HS48_COMPASS_STORAGE_KEY
+      );
+    }
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function hs48OrientationAvailable() {
+  return (
+    typeof window.DeviceOrientationEvent !==
+    "undefined"
+  );
+}
+
+function hs48NavigationIsActive() {
+  return hs47NavigationIsActive();
+}
+
+function hs48ScreenAngle() {
+  const modernAngle = Number(
+    window.screen?.orientation?.angle
+  );
+
+  if (Number.isFinite(modernAngle)) {
+    return modernAngle;
+  }
+
+  const legacyAngle = Number(
+    window.orientation
+  );
+
+  return Number.isFinite(legacyAngle)
+    ? legacyAngle
+    : 0;
+}
+
+function hs48CompassHeadingFromEvent(
+  event
+) {
+  const iosHeading = Number(
+    event?.webkitCompassHeading
+  );
+
+  const iosAccuracy = Number(
+    event?.webkitCompassAccuracy
+  );
+
+  let heading = null;
+
+  /*
+    iPhone Safari supplies webkitCompassHeading.
+  */
+  if (Number.isFinite(iosHeading)) {
+    /*
+      Ignore very poorly calibrated compass readings.
+    */
+    if (
+      Number.isFinite(iosAccuracy) &&
+      iosAccuracy > 45
+    ) {
+      return null;
+    }
+
+    heading = iosHeading;
+  } else {
+    /*
+      Other supported browsers can supply an absolute
+      alpha orientation instead.
+    */
+    const alpha = Number(event?.alpha);
+
+    if (
+      !event?.absolute ||
+      !Number.isFinite(alpha)
+    ) {
+      return null;
+    }
+
+    heading = 360 - alpha;
+  }
+
+  return hs47NormaliseDegrees(
+    heading + hs48ScreenAngle()
+  );
+}
+
+function hs48SmoothCompassHeading(
+  nextHeading
+) {
+  const current = hs47NormaliseDegrees(
+    state.compassHeadingDegrees
+  );
+
+  if (current === null) {
+    return nextHeading;
+  }
+
+  const turn = hs47ShortestBearingTurn(
+    current,
+    nextHeading
+  );
+
+  const smoothing =
+    Math.abs(turn) >= 100
+      ? 0.55
+      : 0.34;
+
+  return hs47NormaliseDegrees(
+    current + turn * smoothing
+  );
+}
+
+function hs48OnDeviceOrientation(event) {
+  const rawHeading =
+    hs48CompassHeadingFromEvent(event);
+
+  if (rawHeading === null) {
+    return;
+  }
+
+  const now = Date.now();
+
+  state.compassPermission = "granted";
+
+  state.compassHeadingDegrees =
+    hs48SmoothCompassHeading(rawHeading);
+
+  state.compassHeadingUpdatedAt = now;
+
+  /*
+    Limit how often compass readings rotate the map.
+  */
+  if (
+    now - state.compassLastAppliedAt <
+    HS48_COMPASS_APPLY_MIN_MS
+  ) {
+    return;
+  }
+
+  state.compassLastAppliedAt = now;
+
+  hs48ApplySelectedHeading();
+}
+
+function hs48AddCompassListener() {
+  if (
+    state.compassListenerActive ||
+    !hs48OrientationAvailable()
+  ) {
+    return;
+  }
+
+  /*
+    Prefer absolute orientation when a browser offers
+    it. iPhone Safari uses deviceorientation.
+  */
+  state.compassEventName =
+    "ondeviceorientationabsolute" in window
+      ? "deviceorientationabsolute"
+      : "deviceorientation";
+
+  window.addEventListener(
+    state.compassEventName,
+    hs48OnDeviceOrientation,
+    true
+  );
+
+  state.compassListenerActive = true;
+}
+
+function hs48RemoveCompassListener() {
+  if (!state.compassListenerActive) {
+    return;
+  }
+
+  window.removeEventListener(
+    state.compassEventName ||
+      "deviceorientation",
+    hs48OnDeviceOrientation,
+    true
+  );
+
+  state.compassListenerActive = false;
+  state.compassEventName = null;
+}
+
+function hs48RefreshCompassListener() {
+  const permissionReady = [
+    "granted",
+    "remembered",
+    "not-required"
+  ].includes(state.compassPermission);
+
+  /*
+    Only run the sensor during navigation and while
+    the PWA is visible.
+  */
+  const shouldListen =
+    permissionReady &&
+    hs48NavigationIsActive() &&
+    document.visibilityState !== "hidden";
+
+  if (shouldListen) {
+    hs48AddCompassListener();
+  } else {
+    hs48RemoveCompassListener();
+  }
+}
+
+async function hs48RequestCompassPermission() {
+  if (
+    state.compassPermissionRequesting ||
+    state.compassPermission === "granted" ||
+    state.compassPermission ===
+      "not-required"
+  ) {
+    hs48RefreshCompassListener();
+    return;
+  }
+
+  const OrientationEvent =
+    window.DeviceOrientationEvent;
+
+  if (!OrientationEvent) {
+    state.compassPermission =
+      "unavailable";
+
+    return;
+  }
+
+  state.compassPermissionRequesting =
+    true;
+
+  try {
+    if (
+      typeof OrientationEvent
+        .requestPermission === "function"
+    ) {
+      /*
+        This begins synchronously inside the user's
+        tap on the re-centre button.
+      */
+      const permissionPromise =
+        OrientationEvent.requestPermission();
+
+      const permission =
+        await permissionPromise;
+
+      if (permission !== "granted") {
+        state.compassPermission = "denied";
+
+        hs48RememberCompassPermission(
+          false
+        );
+
+        hs48RefreshCompassListener();
+
+        showToast(
+          "Using GPS direction"
+        );
+
+        return;
+      }
+    }
+
+    state.compassPermission =
+      typeof OrientationEvent
+        .requestPermission === "function"
+        ? "granted"
+        : "not-required";
+
+    hs48RememberCompassPermission(true);
+    hs48RefreshCompassListener();
+
+    showToast(
+      "Instant direction enabled"
+    );
+  } catch (error) {
+    console.error(error);
+
+    state.compassPermission = "denied";
+
+    hs48RememberCompassPermission(false);
+    hs48RefreshCompassListener();
+
+    showToast(
+      "Using GPS direction"
+    );
+  } finally {
+    state.compassPermissionRequesting =
+      false;
+  }
+}
+
+function hs48UpdateGpsCourse(point) {
+  const now = Date.now();
+
+  const timestamp =
+    Number(point?.timestamp) || now;
+
+  const accuracy = Number(
+    point?.accuracy
+  );
+
+  const clean =
+    Number.isFinite(accuracy) &&
+    accuracy <= MAX_GPS_ACCURACY_M;
+
+  /*
+    Weak GPS readings cannot influence the hybrid
+    heading calculation.
+  */
+  if (!clean) {
+    return;
+  }
+
+  const previous =
+    state.hybridPreviousPoint;
+
+  let gpsHeading =
+    hs47NormaliseDegrees(
+      point?.heading
+    );
+
+  let measuredSpeed = Number(
+    point?.speed
+  );
+
+  if (
+    !Number.isFinite(measuredSpeed) ||
+    measuredSpeed < 0
+  ) {
+    measuredSpeed = null;
+  }
+
+  if (previous) {
+    const elapsedSeconds = Math.max(
+      0,
+      (
+        timestamp -
+        previous.timestamp
+      ) / 1000
+    );
+
+    if (
+      elapsedSeconds >= 0.4 &&
+      elapsedSeconds <= 12
+    ) {
+      const movement = haversine(
+        previous,
+        point
+      );
+
+      /*
+        Calculate speed if the browser did not
+        supply it.
+      */
+      if (measuredSpeed === null) {
+        measuredSpeed =
+          movement / elapsedSeconds;
+      }
+
+      /*
+        Calculate course from movement if the browser
+        did not provide GPS heading.
+      */
+      if (
+        gpsHeading === null &&
+        movement >= 4
+      ) {
+        gpsHeading =
+          hs47BearingDegrees(
+            previous,
+            point
+          );
+      }
+    }
+  }
+
+  if (gpsHeading !== null) {
+    state.hybridGpsHeadingDegrees =
+      gpsHeading;
+
+    state.hybridGpsHeadingUpdatedAt =
+      now;
+  }
+
+  if (measuredSpeed !== null) {
+    if (
+      state.hybridSpeedMps === null
+    ) {
+      state.hybridSpeedMps =
+        measuredSpeed;
+    } else {
+      /*
+        Smooth speed to stop the source rapidly
+        switching around the threshold.
+      */
+      state.hybridSpeedMps =
+        state.hybridSpeedMps * 0.58 +
+        measuredSpeed * 0.42;
+    }
+  }
+
+  state.hybridPreviousPoint = {
+    lat: Number(point.lat),
+    lng: Number(point.lng),
+    timestamp
+  };
+}
+
+function hs48SelectedHeading() {
+  const now = Date.now();
+
+  const compassFresh =
+    hs47NormaliseDegrees(
+      state.compassHeadingDegrees
+    ) !== null &&
+    now -
+      state.compassHeadingUpdatedAt <=
+      HS48_COMPASS_MAX_AGE_MS;
+
+  const gpsFresh =
+    hs47NormaliseDegrees(
+      state.hybridGpsHeadingDegrees
+    ) !== null &&
+    now -
+      state.hybridGpsHeadingUpdatedAt <=
+      HS48_GPS_HEADING_MAX_AGE_MS;
+
+  const speed = Number(
+    state.hybridSpeedMps
+  );
+
+  const speedKnown =
+    Number.isFinite(speed) &&
+    speed >= 0;
+
+  /*
+    If currently using GPS, stay on GPS until
+    speed drops below roughly 6 km/h.
+  */
+  if (
+    state.hybridHeadingSource === "gps"
+  ) {
+    if (
+      compassFresh &&
+      (
+        !speedKnown ||
+        speed <=
+          HS48_GPS_EXIT_SPEED_MPS
+      )
+    ) {
+      state.hybridHeadingSource =
+        "compass";
+    }
+  } else if (
+    /*
+      If currently using the compass, wait until
+      roughly 11 km/h before switching to GPS.
+    */
+    gpsFresh &&
+    speedKnown &&
+    speed >= HS48_GPS_ENTER_SPEED_MPS
+  ) {
+    state.hybridHeadingSource = "gps";
+  }
+
+  if (
+    state.hybridHeadingSource ===
+      "compass" &&
+    compassFresh
+  ) {
+    return state.compassHeadingDegrees;
+  }
+
+  if (gpsFresh) {
+    state.hybridHeadingSource = "gps";
+    return state.hybridGpsHeadingDegrees;
+  }
+
+  if (compassFresh) {
+    state.hybridHeadingSource =
+      "compass";
+
+    return state.compassHeadingDegrees;
+  }
+
+  return hs47NormaliseDegrees(
+    state.userHeadingDegrees
+  );
+}
+
+function hs48ApplySelectedHeading() {
+  if (!hs48NavigationIsActive()) {
+    return;
+  }
+
+  const selectedHeading =
+    hs48SelectedHeading();
+
+  if (selectedHeading === null) {
+    return;
+  }
+
+  state.userHeadingDegrees =
+    selectedHeading;
+
+  if (state.currentPoint) {
+    hs47DrawHeadingMarker(
+      state.currentPoint
+    );
+
+    hs47ApplyHeadingView(
+      state.currentPoint
+    );
+  }
+}
+
+/* -------------------------------------------------- */
+/* Wrap the existing v47 navigation safely            */
+/* -------------------------------------------------- */
+
+updateUserMarker = function (point) {
+  hideSeekV48.updateUserMarker(point);
+
+  hs48UpdateGpsCourse(point);
+  hs48RefreshCompassListener();
+  hs48ApplySelectedHeading();
+};
+
+renderHideSeekState = function () {
+  hideSeekV48.renderHideSeekState();
+  hs48RefreshCompassListener();
+};
+
+setWaypoint = async function (point) {
+  const result =
+    await hideSeekV48.setWaypoint(point);
+
+  hs48RefreshCompassListener();
+  hs48ApplySelectedHeading();
+
+  return result;
+};
+
+clearWaypoint = function (
+  showMessage = true
+) {
+  const result =
+    hideSeekV48.clearWaypoint(
+      showMessage
+    );
+
+  hs48RefreshCompassListener();
+
+  return result;
+};
+
+startDrive = async function () {
+  const result =
+    await hideSeekV48.startDrive();
+
+  hs48RefreshCompassListener();
+  hs48ApplySelectedHeading();
+
+  return result;
+};
+
+finishDrive = function () {
+  const result =
+    hideSeekV48.finishDrive();
+
+  hs48RefreshCompassListener();
+
+  return result;
+};
+
+/* -------------------------------------------------- */
+/* Permission and visibility events                   */
+/* -------------------------------------------------- */
+
+const hs48LocateButton =
+  $("locateBtn");
+
+hs48LocateButton?.addEventListener(
+  "click",
+  () => {
+    void hs48RequestCompassPermission();
+  }
+);
+
+document.addEventListener(
+  "visibilitychange",
+  () => {
+    hs48RefreshCompassListener();
+  }
+);
+
+if (hs48StoredCompassPermission()) {
+  state.compassPermission =
+    "remembered";
+}
+
+hs48RefreshCompassListener();
