@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v53 service worker
+  Road Discovery AU v54 service worker
 
   Checkpoint 10:
-  Unified navigation marker with shortest-turn arrow animation.
+  Clean non-driving map with a saved orange-road visibility toggle.
 
   Expected frontend versions:
-  - app.js?v=52
-  - style.css?v=42
+  - app.js?v=53
+  - style.css?v=43
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v53";
+const CACHE_NAME = "road-discovery-au-v54";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,6 +24,8 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=43",
+  "./app.js?v=53",
   "./style.css?v=42",
   "./app.js?v=52",
   "./app.js?v=51",
@@ -150,6 +152,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/style.css")) {
           return (
+            (await caches.match("./style.css?v=43")) ||
             (await caches.match("./style.css?v=42")) ||
             (await caches.match("./style.css?v=41")) ||
             (await caches.match("./style.css?v=40")) ||
@@ -163,6 +166,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=53")) ||
             (await caches.match("./app.js?v=52")) ||
             (await caches.match("./app.js?v=51")) ||
             (await caches.match("./app.js?v=50")) ||
