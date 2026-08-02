@@ -1,4 +1,4 @@
-/* Road Discovery AU v39 stylesheet
+/* Road Discovery AU v40 stylesheet
    Checkpoint 10: Hide & Seek role reveal and signals
 */
 
@@ -2832,5 +2832,213 @@ button:disabled.add-friend-main-btn {
   .hide-seek-map-signal-status.incoming,
   .hide-seek-role-reveal-card {
     animation: none;
+  }
+}
+
+
+/* ================================================== */
+/* v40 north-up navigation, heading and map pings     */
+/* ================================================== */
+
+.map-north-indicator {
+  appearance: none;
+  position: absolute;
+  z-index: 1070;
+  left: calc(12px + var(--safe-left));
+  bottom: calc(82px + var(--safe-bottom));
+  width: 42px;
+  height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  background: rgba(5, 7, 10, 0.82);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-soft);
+  color: #eef7ff;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+}
+
+.map-north-indicator.heading-up {
+  border-color: rgba(75, 179, 255, 0.55);
+  box-shadow:
+    var(--shadow-soft),
+    0 0 18px rgba(75, 179, 255, 0.18);
+}
+
+.map-north-arrow {
+  display: block;
+  color: #ff8a18;
+  font-size: 14px;
+  line-height: 1;
+  transform-origin: 50% 50%;
+  transition: transform 0.22s linear;
+  filter:
+    drop-shadow(
+      0 0 5px rgba(255, 138, 24, 0.45)
+    );
+}
+
+.map-north-indicator strong {
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0.05em;
+}
+
+/* -------------------------------------------------- */
+/* User heading arrow                                 */
+/* -------------------------------------------------- */
+
+.road-user-heading-icon {
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.road-user-heading-rotator {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform:
+    rotate(var(--road-heading, 0deg));
+  transform-origin: 50% 50%;
+  transition: transform 0.22s linear;
+}
+
+.road-user-heading-arrow {
+  position: absolute;
+  top: 0;
+  left: 17px;
+  width: 10px;
+  height: 15px;
+  display: block;
+  background:
+    var(--road-heading-colour, #4bb3ff);
+  clip-path:
+    polygon(
+      50% 0,
+      100% 100%,
+      50% 76%,
+      0 100%
+    );
+  filter:
+    drop-shadow(0 0 1px #eef7ff)
+    drop-shadow(
+      0 0 5px rgba(75, 179, 255, 0.7)
+    );
+}
+
+/* -------------------------------------------------- */
+/* Three-second sheep map ping                        */
+/* -------------------------------------------------- */
+
+.hide-seek-radar-ping-icon {
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.hide-seek-radar-ping {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.hide-seek-radar-ping::before,
+.hide-seek-radar-ping::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  border:
+    3px solid rgba(255, 184, 78, 0.95);
+  border-radius: 50%;
+  opacity: 0;
+  transform:
+    translate(-50%, -50%) scale(0.35);
+  animation:
+    hide-seek-map-ping
+    1s
+    ease-out
+    infinite;
+  box-shadow:
+    0 0 10px rgba(255, 138, 24, 0.45);
+}
+
+.hide-seek-radar-ping::after {
+  animation-delay: 0.5s;
+}
+
+.hide-seek-radar-ping-dot {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  border: 3px solid #eef7ff;
+  border-radius: 50%;
+  background: #4bb3ff;
+  box-shadow:
+    0 0 0 3px rgba(75, 179, 255, 0.2),
+    0 0 16px rgba(75, 179, 255, 0.95);
+  transform: translate(-50%, -50%);
+}
+
+@keyframes hide-seek-map-ping {
+  0% {
+    opacity: 0.95;
+    transform:
+      translate(-50%, -50%) scale(0.35);
+  }
+
+  100% {
+    opacity: 0;
+    transform:
+      translate(-50%, -50%) scale(2.7);
+  }
+}
+
+@media (max-height: 540px) {
+  .map-north-indicator {
+    bottom:
+      calc(70px + var(--safe-bottom));
+    width: 38px;
+    height: 44px;
+    border-radius: 14px;
+  }
+}
+
+@media (min-width: 760px) {
+  .map-north-indicator {
+    left:
+      calc(18px + var(--safe-left));
+    bottom:
+      calc(18px + var(--safe-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-north-arrow,
+  .road-user-heading-rotator {
+    transition: none;
+  }
+
+  .hide-seek-radar-ping::before,
+  .hide-seek-radar-ping::after {
+    opacity: 0.5;
+    animation: none;
+    transform:
+      translate(-50%, -50%) scale(2.1);
   }
 }
