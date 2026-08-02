@@ -11627,3 +11627,145 @@ hs47UpdateNorthIndicator = function () {
     );
   }
 };
+
+/* ================================================== */
+/* Road Discovery AU v56 gesture road-layer guard    */
+/* Append this block once to the bottom of app.js v55 */
+/* ================================================== */
+
+const roadDiscoveryV56 = {
+  touchStart: rd55HandleTouchStart,
+  finishTouch: rd55FinishTouchGesture
+};
+
+Object.assign(state, {
+  rd56RoadOverlaysHidden: false,
+  rd56RestoreFrameOne: null,
+  rd56RestoreFrameTwo: null
+});
+
+function rd56EnsureGestureRoadStyle() {
+  if ($("rd56GestureRoadStyle")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd56GestureRoadStyle";
+  style.textContent = `
+    .rd56-road-gesture-active
+      .leaflet-overlay-pane canvas {
+      visibility: hidden !important;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function rd56CancelRestoreFrames() {
+  if (state.rd56RestoreFrameOne !== null) {
+    window.cancelAnimationFrame(
+      state.rd56RestoreFrameOne
+    );
+
+    state.rd56RestoreFrameOne = null;
+  }
+
+  if (state.rd56RestoreFrameTwo !== null) {
+    window.cancelAnimationFrame(
+      state.rd56RestoreFrameTwo
+    );
+
+    state.rd56RestoreFrameTwo = null;
+  }
+}
+
+function rd56HideRoadOverlaysForGesture() {
+  const mapContainer = state.map?.getContainer?.();
+
+  if (!mapContainer) return;
+
+  rd56EnsureGestureRoadStyle();
+  rd56CancelRestoreFrames();
+
+  state.rd56RoadOverlaysHidden = true;
+
+  mapContainer.classList.add(
+    "rd56-road-gesture-active"
+  );
+}
+
+function rd56RestoreRoadOverlaysAfterGesture() {
+  const mapContainer = state.map?.getContainer?.();
+
+  if (!mapContainer) {
+    state.rd56RoadOverlaysHidden = false;
+    return;
+  }
+
+  rd56CancelRestoreFrames();
+
+  /*
+    Leaflet finalises its Canvas position after the touch gesture.
+    Keep the road Canvas hidden for two render frames so it is only
+    revealed after that final calculation has completed.
+  */
+  state.rd56RestoreFrameOne =
+    window.requestAnimationFrame(() => {
+      state.rd56RestoreFrameOne = null;
+
+      hs49ScheduleNavigationRedraw();
+
+      state.rd56RestoreFrameTwo =
+        window.requestAnimationFrame(() => {
+          state.rd56RestoreFrameTwo = null;
+          state.rd56RoadOverlaysHidden = false;
+
+          mapContainer.classList.remove(
+            "rd56-road-gesture-active"
+          );
+        });
+    });
+}
+
+rd55HandleTouchStart = function (event) {
+  roadDiscoveryV56.touchStart(event);
+
+  if (state.rd55TouchGestureActive) {
+    rd56HideRoadOverlaysForGesture();
+  }
+};
+
+rd55FinishTouchGesture = function () {
+  const gestureWasActive =
+    state.rd55TouchGestureActive;
+
+  roadDiscoveryV56.finishTouch();
+
+  if (gestureWasActive) {
+    rd56RestoreRoadOverlaysAfterGesture();
+  }
+};
+
+document.addEventListener("visibilitychange", () => {
+  if (
+    document.visibilityState === "hidden" &&
+    state.rd56RoadOverlaysHidden
+  ) {
+    rd56CancelRestoreFrames();
+
+    state.rd56RoadOverlaysHidden = false;
+    state.rd55TouchGestureActive = false;
+    state.mapHeadingMode =
+      state.rd55PreviousHeadingMode;
+    state.followUser =
+      state.rd55PreviousFollowUser;
+
+    state.map
+      ?.getContainer?.()
+      ?.classList.remove(
+        "rd56-road-gesture-active"
+      );
+
+    hs47UpdateNorthIndicator();
+  }
+});
+
+rd56EnsureGestureRoadStyle();
