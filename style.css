@@ -1,4 +1,4 @@
-/* Road Discovery AU v40 stylesheet
+/* Road Discovery AU v41 stylesheet
    Checkpoint 10: Hide & Seek role reveal and signals
 */
 
@@ -3040,5 +3040,32 @@ button:disabled.add-friend-main-btn {
     animation: none;
     transform:
       translate(-50%, -50%) scale(2.1);
+  }
+}
+
+/* ================================================== */
+/* v41 bottom-left navigation controls                */
+/* ================================================== */
+
+#locateBtn {
+  position: fixed;
+  z-index: 1110;
+  top: auto;
+  right: auto;
+  bottom: calc(85px + var(--safe-bottom));
+  left: calc(62px + var(--safe-left));
+}
+
+@media (max-height: 540px) {
+  #locateBtn {
+    bottom: calc(69px + var(--safe-bottom));
+    left: calc(58px + var(--safe-left));
+  }
+}
+
+@media (min-width: 760px) {
+  #locateBtn {
+    bottom: calc(21px + var(--safe-bottom));
+    left: calc(68px + var(--safe-left));
   }
 }
