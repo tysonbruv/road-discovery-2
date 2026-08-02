@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v46
+/* Road Discovery AU v47
    Checkpoint 10: Hide & Seek Mode inside Multiplayer.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -8414,3 +8414,633 @@ applyHideSeekOwnMarkerStyle = function () {
     fillColor: colour
   });
 };
+
+/* ================================================== */
+/* Road Discovery AU v47 navigation + map pings       */
+/* Append this block once to the bottom of app.js v46 */
+/* ================================================== */
+
+const hideSeekV47 = {
+  initMap,
+  renderState: renderHideSeekState,
+  clearVisuals: clearHideSeekVisuals,
+  updateUserMarker,
+  applyOwnMarkerStyle: applyHideSeekOwnMarkerStyle,
+  signalStatusText: hs46SignalStatusText
+};
+
+Object.assign(state.hideSeek, {
+  signalPingMarkers: [],
+  signalPingKey: ""
+});
+
+Object.assign(state, {
+  userHeadingMarker: null,
+  userHeadingDegrees: null,
+  userHeadingPreviousPoint: null,
+  mapHeadingMode: "heading",
+  mapBearingAnimationFrame: null
+});
+
+initMap = function () {
+  if (!window.L) {
+    hideSeekV47.initMap();
+    return;
+  }
+
+  const normalMapFactory = L.map;
+  const rotationAvailable = Boolean(
+    L?.Map?.prototype?.setBearing
+  );
+
+  if (rotationAvailable) {
+    L.map = function (target, options = {}) {
+      return normalMapFactory(target, {
+        ...options,
+        rotate: true,
+        bearing: 0,
+        rotateControl: false,
+        touchRotate: false,
+        shiftKeyRotate: false,
+        zoomAnimation: false
+      });
+    };
+  }
+
+  try {
+    hideSeekV47.initMap();
+  } finally {
+    L.map = normalMapFactory;
+  }
+
+  if (state.map && rotationAvailable) {
+    state.map.on("rotate", () => {
+      hs47UpdateNorthIndicator();
+      hs47StyleHeadingMarker();
+    });
+
+    state.map.on("dragstart", () => {
+      window.setTimeout(hs47UpdateNorthIndicator, 0);
+    });
+  }
+
+  hs47UpdateNorthIndicator();
+};
+
+function hs47EnsureNorthIndicator() {
+  if ($("mapNorthIndicator")) return;
+
+  const appShell = $("appShell");
+
+  if (!appShell) return;
+
+  const indicator = document.createElement("button");
+  indicator.id = "mapNorthIndicator";
+  indicator.className = "map-north-indicator";
+  indicator.type = "button";
+  indicator.setAttribute("aria-label", "Return map to north-up");
+  indicator.title = "Return to north-up";
+  indicator.innerHTML = `
+    <span class="map-north-arrow" aria-hidden="true">▲</span>
+    <strong>N</strong>
+  `;
+
+  indicator.addEventListener("click", () => {
+    state.mapHeadingMode = "north";
+    hs47SetMapBearing(0);
+    hs47UpdateNorthIndicator();
+  });
+
+  appShell.appendChild(indicator);
+}
+
+function hs47ImproveLocateButton() {
+  const button = $("locateBtn");
+
+  if (!button) return;
+
+  button.title = "Centre on me • Follow my heading";
+  button.setAttribute(
+    "aria-label",
+    "Centre map on my location and follow my heading."
+  );
+
+  button.addEventListener("click", () => {
+    state.followUser = true;
+    state.mapHeadingMode = "heading";
+
+    if (state.currentPoint) {
+      hs47ApplyHeadingView(state.currentPoint);
+    }
+
+    hs47UpdateNorthIndicator();
+  });
+}
+
+function hs47NormaliseDegrees(value) {
+  const degrees = Number(value);
+
+  if (!Number.isFinite(degrees)) return null;
+
+  return ((degrees % 360) + 360) % 360;
+}
+
+function hs47BearingDegrees(from, to) {
+  const fromLat = toRad(from.lat);
+  const toLat = toRad(to.lat);
+  const longitudeDelta = toRad(to.lng - from.lng);
+
+  const y = Math.sin(longitudeDelta) * Math.cos(toLat);
+  const x =
+    Math.cos(fromLat) * Math.sin(toLat) -
+    Math.sin(fromLat) *
+      Math.cos(toLat) *
+      Math.cos(longitudeDelta);
+
+  return hs47NormaliseDegrees(
+    Math.atan2(y, x) * (180 / Math.PI)
+  );
+}
+
+function hs47ShortestBearingTurn(from, to) {
+  return ((to - from + 540) % 360) - 180;
+}
+
+function hs47MapBearing() {
+  if (!state.map || typeof state.map.getBearing !== "function") {
+    return 0;
+  }
+
+  return hs47NormaliseDegrees(state.map.getBearing()) || 0;
+}
+
+function hs47CancelBearingAnimation() {
+  if (state.mapBearingAnimationFrame !== null) {
+    window.cancelAnimationFrame(state.mapBearingAnimationFrame);
+    state.mapBearingAnimationFrame = null;
+  }
+}
+
+function hs47SetMapBearing(targetValue, options = {}) {
+  if (!state.map || typeof state.map.setBearing !== "function") {
+    hs47UpdateNorthIndicator();
+    hs47StyleHeadingMarker();
+    return;
+  }
+
+  const { animate = true } = options;
+  const target = hs47NormaliseDegrees(targetValue) || 0;
+  const start = hs47MapBearing();
+  const turn = hs47ShortestBearingTurn(start, target);
+
+  hs47CancelBearingAnimation();
+
+  if (Math.abs(turn) < 0.5) {
+    state.map.setBearing(target);
+    return;
+  }
+
+  const reduceMotion = window.matchMedia?.(
+    "(prefers-reduced-motion: reduce)"
+  )?.matches;
+
+  if (!animate || reduceMotion || !window.requestAnimationFrame) {
+    state.map.setBearing(target);
+    return;
+  }
+
+  const startedAt = performance.now();
+  const durationMs = 260;
+
+  const animateBearing = (now) => {
+    if (
+      !state.map ||
+      (state.mapHeadingMode === "north" && target !== 0)
+    ) {
+      state.mapBearingAnimationFrame = null;
+      return;
+    }
+
+    const progress = Math.min(
+      1,
+      (now - startedAt) / durationMs
+    );
+
+    const eased = 1 - (1 - progress) ** 3;
+
+    state.map.setBearing(
+      hs47NormaliseDegrees(start + turn * eased) || 0
+    );
+
+    if (progress < 1) {
+      state.mapBearingAnimationFrame =
+        window.requestAnimationFrame(animateBearing);
+    } else {
+      state.mapBearingAnimationFrame = null;
+    }
+  };
+
+  state.mapBearingAnimationFrame =
+    window.requestAnimationFrame(animateBearing);
+}
+
+function hs47NavigationIsActive() {
+  return Boolean(
+    state.isRecording ||
+    state.waypointPoint ||
+    hasActiveHideSeekRound()
+  );
+}
+
+function hs47ApplyHeadingView(point) {
+  const heading = hs47NormaliseDegrees(
+    state.userHeadingDegrees
+  );
+
+  if (
+    heading === null ||
+    !state.followUser ||
+    state.mapHeadingMode !== "heading" ||
+    !hs47NavigationIsActive()
+  ) {
+    hs47StyleHeadingMarker();
+    return;
+  }
+
+  /*
+    Rotate the map underneath the marker so the rider's
+    direction of travel points toward the top of the screen.
+  */
+  hs47SetMapBearing(-heading);
+
+  /*
+    Hide & Seek Multiplayer GPS has its own location watch.
+    This makes it follow the sheep even if Start Drive is off.
+  */
+  if (
+    hasActiveHideSeekRound() &&
+    !state.isRecording &&
+    state.map
+  ) {
+    state.map.panTo([point.lat, point.lng], {
+      animate: true,
+      duration: 0.3
+    });
+  }
+}
+
+function hs47UpdateNorthIndicator() {
+  const indicator = $("mapNorthIndicator");
+
+  if (!indicator) return;
+
+  const arrow = indicator.querySelector(
+    ".map-north-arrow"
+  );
+
+  const bearing = hs47MapBearing();
+
+  const headingMode =
+    state.mapHeadingMode === "heading" &&
+    state.followUser;
+
+  if (arrow) {
+    arrow.style.transform = `rotate(${bearing}deg)`;
+  }
+
+  indicator.classList.toggle(
+    "heading-up",
+    headingMode
+  );
+
+  indicator.classList.toggle(
+    "north-up",
+    Math.abs(
+      hs47ShortestBearingTurn(bearing, 0)
+    ) < 0.5
+  );
+
+  indicator.title = headingMode
+    ? "Heading-up • Tap for north-up"
+    : "North-up • Tap My Location for heading-up";
+}
+
+function hs47UpdateHeading(point) {
+  let heading = hs47NormaliseDegrees(
+    point?.heading
+  );
+
+  const previous =
+    state.userHeadingPreviousPoint;
+
+  const hasCleanPoint =
+    Number(point?.accuracy) <=
+    MAX_GPS_ACCURACY_M;
+
+  /*
+    Some devices do not provide coords.heading.
+    When that happens, derive the direction after
+    at least five metres of clean GPS movement.
+  */
+  if (
+    heading === null &&
+    previous &&
+    hasCleanPoint
+  ) {
+    const movement = haversine(previous, point);
+
+    if (movement >= 5) {
+      heading = hs47BearingDegrees(
+        previous,
+        point
+      );
+    }
+  }
+
+  if (heading !== null) {
+    state.userHeadingDegrees = heading;
+  }
+
+  if (hasCleanPoint) {
+    state.userHeadingPreviousPoint = {
+      lat: Number(point.lat),
+      lng: Number(point.lng)
+    };
+  }
+}
+
+function hs47OwnMarkerColour() {
+  if (
+    hasActiveHideSeekRound() &&
+    state.hideSeek.phase === "starting"
+  ) {
+    return HIDE_SEEK_OUT_COLOUR;
+  }
+
+  if (
+    hasActiveHideSeekRound() &&
+    state.hideSeek.viewerRole === "wolf"
+  ) {
+    return HIDE_SEEK_WOLF_COLOUR;
+  }
+
+  return HIDE_SEEK_SHEEP_COLOUR;
+}
+
+function hs47DrawHeadingMarker(point) {
+  if (!state.map) return;
+
+  const heading = hs47NormaliseDegrees(
+    state.userHeadingDegrees
+  );
+
+  if (heading === null) {
+    if (state.userHeadingMarker) {
+      state.userHeadingMarker.setOpacity(0);
+    }
+
+    return;
+  }
+
+  const latlng = [point.lat, point.lng];
+
+  if (!state.userHeadingMarker) {
+    const icon = L.divIcon({
+      className: "road-user-heading-icon",
+      html: `
+        <span
+          class="road-user-heading-rotator"
+          aria-hidden="true"
+        >
+          <span
+            class="road-user-heading-arrow"
+          ></span>
+        </span>
+      `,
+      iconSize: [44, 44],
+      iconAnchor: [22, 22]
+    });
+
+    state.userHeadingMarker = L.marker(
+      latlng,
+      {
+        icon,
+        pane: "userLocationPane",
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 20
+      }
+    ).addTo(state.map);
+  } else {
+    state.userHeadingMarker.setLatLng(latlng);
+    state.userHeadingMarker.setOpacity(1);
+  }
+
+  hs47StyleHeadingMarker();
+}
+
+function hs47StyleHeadingMarker() {
+  const element =
+    state.userHeadingMarker?.getElement?.();
+
+  if (!element) return;
+
+  /*
+    Counter the map bearing so the arrow always shows
+    the rider's real direction on the screen.
+  */
+  const screenHeading =
+    hs47NormaliseDegrees(
+      (state.userHeadingDegrees || 0) +
+      hs47MapBearing()
+    ) || 0;
+
+  element.style.setProperty(
+    "--road-heading",
+    `${screenHeading}deg`
+  );
+
+  element.style.setProperty(
+    "--road-heading-colour",
+    hs47OwnMarkerColour()
+  );
+}
+
+updateUserMarker = function (point) {
+  hideSeekV47.updateUserMarker(point);
+
+  hs47UpdateHeading(point);
+  hs47DrawHeadingMarker(point);
+  hs47ApplyHeadingView(point);
+};
+
+applyHideSeekOwnMarkerStyle = function () {
+  hideSeekV47.applyOwnMarkerStyle();
+  hs47StyleHeadingMarker();
+};
+
+/* -------------------------------------------------- */
+/* Exact three-second sheep map pings                 */
+/* -------------------------------------------------- */
+
+normaliseHideSeekSignalClues = function (value) {
+  let pings = value;
+
+  if (typeof pings === "string") {
+    try {
+      pings = JSON.parse(pings);
+    } catch (error) {
+      console.error(error);
+      pings = [];
+    }
+  }
+
+  if (!Array.isArray(pings)) return [];
+
+  return pings
+    .map((ping) => ({
+      lat: Number(ping?.lat),
+      lng: Number(ping?.lng)
+    }))
+    .filter(
+      (ping) =>
+        Number.isFinite(ping.lat) &&
+        Number.isFinite(ping.lng) &&
+        ping.lat >= -90 &&
+        ping.lat <= 90 &&
+        ping.lng >= -180 &&
+        ping.lng <= 180
+    )
+    .slice(0, 7);
+};
+
+/*
+  Query 20 now sends coordinates rather than the old
+  NW/Close direction cards, so remove the old cards.
+*/
+hs46SignalCluesHtml = function () {
+  return "";
+};
+
+hs46SignalStatusText = function () {
+  if (
+    state.hideSeek.phase === "hunt" &&
+    hs46SignalIsActive()
+  ) {
+    if (
+      state.hideSeek.viewerRole === "wolf"
+    ) {
+      return state.hideSeek.signalClues.length > 0
+        ? "Sheep ping active"
+        : "No hidden sheep ping received";
+    }
+
+    return "Your location pinged";
+  }
+
+  return hideSeekV47.signalStatusText();
+};
+
+function hs47SignalPingKey() {
+  const coordinates =
+    state.hideSeek.signalClues
+      .map(
+        (ping) =>
+          `${ping.lat.toFixed(6)},` +
+          `${ping.lng.toFixed(6)}`
+      )
+      .join("|");
+
+  return (
+    `${state.hideSeek.signalSequence}:` +
+    coordinates
+  );
+}
+
+function hs47ClearSignalPings() {
+  for (
+    const marker of
+    state.hideSeek.signalPingMarkers
+  ) {
+    state.map?.removeLayer(marker);
+  }
+
+  state.hideSeek.signalPingMarkers = [];
+  state.hideSeek.signalPingKey = "";
+}
+
+function hs47RenderSignalPings() {
+  const shouldShow =
+    Boolean(state.map) &&
+    state.hideSeek.phase === "hunt" &&
+    state.hideSeek.viewerRole === "wolf" &&
+    hs46SignalIsActive() &&
+    state.hideSeek.signalClues.length > 0;
+
+  if (!shouldShow) {
+    hs47ClearSignalPings();
+    return;
+  }
+
+  const key = hs47SignalPingKey();
+
+  if (
+    key === state.hideSeek.signalPingKey &&
+    state.hideSeek.signalPingMarkers.length > 0
+  ) {
+    return;
+  }
+
+  hs47ClearSignalPings();
+
+  const icon = L.divIcon({
+    className: "hide-seek-radar-ping-icon",
+    html: `
+      <span
+        class="hide-seek-radar-ping"
+        aria-hidden="true"
+      >
+        <span
+          class="hide-seek-radar-ping-dot"
+        ></span>
+      </span>
+    `,
+    iconSize: [52, 52],
+    iconAnchor: [26, 26]
+  });
+
+  for (
+    const ping of
+    state.hideSeek.signalClues
+  ) {
+    const marker = L.marker(
+      [ping.lat, ping.lng],
+      {
+        icon,
+        pane: "multiplayerPane",
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 30
+      }
+    ).addTo(state.map);
+
+    state.hideSeek.signalPingMarkers.push(
+      marker
+    );
+  }
+
+  state.hideSeek.signalPingKey = key;
+}
+
+renderHideSeekState = function () {
+  hideSeekV47.renderState();
+  hs47RenderSignalPings();
+};
+
+clearHideSeekVisuals = function () {
+  hs47ClearSignalPings();
+  hideSeekV47.clearVisuals();
+};
+
+hs47EnsureNorthIndicator();
+hs47ImproveLocateButton();
