@@ -3151,3 +3151,54 @@ button:disabled.add-friend-main-btn {
     transition: none;
   }
 }
+
+/* ================================================== */
+/* v43 My Roads map toggle                            */
+/* ================================================== */
+
+.my-roads-toggle-btn {
+  color: rgba(255, 184, 96, 0.78);
+}
+
+.my-roads-toggle-icon {
+  width: 29px;
+  height: 29px;
+  display: block;
+  overflow: visible;
+  fill: none;
+}
+
+.my-roads-toggle-icon path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.my-roads-toggle-btn.active {
+  border-color: rgba(255, 138, 24, 0.68);
+  background: rgba(72, 31, 4, 0.88);
+  color: #ff8a18;
+  box-shadow:
+    var(--shadow-soft),
+    0 0 0 3px rgba(255, 138, 24, 0.1),
+    0 0 20px rgba(255, 138, 24, 0.24);
+}
+
+.my-roads-toggle-btn:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.my-roads-toggle-btn.drive-active {
+  border-color: rgba(255, 176, 74, 0.72);
+  color: #ffb04a;
+}
+
+@media (max-width: 380px) {
+  .my-roads-toggle-icon {
+    width: 27px;
+    height: 27px;
+  }
+}
