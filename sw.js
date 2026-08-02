@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v52 service worker
+  Road Discovery AU v53 service worker
 
   Checkpoint 10:
-  Unified navigation marker with the drifting accuracy circle removed.
+  Unified navigation marker with shortest-turn arrow animation.
 
   Expected frontend versions:
-  - app.js?v=51
+  - app.js?v=52
   - style.css?v=42
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v52";
+const CACHE_NAME = "road-discovery-au-v53";
 
 const CORE_APP_SHELL = [
   "./",
@@ -25,6 +25,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=42",
+  "./app.js?v=52",
   "./app.js?v=51",
   "./app.js?v=50",
   "./style.css?v=41",
@@ -162,6 +163,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=52")) ||
             (await caches.match("./app.js?v=51")) ||
             (await caches.match("./app.js?v=50")) ||
             (await caches.match("./app.js?v=49")) ||
