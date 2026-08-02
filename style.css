@@ -3202,3 +3202,280 @@ button:disabled.add-friend-main-btn {
     height: 27px;
   }
 }
+
+/* ================================================== */
+/* v44 Drive preparation overlay                      */
+/* ================================================== */
+
+.drive-preparation-overlay {
+  position: absolute;
+  z-index: 2600;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding:
+    calc(18px + var(--safe-top))
+    calc(18px + var(--safe-right))
+    calc(18px + var(--safe-bottom))
+    calc(18px + var(--safe-left));
+  background: rgba(0, 0, 0, 0.68);
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+}
+
+.drive-preparation-card {
+  width: min(100%, 370px);
+  padding: 24px 20px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  background: rgba(8, 10, 14, 0.96);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.58),
+    0 0 30px rgba(255, 138, 24, 0.08);
+  color: var(--text);
+  text-align: center;
+}
+
+.drive-preparation-card h2 {
+  margin: 13px 0 7px;
+  font-size: 23px;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+
+.drive-preparation-spinner {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto;
+  border: 4px solid rgba(255, 138, 24, 0.18);
+  border-top-color: #ff8a18;
+  border-radius: 50%;
+  animation:
+    drive-preparation-spin
+    0.8s
+    linear
+    infinite;
+}
+
+.drive-preparation-message {
+  min-height: 38px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.drive-preparation-stages {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.drive-preparation-stages li {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.08);
+  border-radius: 13px;
+  background:
+    rgba(255, 255, 255, 0.035);
+  color: var(--faint);
+  font-size: 13px;
+  font-weight: 800;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.drive-preparation-stage-mark {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 24px;
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.drive-preparation-stages li.active {
+  border-color:
+    rgba(255, 138, 24, 0.45);
+  background:
+    rgba(255, 138, 24, 0.1);
+  color: #ffe0c2;
+}
+
+.drive-preparation-stages
+li.active
+.drive-preparation-stage-mark {
+  border-color:
+    rgba(255, 138, 24, 0.72);
+  background: #ff8a18;
+  color: #1b0900;
+}
+
+.drive-preparation-stages li.complete {
+  border-color:
+    rgba(73, 212, 133, 0.24);
+  color:
+    rgba(218, 255, 233, 0.82);
+}
+
+.drive-preparation-stages
+li.complete
+.drive-preparation-stage-mark {
+  border-color:
+    rgba(73, 212, 133, 0.55);
+  background:
+    rgba(73, 212, 133, 0.16);
+  color: #70e6a3;
+  font-size: 0;
+}
+
+.drive-preparation-stages
+li.complete
+.drive-preparation-stage-mark::before {
+  content: "✓";
+  font-size: 13px;
+}
+
+.drive-preparation-safety {
+  margin: 14px 0 0;
+  padding: 10px 11px;
+  border:
+    1px solid
+    rgba(255, 138, 24, 0.22);
+  border-radius: 13px;
+  background:
+    rgba(255, 138, 24, 0.07);
+  color:
+    rgba(255, 224, 195, 0.88);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.drive-preparation-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.drive-preparation-retry-btn,
+.drive-preparation-cancel-btn {
+  min-height: 46px;
+  padding: 0 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.drive-preparation-retry-btn {
+  background:
+    linear-gradient(
+      135deg,
+      #ff8a18,
+      #ff6a00
+    );
+  color: #1b0900;
+}
+
+.drive-preparation-cancel-btn {
+  border: 1px solid var(--line);
+  background:
+    rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.drive-preparation-overlay.error
+.drive-preparation-spinner {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-color:
+    rgba(255, 77, 77, 0.55);
+  animation: none;
+}
+
+.drive-preparation-overlay.error
+.drive-preparation-spinner::before {
+  content: "!";
+  color: #ff7777;
+  font-size: 24px;
+  font-weight: 950;
+}
+
+.drive-preparation-overlay.success
+.drive-preparation-spinner {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-color:
+    rgba(73, 212, 133, 0.58);
+  animation: none;
+}
+
+.drive-preparation-overlay.success
+.drive-preparation-spinner::before {
+  content: "✓";
+  color: #70e6a3;
+  font-size: 23px;
+  font-weight: 950;
+}
+
+@keyframes drive-preparation-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-height: 650px) {
+  .drive-preparation-card {
+    padding: 17px 16px 15px;
+  }
+
+  .drive-preparation-card h2 {
+    margin-top: 9px;
+    font-size: 20px;
+  }
+
+  .drive-preparation-spinner {
+    width: 34px;
+    height: 34px;
+  }
+
+  .drive-preparation-stages {
+    gap: 6px;
+    margin-top: 12px;
+  }
+
+  .drive-preparation-stages li {
+    min-height: 36px;
+    padding: 6px 9px;
+  }
+
+  .drive-preparation-safety {
+    margin-top: 10px;
+    padding: 8px 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drive-preparation-spinner {
+    animation-duration: 1.6s;
+  }
+}
