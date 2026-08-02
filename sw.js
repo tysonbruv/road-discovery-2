@@ -1,14 +1,14 @@
 "use strict";
 
 /*
-  Road Discovery AU v48 service worker
+  Road Discovery AU v49 service worker
 
   Checkpoint 10:
-  Hide & Seek navigation, heading, map pings,
-  and bottom-left navigation controls.
+  Hybrid compass/GPS heading and three-second
+  Hide & Seek map pings.
 
   Expected frontend versions:
-  - app.js?v=47
+  - app.js?v=48
   - style.css?v=41
 
   Previous files are recognised during the update so
@@ -16,7 +16,7 @@
   replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v48";
+const CACHE_NAME = "road-discovery-au-v49";
 
 const CORE_APP_SHELL = [
   "./",
@@ -27,6 +27,9 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=41",
+  "./app.js?v=48",
+
+  /* Previous navigation version. */
   "./style.css?v=40",
   "./app.js?v=47",
 
@@ -254,6 +257,11 @@ self.addEventListener("fetch", (event) => {
           )
         ) {
           return (
+            (
+              await caches.match(
+                "./app.js?v=48"
+              )
+            ) ||
             (
               await caches.match(
                 "./app.js?v=47"
