@@ -10586,3 +10586,69 @@ hs50UpdateAccuracyCircle = function () {
 
   state.accuracyCircle = null;
 };
+
+/* ================================================== */
+/* Road Discovery AU v52 shortest-turn arrow fix     */
+/* Append this block once to the bottom of app.js v51 */
+/* ================================================== */
+
+Object.assign(state, {
+  hs52DisplayedHeadingDegrees: null
+});
+
+hs47StyleHeadingMarker = function () {
+  const element = state.userHeadingMarker?.getElement?.();
+
+  if (!element) return;
+
+  const heading = hs47NormaliseDegrees(
+    state.userHeadingDegrees
+  );
+
+  if (heading !== null) {
+    const targetHeading =
+      hs47NormaliseDegrees(
+        heading + hs47MapBearing()
+      ) || 0;
+
+    if (
+      !Number.isFinite(
+        state.hs52DisplayedHeadingDegrees
+      )
+    ) {
+      state.hs52DisplayedHeadingDegrees =
+        targetHeading;
+    } else {
+      const previousNormalised =
+        hs47NormaliseDegrees(
+          state.hs52DisplayedHeadingDegrees
+        ) || 0;
+
+      state.hs52DisplayedHeadingDegrees +=
+        hs47ShortestBearingTurn(
+          previousNormalised,
+          targetHeading
+        );
+    }
+  }
+
+  element.style.setProperty(
+    "--road-heading",
+    `${state.hs52DisplayedHeadingDegrees || 0}deg`
+  );
+
+  element.style.setProperty(
+    "--road-marker-colour",
+    hs50OwnMarkerColour()
+  );
+
+  element.style.setProperty(
+    "--road-marker-halo",
+    hs50OwnMarkerHaloColour()
+  );
+
+  element.style.setProperty(
+    "--road-heading-visible",
+    heading === null ? "0" : "1"
+  );
+};
