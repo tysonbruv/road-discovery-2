@@ -11416,3 +11416,214 @@ startDrive = async function () {
     return undefined;
   }
 };
+
+/* ================================================== */
+/* Road Discovery AU v55 two-finger map rotation     */
+/* Append this block once to the bottom of app.js v54 */
+/* ================================================== */
+
+const RD55_MANUAL_ROTATION_THRESHOLD_DEG = 4;
+
+const roadDiscoveryV55 = {
+  initMap
+};
+
+Object.assign(state, {
+  rd55TouchGestureActive: false,
+  rd55TouchStartBearing: 0,
+  rd55TouchRotationTravel: 0,
+  rd55PreviousHeadingMode: "heading",
+  rd55PreviousFollowUser: true
+});
+
+/* -------------------------------------------------- */
+/* Map setup                                          */
+/* -------------------------------------------------- */
+
+initMap = function () {
+  roadDiscoveryV55.initMap();
+
+  if (!state.map || !state.map.touchRotate) {
+    return;
+  }
+
+  /*
+    Leaflet Rotate keeps two-finger zoom and two-finger rotation in
+    the same gesture handler. v47 deliberately left touch rotation
+    disabled; enable only that existing handler here.
+  */
+  state.map.touchRotate.enable();
+
+  const mapContainer = state.map.getContainer?.();
+
+  if (!mapContainer) return;
+
+  mapContainer.addEventListener(
+    "touchstart",
+    rd55HandleTouchStart,
+    { passive: true }
+  );
+
+  mapContainer.addEventListener(
+    "touchend",
+    rd55HandleTouchEnd,
+    { passive: true }
+  );
+
+  mapContainer.addEventListener(
+    "touchcancel",
+    rd55HandleTouchEnd,
+    { passive: true }
+  );
+
+  state.map.on("rotate", rd55TrackTouchRotation);
+};
+
+/* -------------------------------------------------- */
+/* Gesture ownership                                  */
+/* -------------------------------------------------- */
+
+function rd55HandleTouchStart(event) {
+  if (event.touches?.length !== 2 || !state.map) {
+    return;
+  }
+
+  const bearing = hs47MapBearing();
+
+  state.rd55TouchGestureActive = true;
+  state.rd55TouchStartBearing = bearing;
+  state.rd55TouchRotationTravel = 0;
+  state.rd55PreviousHeadingMode = state.mapHeadingMode;
+  state.rd55PreviousFollowUser = state.followUser;
+
+  /*
+    Stop compass/GPS bearing updates before the fingers begin moving.
+    Location updates may still centre the map while the gesture owns
+    its bearing.
+  */
+  hs47CancelBearingAnimation();
+  state.mapHeadingMode = "manual-pending";
+  hs47UpdateNorthIndicator();
+}
+
+function rd55TrackTouchRotation() {
+  if (!state.rd55TouchGestureActive) return;
+
+  const bearing = hs47MapBearing();
+  const turnFromStart = Math.abs(
+    hs47ShortestBearingTurn(
+      state.rd55TouchStartBearing,
+      bearing
+    )
+  );
+
+  state.rd55TouchRotationTravel = Math.max(
+    state.rd55TouchRotationTravel,
+    turnFromStart
+  );
+
+  hs47StyleHeadingMarker();
+  hs49ScheduleNavigationRedraw();
+}
+
+function rd55HandleTouchEnd(event) {
+  if (
+    !state.rd55TouchGestureActive ||
+    (event.touches && event.touches.length >= 2)
+  ) {
+    return;
+  }
+
+  /*
+    Leaflet completes its combined zoom/rotation calculation on the
+    same touchend. Finish on the next frame so its final bearing has
+    already been applied.
+  */
+  window.requestAnimationFrame(() => {
+    rd55FinishTouchGesture();
+  });
+}
+
+function rd55FinishTouchGesture() {
+  if (!state.rd55TouchGestureActive) return;
+
+  rd55TrackTouchRotation();
+
+  const deliberatelyRotated =
+    state.rd55TouchRotationTravel >=
+    RD55_MANUAL_ROTATION_THRESHOLD_DEG;
+
+  state.rd55TouchGestureActive = false;
+
+  if (deliberatelyRotated) {
+    /*
+      Keep the chosen angle and stop automatic heading rotation.
+    */
+    state.mapHeadingMode = "manual";
+  } else {
+    /*
+      An ordinary pinch zoom must not change navigation mode.
+    */
+    state.mapHeadingMode = state.rd55PreviousHeadingMode;
+    state.followUser = state.rd55PreviousFollowUser;
+
+    if (
+      state.mapHeadingMode === "heading" &&
+      state.followUser &&
+      state.currentPoint &&
+      hs47NavigationIsActive() &&
+      hs47NormaliseDegrees(state.userHeadingDegrees) !== null
+    ) {
+      hs47ApplyHeadingView(state.currentPoint);
+    } else {
+      hs47SetMapBearing(state.rd55TouchStartBearing);
+    }
+  }
+
+  hs47UpdateNorthIndicator();
+  hs47StyleHeadingMarker();
+  hs49ScheduleNavigationRedraw();
+}
+
+/* -------------------------------------------------- */
+/* North indicator text                               */
+/* -------------------------------------------------- */
+
+const rd55PreviousUpdateNorthIndicator =
+  hs47UpdateNorthIndicator;
+
+hs47UpdateNorthIndicator = function () {
+  rd55PreviousUpdateNorthIndicator();
+
+  const indicator = $("mapNorthIndicator");
+
+  if (!indicator) return;
+
+  const manualRotation = [
+    "manual",
+    "manual-pending"
+  ].includes(state.mapHeadingMode);
+
+  indicator.classList.toggle(
+    "manual-rotation",
+    manualRotation
+  );
+
+  if (manualRotation) {
+    indicator.title =
+      "Manual rotation • Tap for north-up";
+
+    indicator.setAttribute(
+      "aria-label",
+      "Map manually rotated. Return map to north-up."
+    );
+  } else {
+    indicator.setAttribute(
+      "aria-label",
+      state.mapHeadingMode === "heading" &&
+      state.followUser
+        ? "Heading-up map. Return map to north-up."
+        : "Return map to north-up."
+    );
+  }
+};
