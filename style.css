@@ -3069,3 +3069,85 @@ button:disabled.add-friend-main-btn {
     left: calc(68px + var(--safe-left));
   }
 }
+
+/* ================================================== */
+/* v42 combined user location + heading marker       */
+/* ================================================== */
+
+.road-user-combined-icon {
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.road-user-combined {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
+.road-user-combined-heading {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  opacity: var(--road-heading-visible, 0);
+  transform: rotate(var(--road-heading, 0deg));
+  transform-origin: 50% 50%;
+  transition:
+    transform 0.18s linear,
+    opacity 0.15s ease;
+}
+
+.road-user-combined-arrow {
+  position: absolute;
+  top: 1px;
+  left: 19px;
+  width: 14px;
+  height: 21px;
+  display: block;
+  background: var(--road-marker-colour, #4bb3ff);
+  clip-path: polygon(50% 0, 100% 100%, 50% 76%, 0 100%);
+  filter:
+    drop-shadow(0 0 1px #eef7ff)
+    drop-shadow(0 0 5px rgba(75, 179, 255, 0.72));
+}
+
+.road-user-combined-halo {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(
+    --road-marker-halo,
+    rgba(75, 179, 255, 0.24)
+  );
+  box-shadow: 0 0 12px rgba(75, 179, 255, 0.38);
+  transform: translate(-50%, -50%);
+}
+
+.road-user-combined-dot {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  border: 3px solid #eef7ff;
+  border-radius: 50%;
+  background: var(--road-marker-colour, #4bb3ff);
+  box-shadow:
+    0 0 0 2px rgba(5, 7, 10, 0.25),
+    0 0 10px rgba(75, 179, 255, 0.72);
+  transform: translate(-50%, -50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .road-user-combined-heading {
+    transition: none;
+  }
+}
