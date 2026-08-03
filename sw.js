@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v58 service worker
+  Road Discovery AU v59 service worker
 
   Checkpoint 10:
-  Clean Drive Mode with a blue road-loading boundary.
+  Five-minute Hide & Seek escape with sheep Ready fast-forward.
 
   Expected frontend versions:
-  - app.js?v=57
-  - style.css?v=44
+  - app.js?v=58
+  - style.css?v=45
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v58";
+const CACHE_NAME = "road-discovery-au-v59";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,6 +24,8 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=45",
+  "./app.js?v=58",
   "./style.css?v=44",
   "./app.js?v=57",
   "./app.js?v=56",
@@ -65,16 +67,18 @@ self.addEventListener("install", (event) => {
         await cache.addAll(CORE_APP_SHELL);
 
         await Promise.all(
-          VERSIONED_APP_FILES.map(async (file) => {
-            try {
-              await cache.add(file);
-            } catch (error) {
-              console.warn(
-                `Could not pre-cache ${file}. It will be cached when available.`,
-                error
-              );
+          VERSIONED_APP_FILES.map(
+            async (file) => {
+              try {
+                await cache.add(file);
+              } catch (error) {
+                console.warn(
+                  `Could not pre-cache ${file}. It will be cached when available.`,
+                  error
+                );
+              }
             }
-          })
+          )
         );
       })
       .then(() => self.skipWaiting())
@@ -186,6 +190,9 @@ self.addEventListener("fetch", (event) => {
         ) {
           return (
             (await caches.match(
+              "./style.css?v=45"
+            )) ||
+            (await caches.match(
               "./style.css?v=44"
             )) ||
             (await caches.match(
@@ -220,6 +227,9 @@ self.addEventListener("fetch", (event) => {
           url.pathname.endsWith("/app.js")
         ) {
           return (
+            (await caches.match(
+              "./app.js?v=58"
+            )) ||
             (await caches.match(
               "./app.js?v=57"
             )) ||
