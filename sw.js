@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v57 service worker
+  Road Discovery AU v58 service worker
 
   Checkpoint 10:
-  Hide road Canvas overlays during two-finger map gestures.
+  Clean Drive Mode with a blue road-loading boundary.
 
   Expected frontend versions:
-  - app.js?v=56
+  - app.js?v=57
   - style.css?v=44
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v57";
+const CACHE_NAME = "road-discovery-au-v58";
 
 const CORE_APP_SHELL = [
   "./",
@@ -25,6 +25,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=44",
+  "./app.js?v=57",
   "./app.js?v=56",
   "./app.js?v=55",
   "./app.js?v=54",
@@ -219,6 +220,9 @@ self.addEventListener("fetch", (event) => {
           url.pathname.endsWith("/app.js")
         ) {
           return (
+            (await caches.match(
+              "./app.js?v=57"
+            )) ||
             (await caches.match(
               "./app.js?v=56"
             )) ||
