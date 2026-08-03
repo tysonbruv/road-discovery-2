@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v60 service worker
+  Road Discovery AU v61 service worker
 
   Checkpoint 10:
-  Focused Hide & Seek map layout.
+  Hide & Seek 750 metre hiding-zone radius.
 
   Expected frontend versions:
-  - app.js?v=59
+  - app.js?v=60
   - style.css?v=46
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v60";
+const CACHE_NAME = "road-discovery-au-v61";
 
 const CORE_APP_SHELL = [
   "./",
@@ -25,6 +25,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=46",
+  "./app.js?v=60",
   "./app.js?v=59",
   "./style.css?v=45",
   "./app.js?v=58",
@@ -178,6 +179,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=60")) ||
             (await caches.match("./app.js?v=59")) ||
             (await caches.match("./app.js?v=58")) ||
             (await caches.match("./app.js?v=57")) ||
