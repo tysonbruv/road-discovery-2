@@ -11769,3 +11769,298 @@ document.addEventListener("visibilitychange", () => {
 });
 
 rd56EnsureGestureRoadStyle();
+
+/* ================================================== */
+/* Road Discovery AU v57 clean Drive coverage area   */
+/* Append this block once to the bottom of app.js v56 */
+/* ================================================== */
+
+const roadDiscoveryV57 = {
+  initMap,
+  loadRoads,
+  startDrive,
+  redrawNavigationPaths:
+    hs49RedrawNavigationPaths
+};
+
+Object.assign(state, {
+  rd57RoadCoverageCircle: null,
+  rd57RoadCoverageLoading: false
+});
+
+/* -------------------------------------------------- */
+/* Keep discovery chunks loaded but visually hidden  */
+/* -------------------------------------------------- */
+
+rd53ApplyRoadLayerVisibility = function () {
+  if (!state.map) return;
+
+  const driveActive =
+    rd53DriveRoadLayersActive();
+
+  /*
+    The road chunks remain loaded in roadsLayer and
+    state.roadSegments for the discovery engine.
+
+    Only the visible grey layer remains off the map.
+  */
+  rd53SetMapLayerVisible(
+    state.roadsLayer,
+    false
+  );
+
+  /*
+    Preserve the existing current-trip line.
+  */
+  rd53SetMapLayerVisible(
+    state.tripLayer,
+    driveActive
+  );
+
+  /*
+    Saved orange roads remain visible during Drive
+    Mode. Newly discovered chunks continue appearing
+    immediately through this layer.
+  */
+  rd53SetMapLayerVisible(
+    state.savedLayer,
+    driveActive || state.myRoadsVisible
+  );
+
+  if (
+    driveActive &&
+    state.lastRoadLoadCenter
+  ) {
+    rd57DrawRoadCoverage(
+      state.lastRoadLoadCenter,
+      LOAD_RADIUS_M,
+      state.rd57RoadCoverageLoading
+    );
+  } else if (!driveActive) {
+    rd57RemoveRoadCoverage();
+  }
+
+  rd53ApplySavedRoadZoomStyle();
+  rd53UpdateMyRoadsButton();
+};
+
+/* -------------------------------------------------- */
+/* Blue loaded-area boundary                          */
+/* -------------------------------------------------- */
+
+function rd57DrawRoadCoverage(
+  centre,
+  radiusM = LOAD_RADIUS_M,
+  loading = false
+) {
+  if (
+    !state.map ||
+    !rd53DriveRoadLayersActive() ||
+    !Number.isFinite(Number(centre?.lat)) ||
+    !Number.isFinite(Number(centre?.lng))
+  ) {
+    return;
+  }
+
+  const latlng = [
+    Number(centre.lat),
+    Number(centre.lng)
+  ];
+
+  const style = {
+    color: ROUTE_BLUE,
+    opacity: loading ? 0.95 : 0.72,
+    fillColor: ROUTE_BLUE,
+    fillOpacity: loading ? 0.055 : 0.025,
+    weight: loading ? 3 : 2,
+    dashArray: loading ? "7 7" : "12 10",
+    lineCap: "round",
+    interactive: false
+  };
+
+  if (!state.rd57RoadCoverageCircle) {
+    state.rd57RoadCoverageCircle = L.circle(
+      latlng,
+      {
+        ...style,
+        renderer:
+          state.navigationSvgRenderer ||
+          undefined,
+        radius:
+          Number(radiusM) || LOAD_RADIUS_M
+      }
+    ).addTo(state.map);
+  } else {
+    state.rd57RoadCoverageCircle.setLatLng(
+      latlng
+    );
+
+    state.rd57RoadCoverageCircle.setRadius(
+      Number(radiusM) || LOAD_RADIUS_M
+    );
+
+    state.rd57RoadCoverageCircle.setStyle(
+      style
+    );
+
+    if (
+      !state.map.hasLayer(
+        state.rd57RoadCoverageCircle
+      )
+    ) {
+      state.rd57RoadCoverageCircle.addTo(
+        state.map
+      );
+    }
+  }
+
+  state.rd57RoadCoverageCircle
+    .bringToBack?.();
+
+  state.rd57RoadCoverageCircle
+    .redraw?.();
+}
+
+function rd57RemoveRoadCoverage() {
+  if (!state.rd57RoadCoverageCircle) {
+    return;
+  }
+
+  try {
+    state.map?.removeLayer(
+      state.rd57RoadCoverageCircle
+    );
+  } catch (error) {
+    console.error(error);
+  }
+
+  state.rd57RoadCoverageCircle = null;
+  state.rd57RoadCoverageLoading = false;
+}
+
+/*
+  Keep the boundary aligned with navigation routes
+  during zooming and rotation.
+*/
+hs49RedrawNavigationPaths = function () {
+  roadDiscoveryV57.redrawNavigationPaths();
+
+  state.rd57RoadCoverageCircle
+    ?.redraw?.();
+};
+
+/* -------------------------------------------------- */
+/* Follow each successful road-loading centre        */
+/* -------------------------------------------------- */
+
+loadRoads = function (
+  lat,
+  lng,
+  radiusM,
+  options = {}
+) {
+  const driveLoad =
+    rd53DriveRoadLayersActive();
+
+  const previousCentre =
+    state.lastRoadLoadCenter
+      ? { ...state.lastRoadLoadCenter }
+      : null;
+
+  if (driveLoad) {
+    state.rd57RoadCoverageLoading = true;
+
+    rd57DrawRoadCoverage(
+      {
+        lat: Number(lat),
+        lng: Number(lng)
+      },
+      radiusM,
+      true
+    );
+  }
+
+  const result = roadDiscoveryV57.loadRoads(
+    lat,
+    lng,
+    radiusM,
+    options
+  );
+
+  return Promise.resolve(result).then(
+    (loaded) => {
+      if (!driveLoad) {
+        return loaded;
+      }
+
+      state.rd57RoadCoverageLoading = false;
+
+      if (
+        loaded &&
+        state.lastRoadLoadCenter
+      ) {
+        rd57DrawRoadCoverage(
+          state.lastRoadLoadCenter,
+          radiusM,
+          false
+        );
+      } else if (
+        options.reason === "auto" &&
+        previousCentre
+      ) {
+        /*
+          An auto-load failure keeps the last
+          successful boundary.
+        */
+        rd57DrawRoadCoverage(
+          previousCentre,
+          LOAD_RADIUS_M,
+          false
+        );
+      } else {
+        rd57RemoveRoadCoverage();
+      }
+
+      return loaded;
+    }
+  );
+};
+
+/* -------------------------------------------------- */
+/* Drive lifecycle                                    */
+/* -------------------------------------------------- */
+
+startDrive = async function () {
+  const result =
+    await roadDiscoveryV57.startDrive();
+
+  if (
+    state.isRecording &&
+    state.lastRoadLoadCenter
+  ) {
+    state.rd57RoadCoverageLoading = false;
+
+    rd57DrawRoadCoverage(
+      state.lastRoadLoadCenter,
+      LOAD_RADIUS_M,
+      false
+    );
+  } else if (
+    !rd53DriveRoadLayersActive()
+  ) {
+    rd57RemoveRoadCoverage();
+  }
+
+  rd53ApplyRoadLayerVisibility();
+
+  return result;
+};
+
+/*
+  Ensure the grey road layer starts hidden on a
+  freshly opened map.
+*/
+initMap = function () {
+  roadDiscoveryV57.initMap();
+  rd53ApplyRoadLayerVisibility();
+};
