@@ -3605,3 +3605,26 @@ li.complete
     min-height: 32px;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU v46 Hide & Seek map layout      */
+/* Append this block once to the bottom of style.css  */
+/* ================================================== */
+
+/*
+  Give the map more vertical space while an active
+  Hide & Seek round is starting, escaping or hunting.
+*/
+body.hide-seek-playing-layout .stats-bar,
+body.hide-seek-playing-layout .accuracy-status {
+  display: none;
+}
+
+body.hide-seek-playing-layout .brand-row {
+  margin-bottom: 0;
+}
+
+/* Move the role, timer and Ready/Reach Zone card up. */
+body.hide-seek-playing-layout .hide-seek-map-hud {
+  top: calc(78px + var(--safe-top));
+}
