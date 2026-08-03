@@ -3479,3 +3479,129 @@ li.complete
     animation-duration: 1.6s;
   }
 }
+
+/* ================================================== */
+/* v45 Hide & Seek sheep Ready interface              */
+/* Append once to the bottom of style.css v44         */
+/* ================================================== */
+
+.hide-seek-ready-panel {
+  display: grid;
+  gap: 9px;
+  margin-top: 13px;
+  padding: 11px;
+  border:
+    1px solid rgba(75, 179, 255, 0.3);
+  border-radius: 15px;
+  background: rgba(75, 179, 255, 0.08);
+}
+
+.hide-seek-ready-status {
+  color: rgba(219, 241, 255, 0.94);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.hide-seek-ready-btn {
+  min-height: 44px;
+  border:
+    1px solid rgba(75, 179, 255, 0.58);
+  border-radius: 14px;
+  background:
+    linear-gradient(
+      135deg,
+      #65c3ff,
+      #278ed8
+    );
+  color: #03111b;
+  font-size: 13px;
+  font-weight: 950;
+  touch-action: manipulation;
+  box-shadow:
+    0 8px 20px rgba(75, 179, 255, 0.15);
+}
+
+.hide-seek-ready-btn.ready {
+  border-color:
+    rgba(73, 212, 133, 0.58);
+  background:
+    rgba(73, 212, 133, 0.16);
+  color: #bfffd9;
+  box-shadow: none;
+}
+
+.hide-seek-ready-btn:disabled:not(.ready) {
+  border-color:
+    rgba(255, 255, 255, 0.12);
+  background:
+    rgba(255, 255, 255, 0.055);
+  color: var(--faint);
+  box-shadow: none;
+  opacity: 0.82;
+}
+
+.hide-seek-map-ready-panel {
+  display: grid;
+  gap: 6px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top:
+    1px solid rgba(75, 179, 255, 0.2);
+  pointer-events: auto;
+}
+
+.hide-seek-map-ready-status {
+  color: rgba(219, 241, 255, 0.92);
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.hide-seek-map-ready-btn {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border:
+    1px solid rgba(75, 179, 255, 0.58);
+  border-radius: 11px;
+  background:
+    linear-gradient(
+      135deg,
+      #65c3ff,
+      #278ed8
+    );
+  color: #03111b;
+  font-size: 11px;
+  font-weight: 950;
+  touch-action: manipulation;
+}
+
+.hide-seek-map-ready-btn.ready {
+  border-color:
+    rgba(73, 212, 133, 0.58);
+  background:
+    rgba(73, 212, 133, 0.16);
+  color: #bfffd9;
+}
+
+.hide-seek-map-ready-btn:disabled:not(.ready) {
+  border-color:
+    rgba(255, 255, 255, 0.12);
+  background:
+    rgba(255, 255, 255, 0.055);
+  color: var(--faint);
+  opacity: 0.84;
+}
+
+@media (max-width: 380px) {
+  .hide-seek-map-ready-status {
+    font-size: 8.5px;
+  }
+
+  .hide-seek-map-ready-btn {
+    min-height: 32px;
+  }
+}
