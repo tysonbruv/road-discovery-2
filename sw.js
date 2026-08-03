@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v59 service worker
+  Road Discovery AU v60 service worker
 
   Checkpoint 10:
-  Five-minute Hide & Seek escape with sheep Ready fast-forward.
+  Focused Hide & Seek map layout.
 
   Expected frontend versions:
-  - app.js?v=58
-  - style.css?v=45
+  - app.js?v=59
+  - style.css?v=46
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v59";
+const CACHE_NAME = "road-discovery-au-v60";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,6 +24,8 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=46",
+  "./app.js?v=59",
   "./style.css?v=45",
   "./app.js?v=58",
   "./style.css?v=44",
@@ -67,18 +69,16 @@ self.addEventListener("install", (event) => {
         await cache.addAll(CORE_APP_SHELL);
 
         await Promise.all(
-          VERSIONED_APP_FILES.map(
-            async (file) => {
-              try {
-                await cache.add(file);
-              } catch (error) {
-                console.warn(
-                  `Could not pre-cache ${file}. It will be cached when available.`,
-                  error
-                );
-              }
+          VERSIONED_APP_FILES.map(async (file) => {
+            try {
+              await cache.add(file);
+            } catch (error) {
+              console.warn(
+                `Could not pre-cache ${file}. It will be cached when available.`,
+                error
+              );
             }
-          )
+          })
         );
       })
       .then(() => self.skipWaiting())
@@ -92,13 +92,8 @@ self.addEventListener("activate", (event) => {
       .then((cacheNames) => {
         return Promise.all(
           cacheNames
-            .filter(
-              (cacheName) =>
-                cacheName !== CACHE_NAME
-            )
-            .map((cacheName) =>
-              caches.delete(cacheName)
-            )
+            .filter((cacheName) => cacheName !== CACHE_NAME)
+            .map((cacheName) => caches.delete(cacheName))
         );
       })
       .then(() => self.clients.claim())
@@ -114,10 +109,7 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  /*
-    Do not intercept external tiles, road data,
-    routing or Supabase.
-  */
+  /* Do not intercept external tiles, road data, routing or Supabase. */
   if (url.origin !== self.location.origin) {
     return;
   }
@@ -126,30 +118,19 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
-          if (
-            networkResponse &&
-            networkResponse.ok
-          ) {
-            const responseCopy =
-              networkResponse.clone();
+          if (networkResponse && networkResponse.ok) {
+            const responseCopy = networkResponse.clone();
 
-            caches
-              .open(CACHE_NAME)
-              .then((cache) => {
-                cache.put(
-                  "./index.html",
-                  responseCopy
-                );
-              });
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put("./index.html", responseCopy);
+            });
           }
 
           return networkResponse;
         })
         .catch(async () => {
           return (
-            (await caches.match(
-              "./index.html"
-            )) ||
+            (await caches.match("./index.html")) ||
             (await caches.match("./"))
           );
         })
@@ -161,147 +142,74 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(request)
       .then((networkResponse) => {
-        if (
-          networkResponse &&
-          networkResponse.ok
-        ) {
-          const responseCopy =
-            networkResponse.clone();
+        if (networkResponse && networkResponse.ok) {
+          const responseCopy = networkResponse.clone();
 
-          caches
-            .open(CACHE_NAME)
-            .then((cache) => {
-              cache.put(request, responseCopy);
-            });
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(request, responseCopy);
+          });
         }
 
         return networkResponse;
       })
       .catch(async () => {
-        const exactCachedResponse =
-          await caches.match(request);
+        const exactCachedResponse = await caches.match(request);
 
         if (exactCachedResponse) {
           return exactCachedResponse;
         }
 
-        if (
-          url.pathname.endsWith("/style.css")
-        ) {
+        if (url.pathname.endsWith("/style.css")) {
           return (
-            (await caches.match(
-              "./style.css?v=45"
-            )) ||
-            (await caches.match(
-              "./style.css?v=44"
-            )) ||
-            (await caches.match(
-              "./style.css?v=43"
-            )) ||
-            (await caches.match(
-              "./style.css?v=42"
-            )) ||
-            (await caches.match(
-              "./style.css?v=41"
-            )) ||
-            (await caches.match(
-              "./style.css?v=40"
-            )) ||
-            (await caches.match(
-              "./style.css?v=39"
-            )) ||
-            (await caches.match(
-              "./style.css?v=38"
-            )) ||
-            (await caches.match(
-              "./style.css?v=37"
-            )) ||
-            (await caches.match(
-              "./style.css?v=36"
-            )) ||
+            (await caches.match("./style.css?v=46")) ||
+            (await caches.match("./style.css?v=45")) ||
+            (await caches.match("./style.css?v=44")) ||
+            (await caches.match("./style.css?v=43")) ||
+            (await caches.match("./style.css?v=42")) ||
+            (await caches.match("./style.css?v=41")) ||
+            (await caches.match("./style.css?v=40")) ||
+            (await caches.match("./style.css?v=39")) ||
+            (await caches.match("./style.css?v=38")) ||
+            (await caches.match("./style.css?v=37")) ||
+            (await caches.match("./style.css?v=36")) ||
             Response.error()
           );
         }
 
-        if (
-          url.pathname.endsWith("/app.js")
-        ) {
+        if (url.pathname.endsWith("/app.js")) {
           return (
-            (await caches.match(
-              "./app.js?v=58"
-            )) ||
-            (await caches.match(
-              "./app.js?v=57"
-            )) ||
-            (await caches.match(
-              "./app.js?v=56"
-            )) ||
-            (await caches.match(
-              "./app.js?v=55"
-            )) ||
-            (await caches.match(
-              "./app.js?v=54"
-            )) ||
-            (await caches.match(
-              "./app.js?v=53"
-            )) ||
-            (await caches.match(
-              "./app.js?v=52"
-            )) ||
-            (await caches.match(
-              "./app.js?v=51"
-            )) ||
-            (await caches.match(
-              "./app.js?v=50"
-            )) ||
-            (await caches.match(
-              "./app.js?v=49"
-            )) ||
-            (await caches.match(
-              "./app.js?v=48"
-            )) ||
-            (await caches.match(
-              "./app.js?v=47"
-            )) ||
-            (await caches.match(
-              "./app.js?v=46"
-            )) ||
-            (await caches.match(
-              "./app.js?v=45"
-            )) ||
-            (await caches.match(
-              "./app.js?v=44"
-            )) ||
-            (await caches.match(
-              "./app.js?v=43"
-            )) ||
-            (await caches.match(
-              "./app.js?v=42"
-            )) ||
+            (await caches.match("./app.js?v=59")) ||
+            (await caches.match("./app.js?v=58")) ||
+            (await caches.match("./app.js?v=57")) ||
+            (await caches.match("./app.js?v=56")) ||
+            (await caches.match("./app.js?v=55")) ||
+            (await caches.match("./app.js?v=54")) ||
+            (await caches.match("./app.js?v=53")) ||
+            (await caches.match("./app.js?v=52")) ||
+            (await caches.match("./app.js?v=51")) ||
+            (await caches.match("./app.js?v=50")) ||
+            (await caches.match("./app.js?v=49")) ||
+            (await caches.match("./app.js?v=48")) ||
+            (await caches.match("./app.js?v=47")) ||
+            (await caches.match("./app.js?v=46")) ||
+            (await caches.match("./app.js?v=45")) ||
+            (await caches.match("./app.js?v=44")) ||
+            (await caches.match("./app.js?v=43")) ||
+            (await caches.match("./app.js?v=42")) ||
             Response.error()
           );
         }
 
-        if (
-          url.pathname.endsWith(
-            "/manifest.json"
-          )
-        ) {
+        if (url.pathname.endsWith("/manifest.json")) {
           return (
-            (await caches.match(
-              "./manifest.json"
-            )) ||
+            (await caches.match("./manifest.json")) ||
             Response.error()
           );
         }
 
-        if (
-          url.pathname.endsWith("/icon.svg")
-        ) {
+        if (url.pathname.endsWith("/icon.svg")) {
           return (
-            (await caches.match(
-              "./icon.svg"
-            )) ||
+            (await caches.match("./icon.svg")) ||
             Response.error()
           );
         }
