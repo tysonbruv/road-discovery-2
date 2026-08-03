@@ -12588,3 +12588,43 @@ renderHideSeekState = function () {
   rd58RenderReadyUI();
   rd58SyncReadyPolling();
 };
+
+/* ================================================== */
+/* Road Discovery AU v59 Hide & Seek map layout      */
+/* Append this block once to the bottom of app.js v58 */
+/* ================================================== */
+
+const roadDiscoveryV59 = {
+  resetHideSeekState,
+  renderHideSeekState
+};
+
+function rd59ApplyHideSeekPlayingLayout() {
+  const playing = Boolean(
+    state.hideSeek.roundId &&
+    ["starting", "escape", "hunt"].includes(
+      state.hideSeek.phase
+    )
+  );
+
+  document.body.classList.toggle(
+    "hide-seek-playing-layout",
+    playing
+  );
+}
+
+resetHideSeekState = function (options = {}) {
+  const result = roadDiscoveryV59.resetHideSeekState(
+    options
+  );
+
+  rd59ApplyHideSeekPlayingLayout();
+  return result;
+};
+
+renderHideSeekState = function () {
+  roadDiscoveryV59.renderHideSeekState();
+  rd59ApplyHideSeekPlayingLayout();
+};
+
+rd59ApplyHideSeekPlayingLayout();
