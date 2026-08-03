@@ -12064,3 +12064,527 @@ initMap = function () {
   roadDiscoveryV57.initMap();
   rd53ApplyRoadLayerVisibility();
 };
+
+/* ================================================== */
+/* Road Discovery AU v58 sheep Ready fast-forward    */
+/* Append this block once to the bottom of app.js v57 */
+/* ================================================== */
+
+const RD58_ESCAPE_SECONDS = 5 * 60;
+const RD58_READY_POLL_MS = 2000;
+
+const roadDiscoveryV58 = {
+  bindEvents,
+  resetHideSeekState,
+  renderHideSeekState,
+  pollHideSeekState,
+  applyHideSeekRows
+};
+
+Object.assign(state.hideSeek, {
+  readyPolling: false,
+  readySubmitting: false,
+  readyPollTimer: null,
+  readyRoundId: "",
+  sheepReadyCount: 0,
+  sheepTotal: 0,
+  viewerReady: false,
+  viewerCanReady: false,
+  fastCountdownActive: false
+});
+
+function rd58CacheReadyElements() {
+  [
+    "hideSeekReadyPanel",
+    "hideSeekReadyStatus",
+    "hideSeekReadyBtn",
+    "hideSeekMapReadyPanel",
+    "hideSeekMapReadyStatus",
+    "hideSeekMapReadyBtn"
+  ].forEach((id) => {
+    els[id] = $(id);
+  });
+}
+
+/* -------------------------------------------------- */
+/* Events                                             */
+/* -------------------------------------------------- */
+
+bindEvents = function () {
+  roadDiscoveryV58.bindEvents();
+  rd58CacheReadyElements();
+
+  els.hideSeekReadyBtn?.addEventListener(
+    "click",
+    rd58SetSheepReady
+  );
+
+  els.hideSeekMapReadyBtn?.addEventListener(
+    "click",
+    rd58SetSheepReady
+  );
+};
+
+/* -------------------------------------------------- */
+/* State lifecycle                                    */
+/* -------------------------------------------------- */
+
+function rd58ResetReadyState() {
+  state.hideSeek.readyPolling = false;
+  state.hideSeek.readySubmitting = false;
+  state.hideSeek.readyRoundId = "";
+  state.hideSeek.sheepReadyCount = 0;
+  state.hideSeek.sheepTotal = 0;
+  state.hideSeek.viewerReady = false;
+  state.hideSeek.viewerCanReady = false;
+  state.hideSeek.fastCountdownActive = false;
+}
+
+function rd58StopReadyPolling() {
+  if (
+    state.hideSeek.readyPollTimer !== null
+  ) {
+    window.clearInterval(
+      state.hideSeek.readyPollTimer
+    );
+
+    state.hideSeek.readyPollTimer = null;
+  }
+}
+
+function rd58SyncReadyPolling() {
+  const shouldPoll = Boolean(
+    state.hideSeek.roundId &&
+    state.hideSeek.phase === "escape" &&
+    hasActiveMultiplayerRoom()
+  );
+
+  if (!shouldPoll) {
+    rd58StopReadyPolling();
+    return;
+  }
+
+  if (
+    state.hideSeek.readyPollTimer !== null
+  ) {
+    return;
+  }
+
+  state.hideSeek.readyPollTimer =
+    window.setInterval(
+      () => {
+        void rd58PollReadyState();
+      },
+      RD58_READY_POLL_MS
+    );
+}
+
+resetHideSeekState = function (
+  options = {}
+) {
+  if (options.clearRound !== false) {
+    rd58StopReadyPolling();
+    rd58ResetReadyState();
+  }
+
+  return roadDiscoveryV58
+    .resetHideSeekState(options);
+};
+
+/* -------------------------------------------------- */
+/* Preserve the real role-reveal time                 */
+/* -------------------------------------------------- */
+
+applyHideSeekRows = function (rows) {
+  const first = rows?.[0];
+
+  const incomingRoundId = String(
+    first?.round_id || ""
+  );
+
+  const previousRoundId =
+    state.hideSeek.roundId;
+
+  const previousRoleRevealAt =
+    state.hideSeek.roleRevealAt;
+
+  const escapeEndsMs = Date.parse(
+    first?.escape_ends_at || ""
+  );
+
+  roadDiscoveryV58.applyHideSeekRows(rows);
+
+  if (
+    incomingRoundId &&
+    incomingRoundId === previousRoundId &&
+    previousRoleRevealAt
+  ) {
+    state.hideSeek.roleRevealAt =
+      previousRoleRevealAt;
+  } else if (
+    String(first?.phase || "") ===
+      "starting" &&
+    Number.isFinite(escapeEndsMs)
+  ) {
+    state.hideSeek.roleRevealAt =
+      new Date(
+        escapeEndsMs -
+          RD58_ESCAPE_SECONDS * 1000
+      ).toISOString();
+  }
+
+  rd58SyncReadyPolling();
+};
+
+/* -------------------------------------------------- */
+/* Secure aggregate Ready polling                    */
+/* -------------------------------------------------- */
+
+async function rd58PollReadyState(
+  options = {}
+) {
+  const { force = false } = options;
+
+  if (
+    !state.hideSeek.roundId ||
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    state.hideSeek.readyPolling ||
+    (!force && !navigator.onLine)
+  ) {
+    return;
+  }
+
+  state.hideSeek.readyPolling = true;
+
+  const { data, error } =
+    await state.auth.client.rpc(
+      "get_hide_seek_ready_state",
+      {
+        p_room_id:
+          state.multiplayer.roomId
+      }
+    );
+
+  state.hideSeek.readyPolling = false;
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  const row = Array.isArray(data)
+    ? data[0]
+    : data;
+
+  if (
+    !row ||
+    String(row.round_id || "") !==
+      state.hideSeek.roundId
+  ) {
+    return;
+  }
+
+  const fastCountdownWasActive =
+    state.hideSeek.fastCountdownActive;
+
+  state.hideSeek.readyRoundId = String(
+    row.round_id || ""
+  );
+
+  state.hideSeek.sheepReadyCount =
+    Math.max(
+      0,
+      Number(row.sheep_ready_count) || 0
+    );
+
+  state.hideSeek.sheepTotal = Math.max(
+    0,
+    Number(row.sheep_total) || 0
+  );
+
+  state.hideSeek.viewerReady = Boolean(
+    row.viewer_ready
+  );
+
+  state.hideSeek.viewerCanReady = Boolean(
+    row.viewer_can_ready
+  );
+
+  state.hideSeek.fastCountdownActive =
+    Boolean(row.fast_countdown_active);
+
+  if (row.escape_ends_at) {
+    state.hideSeek.escapeEndsAt =
+      row.escape_ends_at;
+  }
+
+  if (row.hunt_ends_at) {
+    state.hideSeek.huntEndsAt =
+      row.hunt_ends_at;
+  }
+
+  const serverNowMs = Date.parse(
+    row.server_now || ""
+  );
+
+  if (Number.isFinite(serverNowMs)) {
+    state.hideSeek.serverOffsetMs =
+      serverNowMs - Date.now();
+  }
+
+  if (
+    state.hideSeek.fastCountdownActive &&
+    !fastCountdownWasActive
+  ) {
+    showToast(
+      "All sheep ready • Wolf starts in 10 seconds"
+    );
+  }
+
+  if (
+    String(row.phase || "") === "hunt" &&
+    state.hideSeek.phase === "escape"
+  ) {
+    void pollHideSeekState({
+      force: true
+    });
+  }
+
+  renderHideSeekState();
+}
+
+pollHideSeekState = async function (
+  options = {}
+) {
+  await roadDiscoveryV58
+    .pollHideSeekState(options);
+
+  if (state.hideSeek.roundId) {
+    await rd58PollReadyState(options);
+  }
+
+  rd58SyncReadyPolling();
+};
+
+/* -------------------------------------------------- */
+/* Sheep Ready action                                 */
+/* -------------------------------------------------- */
+
+async function rd58SetSheepReady() {
+  if (
+    !state.hideSeek.roundId ||
+    state.hideSeek.phase !== "escape" ||
+    state.hideSeek.viewerRole !==
+      "sheep" ||
+    state.hideSeek.viewerReady ||
+    !state.hideSeek.viewerCanReady ||
+    state.hideSeek.readySubmitting ||
+    !state.auth.client ||
+    !navigator.onLine
+  ) {
+    return;
+  }
+
+  state.hideSeek.readySubmitting = true;
+  renderHideSeekState();
+
+  if (state.currentPoint) {
+    await maybeSendHideSeekLocation(
+      state.currentPoint,
+      {
+        force: true
+      }
+    );
+  }
+
+  const { error } =
+    await state.auth.client.rpc(
+      "set_hide_seek_ready",
+      {
+        p_round_id:
+          state.hideSeek.roundId
+      }
+    );
+
+  state.hideSeek.readySubmitting = false;
+
+  if (error) {
+    console.error(error);
+
+    showToast(
+      hideSeekErrorMessage(error)
+    );
+
+    await rd58PollReadyState({
+      force: true
+    });
+
+    renderHideSeekState();
+    return;
+  }
+
+  showToast("You are ready");
+
+  await rd58PollReadyState({
+    force: true
+  });
+
+  await pollHideSeekState({
+    force: true
+  });
+}
+
+/* -------------------------------------------------- */
+/* Ready interface                                    */
+/* -------------------------------------------------- */
+
+function rd58ReadyStatusText() {
+  const ready =
+    state.hideSeek.sheepReadyCount;
+
+  const total =
+    state.hideSeek.sheepTotal;
+
+  if (
+    state.hideSeek.fastCountdownActive
+  ) {
+    return (
+      "All sheep ready • Wolf starts " +
+      "when the timer reaches zero"
+    );
+  }
+
+  if (
+    state.hideSeek.viewerRole === "wolf"
+  ) {
+    return (
+      `${ready} of ${total} sheep ready`
+    );
+  }
+
+  if (state.hideSeek.viewerReady) {
+    return (
+      `${ready} of ${total} sheep ready` +
+      " • Stay inside the zone"
+    );
+  }
+
+  if (state.hideSeek.viewerCanReady) {
+    return (
+      `${ready} of ${total} sheep ready` +
+      " • You are inside the zone"
+    );
+  }
+
+  return (
+    `${ready} of ${total} sheep ready` +
+    " • Reach the zone first"
+  );
+}
+
+function rd58RenderReadyButton(button) {
+  if (!button) return;
+
+  const showButton =
+    state.hideSeek.phase === "escape" &&
+    state.hideSeek.viewerRole ===
+      "sheep" &&
+    !state.hideSeek.fastCountdownActive;
+
+  button.classList.toggle(
+    "hidden",
+    !showButton
+  );
+
+  if (!showButton) return;
+
+  button.disabled =
+    state.hideSeek.readySubmitting ||
+    state.hideSeek.viewerReady ||
+    !state.hideSeek.viewerCanReady;
+
+  button.classList.toggle(
+    "ready",
+    state.hideSeek.viewerReady
+  );
+
+  button.textContent =
+    state.hideSeek.readySubmitting
+      ? "Setting Ready..."
+      : state.hideSeek.viewerReady
+        ? "Ready ✓"
+        : state.hideSeek.viewerCanReady
+          ? "Ready"
+          : "Reach Zone";
+}
+
+function rd58RenderReadyUI() {
+  const visible =
+    Boolean(state.hideSeek.roundId) &&
+    state.hideSeek.phase === "escape";
+
+  const statusText = visible
+    ? rd58ReadyStatusText()
+    : "";
+
+  els.hideSeekReadyPanel?.classList.toggle(
+    "hidden",
+    !visible
+  );
+
+  els.hideSeekMapReadyPanel
+    ?.classList.toggle(
+      "hidden",
+      !visible
+    );
+
+  if (els.hideSeekReadyStatus) {
+    els.hideSeekReadyStatus.textContent =
+      statusText;
+  }
+
+  if (els.hideSeekMapReadyStatus) {
+    els.hideSeekMapReadyStatus.textContent =
+      statusText;
+  }
+
+  rd58RenderReadyButton(
+    els.hideSeekReadyBtn
+  );
+
+  rd58RenderReadyButton(
+    els.hideSeekMapReadyBtn
+  );
+
+  if (
+    visible &&
+    state.hideSeek.fastCountdownActive
+  ) {
+    if (els.hideSeekPhaseBadge) {
+      els.hideSeekPhaseBadge.textContent =
+        "Get ready";
+    }
+
+    if (els.hideSeekMapPhase) {
+      els.hideSeekMapPhase.textContent =
+        "Wolf starts soon";
+    }
+
+    if (els.hideSeekGameStatus) {
+      els.hideSeekGameStatus.textContent =
+        "All sheep are ready. The hunt " +
+        "begins when the countdown " +
+        "reaches zero.";
+    }
+  }
+}
+
+renderHideSeekState = function () {
+  roadDiscoveryV58.renderHideSeekState();
+
+  rd58CacheReadyElements();
+  rd58RenderReadyUI();
+  rd58SyncReadyPolling();
+};
