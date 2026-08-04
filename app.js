@@ -12698,3 +12698,73 @@ drawFriendFullMapRoads = function (roads) {
   rd61ApplyFriendSavedRoadStyle();
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v62 orange vein map styling     */
+/* Append this block once to the bottom of app.js v61 */
+/* ================================================== */
+
+function rd62OrangeRoadStyleForZoom(zoomValue) {
+  const zoom = Number(zoomValue);
+
+  /* Street view: retain the original painted-road look. */
+  if (!Number.isFinite(zoom) || zoom >= 14) {
+    return {
+      weight: 5,
+      opacity: 0.95
+    };
+  }
+
+  /* Suburb view. */
+  if (zoom >= 13) {
+    return {
+      weight: 3,
+      opacity: 0.8
+    };
+  }
+
+  if (zoom >= 12) {
+    return {
+      weight: 2,
+      opacity: 0.68
+    };
+  }
+
+  /* City and surrounding-region view. */
+  if (zoom >= 10) {
+    return {
+      weight: 1.1,
+      opacity: 0.58
+    };
+  }
+
+  /* Sydney-Wollongong-Gosford-Newcastle style view. */
+  if (zoom >= 8) {
+    return {
+      weight: 0.8,
+      opacity: 0.48
+    };
+  }
+
+  /* State and Australia-wide view: fine orange veins. */
+  return {
+    weight: 0.6,
+    opacity: 0.4
+  };
+}
+
+rd53SavedRoadStyle = function () {
+  return rd62OrangeRoadStyleForZoom(
+    state.map?.getZoom?.()
+  );
+};
+
+rd61FriendSavedRoadStyle = function () {
+  return rd62OrangeRoadStyleForZoom(
+    state.friendMap.fullMap?.getZoom?.()
+  );
+};
+
+/* Apply immediately if either map is already open. */
+rd53ApplySavedRoadZoomStyle();
+rd61ApplyFriendSavedRoadStyle();
