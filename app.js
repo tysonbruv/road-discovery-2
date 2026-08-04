@@ -12628,3 +12628,73 @@ renderHideSeekState = function () {
 };
 
 rd59ApplyHideSeekPlayingLayout();
+
+/* ================================================== */
+/* Road Discovery AU v61 friend-map road styling     */
+/* Append this block once to the bottom of app.js v60 */
+/* ================================================== */
+
+const roadDiscoveryV61 = {
+  ensureFriendFullMap,
+  drawFriendFullMapRoads
+};
+
+function rd61FriendSavedRoadStyle() {
+  const zoom = Number(
+    state.friendMap.fullMap?.getZoom?.()
+  );
+
+  if (!Number.isFinite(zoom) || zoom >= 14) {
+    return {
+      weight: 5,
+      opacity: 0.95
+    };
+  }
+
+  if (zoom >= 13) {
+    return {
+      weight: 3,
+      opacity: 0.8
+    };
+  }
+
+  if (zoom >= 12) {
+    return {
+      weight: 2,
+      opacity: 0.68
+    };
+  }
+
+  return {
+    weight: 1.25,
+    opacity: 0.52
+  };
+}
+
+function rd61ApplyFriendSavedRoadStyle() {
+  state.friendMap.fullRoadLayer?.setStyle?.(
+    rd61FriendSavedRoadStyle()
+  );
+}
+
+ensureFriendFullMap = function () {
+  roadDiscoveryV61.ensureFriendFullMap();
+
+  const map = state.friendMap.fullMap;
+
+  if (!map || map.rd61FriendRoadStyleBound) {
+    return;
+  }
+
+  map.rd61FriendRoadStyleBound = true;
+  map.on("zoomend", rd61ApplyFriendSavedRoadStyle);
+};
+
+drawFriendFullMapRoads = function (roads) {
+  const result = roadDiscoveryV61.drawFriendFullMapRoads(
+    roads
+  );
+
+  rd61ApplyFriendSavedRoadStyle();
+  return result;
+};
