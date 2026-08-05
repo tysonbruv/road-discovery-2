@@ -1,20 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v63 service worker
+  Road Discovery AU v64 service worker
 
-  Checkpoint 10:
-  Fine orange-vein styling at regional and country zoom.
+  Private local My Places map icons.
 
   Expected frontend versions:
-  - app.js?v=62
-  - style.css?v=46
+  - app.js?v=63
+  - style.css?v=47
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v63";
+const CACHE_NAME = "road-discovery-au-v64";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,6 +23,8 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=47",
+  "./app.js?v=63",
   "./style.css?v=46",
   "./app.js?v=62",
   "./app.js?v=61",
@@ -164,6 +165,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/style.css")) {
           return (
+            (await caches.match("./style.css?v=47")) ||
             (await caches.match("./style.css?v=46")) ||
             (await caches.match("./style.css?v=45")) ||
             (await caches.match("./style.css?v=44")) ||
@@ -181,6 +183,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=63")) ||
             (await caches.match("./app.js?v=62")) ||
             (await caches.match("./app.js?v=61")) ||
             (await caches.match("./app.js?v=60")) ||
