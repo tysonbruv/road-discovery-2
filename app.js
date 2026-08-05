@@ -12768,3 +12768,901 @@ rd61FriendSavedRoadStyle = function () {
 /* Apply immediately if either map is already open. */
 rd53ApplySavedRoadZoomStyle();
 rd61ApplyFriendSavedRoadStyle();
+
+/* ================================================== */
+/* Road Discovery AU v63 private My Places icons     */
+/* Append this block once to the bottom of app.js v62 */
+/* ================================================== */
+
+const RD63_MY_PLACES_STORAGE_KEY =
+  "roadDiscoveryAU.myPlaces.v1";
+const RD63_MY_PLACES_MAX = 100;
+const RD63_MY_PLACE_NAME_MAX = 40;
+
+const RD63_PLACE_TYPES = Object.freeze({
+  home: {
+    label: "Home",
+    path: "M3.5 11.5 12 4l8.5 7.5v9h-5.8v-5.8H9.3v5.8H3.5z"
+  },
+  work: {
+    label: "Work",
+    path: "M8 6V4.5h8V6h4.5v14h-17V6zm2 0h4V6zm-6.5 5.5h17M9 11.5v2h6v-2"
+  },
+  garage: {
+    label: "Garage",
+    path: "M3.5 10.5 12 5l8.5 5.5v10H3.5zm3 2.5h11v7.5h-11zm1.8 2.2h7.4M8.3 17.8h7.4"
+  },
+  meeting: {
+    label: "Meeting",
+    path: "M6 21V3.5m1 1h11l-2.2 4L18 12.5H7"
+  },
+  fuel: {
+    label: "Fuel",
+    path: "M5 21V4h9v17M4 21h11M7.5 7.5h4M14 8h2l2.5 2.5V17a1.5 1.5 0 0 0 3 0v-5.5L19 9"
+  },
+  scenic: {
+    label: "Scenic",
+    path: "M4 7.5h4l1.5-2h5l1.5 2h4v12H4zm8 2.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7"
+  },
+  star: {
+    label: "Favourite",
+    path: "m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"
+  },
+  warning: {
+    label: "Warning",
+    path: "M12 3.5 21 20H3zm0 5v5.5m0 3v.2"
+  }
+});
+
+const roadDiscoveryV63 = {
+  ensureLocateButton,
+  initMap,
+  closePanels,
+  renderHideSeekState,
+  resetHideSeekState
+};
+
+const rd63StoredPlaces = rd63LoadStoredPlaces();
+
+state.myPlaces = {
+  items: rd63StoredPlaces.items,
+  visible: rd63StoredPlaces.visible,
+  layer: null,
+  markers: new Map(),
+  placingType: null,
+  movingPlaceId: null,
+  keepPlacementOnClose: false,
+  selectedPlaceId: null
+};
+
+/* -------------------------------------------------- */
+/* Local storage                                      */
+/* -------------------------------------------------- */
+
+function rd63LoadStoredPlaces() {
+  try {
+    const raw = localStorage.getItem(
+      RD63_MY_PLACES_STORAGE_KEY
+    );
+
+    if (!raw) {
+      return {
+        items: [],
+        visible: true
+      };
+    }
+
+    const parsed = JSON.parse(raw);
+    const source = Array.isArray(parsed?.items)
+      ? parsed.items
+      : [];
+    const ids = new Set();
+    const items = [];
+
+    for (const candidate of source) {
+      const type = String(candidate?.type || "");
+      const lat = Number(candidate?.lat);
+      const lng = Number(candidate?.lng);
+      const rawId = String(candidate?.id || "");
+
+      if (
+        !RD63_PLACE_TYPES[type] ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng) ||
+        lat < -90 ||
+        lat > 90 ||
+        lng < -180 ||
+        lng > 180
+      ) {
+        continue;
+      }
+
+      const id = /^[a-zA-Z0-9_-]{1,80}$/.test(rawId)
+        ? rawId
+        : rd63CreatePlaceId();
+
+      if (ids.has(id)) continue;
+      ids.add(id);
+
+      const defaultName = RD63_PLACE_TYPES[type].label;
+      const name = String(candidate?.name || defaultName)
+        .trim()
+        .slice(0, RD63_MY_PLACE_NAME_MAX) || defaultName;
+
+      items.push({
+        id,
+        type,
+        name,
+        lat: Number(lat.toFixed(6)),
+        lng: Number(lng.toFixed(6)),
+        createdAt:
+          Number(candidate?.createdAt) || Date.now()
+      });
+
+      if (items.length >= RD63_MY_PLACES_MAX) break;
+    }
+
+    return {
+      items,
+      visible: parsed?.visible !== false
+    };
+  } catch (error) {
+    console.error(error);
+
+    return {
+      items: [],
+      visible: true
+    };
+  }
+}
+
+function rd63SavePlaces() {
+  try {
+    localStorage.setItem(
+      RD63_MY_PLACES_STORAGE_KEY,
+      JSON.stringify({
+        visible: state.myPlaces.visible,
+        items: state.myPlaces.items
+      })
+    );
+  } catch (error) {
+    console.error(error);
+    showToast("Could not save My Places on this device");
+  }
+}
+
+function rd63CreatePlaceId() {
+  if (typeof window.crypto?.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+
+  return `place_${Date.now()}_${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
+
+/* -------------------------------------------------- */
+/* Interface creation                                 */
+/* -------------------------------------------------- */
+
+ensureLocateButton = function () {
+  roadDiscoveryV63.ensureLocateButton();
+  rd63EnsurePlacesInterface();
+};
+
+function rd63EnsurePlacesInterface() {
+  const toolStack = document.querySelector(".tool-stack");
+
+  if (!toolStack) return;
+
+  let button = $("placesBtn");
+
+  if (!button) {
+    button = document.createElement("button");
+    button.id = "placesBtn";
+    button.className = "tool-btn places-tool-btn";
+    button.type = "button";
+    button.title = "My Places";
+    button.setAttribute("aria-label", "Open My Places");
+    button.innerHTML = rd63ToolButtonSvg();
+
+    const friendsButton = $("friendsBtn");
+
+    if (
+      friendsButton &&
+      friendsButton.parentElement === toolStack
+    ) {
+      toolStack.insertBefore(button, friendsButton);
+    } else {
+      toolStack.appendChild(button);
+    }
+  }
+
+  let panel = $("placesPanel");
+
+  if (!panel) {
+    panel = document.createElement("aside");
+    panel.id = "placesPanel";
+    panel.className = "side-panel hidden my-places-panel";
+    panel.setAttribute("aria-hidden", "true");
+    panel.setAttribute("aria-label", "My Places");
+    panel.innerHTML = rd63PlacesPanelMarkup();
+
+    $("appShell")?.appendChild(panel);
+  }
+
+  els.placesBtn = button;
+  els.placesPanel = panel;
+  els.closePlacesBtn = $("closePlacesBtn");
+  els.myPlacesVisibilityToggle = $(
+    "myPlacesVisibilityToggle"
+  );
+  els.myPlacesIconGrid = $("myPlacesIconGrid");
+  els.myPlacesList = $("myPlacesList");
+
+  if (button.dataset.rd63Bound !== "true") {
+    button.dataset.rd63Bound = "true";
+    button.addEventListener("click", rd63OpenPlacesPanel);
+  }
+
+  if (panel.dataset.rd63Bound !== "true") {
+    panel.dataset.rd63Bound = "true";
+
+    els.closePlacesBtn?.addEventListener(
+      "click",
+      () => closePanels()
+    );
+
+    els.myPlacesVisibilityToggle?.addEventListener(
+      "change",
+      rd63HandleVisibilityChange
+    );
+
+    els.myPlacesIconGrid?.addEventListener(
+      "click",
+      rd63HandleIconChoice
+    );
+
+    els.myPlacesList?.addEventListener(
+      "click",
+      rd63HandlePlaceListAction
+    );
+  }
+
+  rd63RenderPlacesPanel();
+  rd63UpdatePlacesButton();
+}
+
+function rd63ToolButtonSvg() {
+  return `
+    <svg
+      class="places-tool-icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"
+      ></path>
+      <circle cx="12" cy="10" r="2.25"></circle>
+    </svg>
+  `;
+}
+
+function rd63PlacesPanelMarkup() {
+  const iconButtons = Object.entries(RD63_PLACE_TYPES)
+    .map(([type, definition]) => {
+      return `
+        <button
+          class="my-place-icon-choice"
+          type="button"
+          data-place-type="${type}"
+          aria-label="Place ${definition.label} icon"
+        >
+          ${rd63PlaceSvg(type)}
+          <span>${definition.label}</span>
+        </button>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="panel-header">
+      <div>
+        <h2>My Places</h2>
+        <p>Save private icons on your map.</p>
+      </div>
+
+      <button
+        id="closePlacesBtn"
+        class="panel-close-btn"
+        type="button"
+        aria-label="Close My Places"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="panel-content">
+      <section class="panel-section">
+        <div class="my-places-privacy-note">
+          <strong>🔒 Private on this device</strong>
+          <p>
+            Your icons are saved only on this device. Friends,
+            Multiplayer players and Hide & Seek players cannot see
+            them. Icons are never included in map sharing.
+          </p>
+          <p>
+            Your icons may be deleted if you clear your Safari
+            history and website data or remove Road Discovery AU
+            from your Home Screen.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <label
+          class="toggle-row"
+          for="myPlacesVisibilityToggle"
+        >
+          <div class="toggle-text">
+            <strong>Show my icons</strong>
+            <span>
+              Hide or show every private icon without deleting it.
+            </span>
+          </div>
+
+          <input
+            id="myPlacesVisibilityToggle"
+            class="toggle-input"
+            type="checkbox"
+          />
+
+          <span class="toggle-switch" aria-hidden="true">
+            <span class="toggle-knob"></span>
+          </span>
+        </label>
+      </section>
+
+      <section class="panel-section">
+        <h3>Place an icon</h3>
+        <p class="my-places-help">
+          Choose an icon, then tap the map to place it.
+        </p>
+
+        <div
+          id="myPlacesIconGrid"
+          class="my-places-icon-grid"
+        >
+          ${iconButtons}
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <div class="my-places-list-heading">
+          <h3>Saved icons</h3>
+          <span id="myPlacesCount">0</span>
+        </div>
+
+        <div
+          id="myPlacesList"
+          class="my-places-list"
+        ></div>
+      </section>
+    </div>
+  `;
+}
+
+function rd63PlaceSvg(type) {
+  const definition = RD63_PLACE_TYPES[type];
+
+  if (!definition) return "";
+
+  const filled = ["home", "star"].includes(type);
+
+  return `
+    <svg
+      class="my-place-svg"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        d="${definition.path}"
+        fill="${filled ? "currentColor" : "none"}"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      ></path>
+    </svg>
+  `;
+}
+
+/* -------------------------------------------------- */
+/* Panel behaviour                                    */
+/* -------------------------------------------------- */
+
+function rd63OpenPlacesPanel(eventOrPlaceId = null) {
+  if (hasActiveHideSeekRound()) {
+    showToast("My Places are hidden during Hide & Seek");
+    return;
+  }
+
+  rd63CancelPlacement(false);
+
+  state.myPlaces.selectedPlaceId =
+    typeof eventOrPlaceId === "string"
+      ? eventOrPlaceId
+      : null;
+
+  rd63RenderPlacesPanel();
+  openPanel("placesPanel");
+
+  if (state.myPlaces.selectedPlaceId) {
+    window.requestAnimationFrame(() => {
+      const selected = els.myPlacesList?.querySelector(
+        `[data-place-id="${state.myPlaces.selectedPlaceId}"]`
+      );
+
+      selected?.scrollIntoView?.({
+        block: "nearest",
+        behavior: "smooth"
+      });
+    });
+  }
+}
+
+closePanels = function (hideBackdrop = true) {
+  const result = roadDiscoveryV63.closePanels(hideBackdrop);
+
+  els.placesPanel?.classList.add("hidden");
+  els.placesPanel?.setAttribute("aria-hidden", "true");
+
+  if (!state.myPlaces.keepPlacementOnClose) {
+    rd63CancelPlacement(false);
+  }
+
+  return result;
+};
+
+function rd63HandleVisibilityChange() {
+  state.myPlaces.visible = Boolean(
+    els.myPlacesVisibilityToggle?.checked
+  );
+
+  rd63SavePlaces();
+  rd63ApplyPlacesVisibility();
+  rd63RenderPlacesPanel();
+
+  showToast(
+    state.myPlaces.visible
+      ? "My Places shown"
+      : "My Places hidden"
+  );
+}
+
+function rd63HandleIconChoice(event) {
+  const button = event.target.closest("[data-place-type]");
+
+  if (!button || !els.myPlacesIconGrid?.contains(button)) {
+    return;
+  }
+
+  const type = String(button.dataset.placeType || "");
+
+  if (!RD63_PLACE_TYPES[type]) return;
+
+  if (state.myPlaces.items.length >= RD63_MY_PLACES_MAX) {
+    showToast(`My Places supports up to ${RD63_MY_PLACES_MAX} icons`);
+    return;
+  }
+
+  state.myPlaces.visible = true;
+  state.myPlaces.placingType = type;
+  state.myPlaces.movingPlaceId = null;
+  state.myPlaces.keepPlacementOnClose = true;
+
+  rd63SavePlaces();
+  rd63ApplyPlacesVisibility();
+  closePanels();
+
+  state.myPlaces.keepPlacementOnClose = false;
+  rd63UpdatePlacesButton();
+
+  const label = RD63_PLACE_TYPES[type].label;
+  showToast(`Tap the map to place ${label}`);
+}
+
+function rd63HandlePlaceListAction(event) {
+  const button = event.target.closest("[data-place-action]");
+
+  if (!button || !els.myPlacesList?.contains(button)) {
+    return;
+  }
+
+  const row = button.closest("[data-place-id]");
+  const placeId = String(row?.dataset.placeId || "");
+  const action = String(button.dataset.placeAction || "");
+  const place = rd63FindPlace(placeId);
+
+  if (!place) return;
+
+  if (action === "waypoint") {
+    closePanels();
+
+    void setWaypoint({
+      lat: place.lat,
+      lng: place.lng
+    });
+
+    return;
+  }
+
+  if (action === "rename") {
+    rd63RenamePlace(place);
+    return;
+  }
+
+  if (action === "move") {
+    rd63BeginMovePlace(place);
+    return;
+  }
+
+  if (action === "delete") {
+    rd63DeletePlace(place);
+  }
+}
+
+function rd63RenamePlace(place) {
+  const nextName = window.prompt(
+    "Name this place",
+    place.name
+  );
+
+  if (nextName === null) return;
+
+  place.name =
+    String(nextName)
+      .trim()
+      .slice(0, RD63_MY_PLACE_NAME_MAX) ||
+    RD63_PLACE_TYPES[place.type].label;
+
+  rd63SavePlaces();
+  rd63DrawPlaces();
+  rd63RenderPlacesPanel();
+  showToast("Place renamed");
+}
+
+function rd63BeginMovePlace(place) {
+  state.myPlaces.placingType = null;
+  state.myPlaces.movingPlaceId = place.id;
+  state.myPlaces.keepPlacementOnClose = true;
+
+  closePanels();
+
+  state.myPlaces.keepPlacementOnClose = false;
+  rd63UpdatePlacesButton();
+  showToast(`Tap the map to move ${place.name}`);
+}
+
+function rd63DeletePlace(place) {
+  const confirmed = window.confirm(
+    `Delete ${place.name} from My Places?`
+  );
+
+  if (!confirmed) return;
+
+  state.myPlaces.items = state.myPlaces.items.filter(
+    (item) => item.id !== place.id
+  );
+
+  state.myPlaces.selectedPlaceId = null;
+
+  rd63SavePlaces();
+  rd63DrawPlaces();
+  rd63RenderPlacesPanel();
+  showToast("Place deleted");
+}
+
+function rd63RenderPlacesPanel() {
+  if (!els.myPlacesList) return;
+
+  if (els.myPlacesVisibilityToggle) {
+    els.myPlacesVisibilityToggle.checked =
+      state.myPlaces.visible;
+  }
+
+  const count = $("myPlacesCount");
+
+  if (count) {
+    count.textContent = String(state.myPlaces.items.length);
+  }
+
+  if (state.myPlaces.items.length === 0) {
+    els.myPlacesList.innerHTML = `
+      <p class="my-places-empty">
+        No icons saved yet.
+      </p>
+    `;
+
+    return;
+  }
+
+  els.myPlacesList.innerHTML = state.myPlaces.items
+    .map((place) => {
+      const selected =
+        place.id === state.myPlaces.selectedPlaceId;
+
+      return `
+        <article
+          class="my-place-row ${selected ? "selected" : ""}"
+          data-place-id="${place.id}"
+        >
+          <div class="my-place-row-main">
+            <span class="my-place-row-icon">
+              ${rd63PlaceSvg(place.type)}
+            </span>
+
+            <div>
+              <strong>${escapeHtml(place.name)}</strong>
+              <span>${RD63_PLACE_TYPES[place.type].label}</span>
+            </div>
+          </div>
+
+          <div class="my-place-row-actions">
+            <button
+              type="button"
+              data-place-action="waypoint"
+            >
+              Waypoint
+            </button>
+
+            <button
+              type="button"
+              data-place-action="rename"
+            >
+              Rename
+            </button>
+
+            <button
+              type="button"
+              data-place-action="move"
+            >
+              Move
+            </button>
+
+            <button
+              class="danger"
+              type="button"
+              data-place-action="delete"
+            >
+              Delete
+            </button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+/* -------------------------------------------------- */
+/* Map markers and placement                          */
+/* -------------------------------------------------- */
+
+initMap = function () {
+  roadDiscoveryV63.initMap();
+
+  if (!state.map || !window.L) return;
+
+  if (!state.map.getPane("myPlacesPane")) {
+    state.map.createPane("myPlacesPane");
+  }
+
+  const pane = state.map.getPane("myPlacesPane");
+
+  if (pane) {
+    pane.style.zIndex = "635";
+    pane.style.pointerEvents = "auto";
+  }
+
+  state.myPlaces.layer = L.layerGroup().addTo(state.map);
+  state.map.on("click", rd63HandlePlacesMapClick);
+
+  rd63DrawPlaces();
+  rd63ApplyPlacesVisibility();
+};
+
+function rd63HandlePlacesMapClick(event) {
+  const movingPlaceId = state.myPlaces.movingPlaceId;
+  const placingType = state.myPlaces.placingType;
+
+  if (!movingPlaceId && !placingType) return;
+
+  const lat = Number(event?.latlng?.lat);
+  const lng = Number(event?.latlng?.lng);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return;
+  }
+
+  if (movingPlaceId) {
+    const place = rd63FindPlace(movingPlaceId);
+
+    if (place) {
+      place.lat = Number(lat.toFixed(6));
+      place.lng = Number(lng.toFixed(6));
+
+      rd63SavePlaces();
+      rd63DrawPlaces();
+      showToast(`${place.name} moved`);
+    }
+
+    rd63CancelPlacement(false);
+    return;
+  }
+
+  if (!RD63_PLACE_TYPES[placingType]) {
+    rd63CancelPlacement(false);
+    return;
+  }
+
+  const definition = RD63_PLACE_TYPES[placingType];
+
+  state.myPlaces.items.push({
+    id: rd63CreatePlaceId(),
+    type: placingType,
+    name: definition.label,
+    lat: Number(lat.toFixed(6)),
+    lng: Number(lng.toFixed(6)),
+    createdAt: Date.now()
+  });
+
+  rd63SavePlaces();
+  rd63DrawPlaces();
+  rd63CancelPlacement(false);
+
+  showToast(`${definition.label} saved privately`);
+}
+
+function rd63DrawPlaces() {
+  if (!state.myPlaces.layer || !state.map) return;
+
+  state.myPlaces.layer.clearLayers();
+  state.myPlaces.markers.clear();
+
+  for (const place of state.myPlaces.items) {
+    const icon = L.divIcon({
+      className: "my-place-leaflet-icon",
+      html: `
+        <div class="my-place-marker-shell">
+          ${rd63PlaceSvg(place.type)}
+        </div>
+      `,
+      iconSize: [38, 38],
+      iconAnchor: [19, 19]
+    });
+
+    const marker = L.marker(
+      [place.lat, place.lng],
+      {
+        icon,
+        pane: "myPlacesPane",
+        interactive: true,
+        keyboard: true,
+        rotateWithView: false
+      }
+    ).addTo(state.myPlaces.layer);
+
+    marker.bindTooltip(escapeHtml(place.name), {
+      direction: "top",
+      offset: [0, -18]
+    });
+
+    marker.on("click", (event) => {
+      L.DomEvent.stopPropagation(event);
+      rd63OpenPlacesPanel(place.id);
+    });
+
+    state.myPlaces.markers.set(place.id, marker);
+  }
+
+  rd63ApplyPlacesVisibility();
+  rd63RenderPlacesPanel();
+}
+
+function rd63ApplyPlacesVisibility() {
+  const map = state.map;
+  const layer = state.myPlaces.layer;
+  const gameActive = hasActiveHideSeekRound();
+  const shouldShow =
+    state.myPlaces.visible && !gameActive;
+
+  if (map && layer) {
+    const showing = map.hasLayer(layer);
+
+    if (shouldShow && !showing) {
+      layer.addTo(map);
+    } else if (!shouldShow && showing) {
+      map.removeLayer(layer);
+    }
+  }
+
+  if (gameActive) {
+    rd63CancelPlacement(false);
+  }
+
+  rd63UpdatePlacesButton();
+}
+
+function rd63UpdatePlacesButton() {
+  const button = els.placesBtn || $("placesBtn");
+
+  if (!button) return;
+
+  const gameActive = hasActiveHideSeekRound();
+  const placing = Boolean(
+    state.myPlaces.placingType ||
+    state.myPlaces.movingPlaceId
+  );
+
+  button.disabled = gameActive;
+
+  button.classList.toggle(
+    "active",
+    state.myPlaces.visible && !gameActive
+  );
+
+  button.classList.toggle("placing", placing);
+
+  button.setAttribute(
+    "aria-pressed",
+    String(state.myPlaces.visible && !gameActive)
+  );
+
+  button.title = gameActive
+    ? "My Places • hidden during Hide & Seek"
+    : placing
+      ? "Tap the map to place an icon"
+      : "My Places";
+}
+
+function rd63CancelPlacement(showMessage = false) {
+  const wasPlacing = Boolean(
+    state.myPlaces.placingType ||
+    state.myPlaces.movingPlaceId
+  );
+
+  state.myPlaces.placingType = null;
+  state.myPlaces.movingPlaceId = null;
+
+  rd63UpdatePlacesButton();
+
+  if (showMessage && wasPlacing) {
+    showToast("Icon placement cancelled");
+  }
+}
+
+function rd63FindPlace(placeId) {
+  return (
+    state.myPlaces.items.find(
+      (place) => place.id === placeId
+    ) || null
+  );
+}
+
+/* -------------------------------------------------- */
+/* Hide & Seek separation                             */
+/* -------------------------------------------------- */
+
+renderHideSeekState = function () {
+  roadDiscoveryV63.renderHideSeekState();
+  rd63ApplyPlacesVisibility();
+};
+
+resetHideSeekState = function (options = {}) {
+  const result = roadDiscoveryV63.resetHideSeekState(
+    options
+  );
+
+  rd63ApplyPlacesVisibility();
+  return result;
+};
