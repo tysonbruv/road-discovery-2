@@ -14750,8 +14750,32 @@ function rd66InsertLocationMarkerSetting() {
   );
 }
 
+/* Road Discovery AU v67 settings section order */
+
+function rd67PlaceLocationMarkerSettingBelowAbout() {
+  const aboutSection = document.querySelector(
+    "#settingsPanel .road-discovery-about-settings"
+  );
+
+  const locationMarkerSection = $(
+    "locationMarkerToggle"
+  )?.closest(".panel-section");
+
+  if (!aboutSection || !locationMarkerSection) {
+    return;
+  }
+
+  if (aboutSection.nextElementSibling !== locationMarkerSection) {
+    aboutSection.insertAdjacentElement(
+      "afterend",
+      locationMarkerSection
+    );
+  }
+}
+
 function rd66InitLocationMarkerSetting() {
   rd66InsertLocationMarkerSetting();
+  rd67PlaceLocationMarkerSettingBelowAbout();
   rd66ApplyLocationMarkerVisibility();
 }
 
