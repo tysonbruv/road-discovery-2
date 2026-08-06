@@ -4126,3 +4126,25 @@ body.hide-seek-playing-layout .hide-seek-map-hud {
     justify-self: start;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU v50 location marker visibility   */
+/* Append this block once to the bottom of style v49  */
+/* ================================================== */
+
+body.location-marker-hidden .road-user-combined-icon,
+body.location-marker-hidden .road-user-heading-icon {
+  display: none !important;
+}
+
+.location-marker-forced-note {
+  margin: 10px 2px 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(75, 179, 255, 0.23);
+  border-radius: 13px;
+  background: rgba(75, 179, 255, 0.07);
+  color: rgba(213, 238, 255, 0.87);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
+}
