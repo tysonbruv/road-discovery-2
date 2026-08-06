@@ -4061,3 +4061,68 @@ body.hide-seek-playing-layout .hide-seek-map-hud {
     animation: none;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU v49 private backup status        */
+/* Append this block once to the bottom of style v48  */
+/* ================================================== */
+
+.private-road-backup-row {
+  border-color: rgba(75, 179, 255, 0.18);
+  background: rgba(75, 179, 255, 0.045);
+}
+
+.profile-detail-row .private-road-backup-status {
+  justify-self: end;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.private-road-backup-status.synced {
+  border-color: rgba(56, 214, 122, 0.3);
+  background: rgba(56, 214, 122, 0.085);
+  color: rgba(211, 255, 229, 0.96);
+}
+
+.private-road-backup-status.checking,
+.private-road-backup-status.restoring,
+.private-road-backup-status.waiting {
+  border-color: rgba(75, 179, 255, 0.3);
+  background: rgba(75, 179, 255, 0.085);
+  color: rgba(216, 240, 255, 0.96);
+}
+
+.private-road-backup-status.syncing,
+.private-road-backup-status.clearing {
+  border-color: rgba(255, 138, 24, 0.34);
+  background: rgba(255, 138, 24, 0.1);
+  color: rgba(255, 225, 196, 0.97);
+}
+
+.private-road-backup-status.offline,
+.private-road-backup-status.paused {
+  border-color: rgba(255, 193, 92, 0.32);
+  background: rgba(255, 193, 92, 0.085);
+  color: rgba(255, 235, 201, 0.95);
+}
+
+.private-road-backup-status.error {
+  border-color: rgba(255, 77, 77, 0.34);
+  background: rgba(255, 77, 77, 0.095);
+  color: rgba(255, 217, 217, 0.96);
+}
+
+.private-road-backup-status.signed-out {
+  color: var(--faint);
+}
+
+@media (max-width: 380px) {
+  .profile-detail-row .private-road-backup-status {
+    justify-self: start;
+  }
+}
