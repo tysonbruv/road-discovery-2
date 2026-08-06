@@ -1,19 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v66 service worker
+  Road Discovery AU v67 service worker
 
-  Private Road Profile progress backup and restore.
+  Saved location-marker visibility setting.
 
   Expected frontend versions:
-  - app.js?v=65
-  - style.css?v=49
+  - app.js?v=66
+  - style.css?v=50
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v66";
+const CACHE_NAME = "road-discovery-au-v67";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,6 +23,8 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=50",
+  "./app.js?v=66",
   "./style.css?v=49",
   "./app.js?v=65",
   "./style.css?v=48",
@@ -169,6 +171,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/style.css")) {
           return (
+            (await caches.match("./style.css?v=50")) ||
             (await caches.match("./style.css?v=49")) ||
             (await caches.match("./style.css?v=48")) ||
             (await caches.match("./style.css?v=47")) ||
@@ -189,6 +192,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=66")) ||
             (await caches.match("./app.js?v=65")) ||
             (await caches.match("./app.js?v=64")) ||
             (await caches.match("./app.js?v=63")) ||
