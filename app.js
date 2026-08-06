@@ -13885,3 +13885,698 @@ if (document.readyState === "loading") {
 } else {
   rd64InitAboutExperience();
 }
+
+/* ================================================== */
+/* Road Discovery AU v65 private progress backup      */
+/* Append this block once to the bottom of app.js v64 */
+/* ================================================== */
+
+const RD65_BACKUP_META_KEY =
+  "roadDiscoveryAU.privateRoadBackup.v1";
+const RD65_PROGRESS_OWNER_KEY =
+  "roadDiscoveryAU.progressOwner.v1";
+const RD65_UPLOAD_BATCH_SIZE = 300;
+const RD65_DOWNLOAD_PAGE_SIZE = 500;
+const RD65_MAX_DOWNLOAD_PAGES = 500;
+
+const roadDiscoveryV65 = {
+  ensureRoadProfile,
+  finishDrive,
+  handleOnlineReconnect,
+  resetDiscoveredRoads,
+  renderAuthState
+};
+
+state.privateRoadBackup = {
+  status: "signed-out",
+  text: "Sign in to back up",
+  detail: "",
+  busy: false,
+  pending: false,
+  resetPending: false,
+  timer: null
+};
+
+/* -------------------------------------------------- */
+/* Road Profile backup status                         */
+/* -------------------------------------------------- */
+
+function rd65EnsureBackupStatusRow() {
+  if ($("privateRoadBackupStatus")) return;
+
+  const list = document.querySelector(
+    "#signedInProfileCard .profile-detail-list"
+  );
+
+  if (!list) return;
+
+  const row = document.createElement("div");
+  row.className = "profile-detail-row private-road-backup-row";
+  row.innerHTML = `
+    <span>Progress backup</span>
+    <strong
+      id="privateRoadBackupStatus"
+      class="private-road-backup-status waiting"
+    >Checking...</strong>
+  `;
+
+  list.appendChild(row);
+  rd65RenderBackupStatus();
+}
+
+function rd65SetBackupStatus(status, text, detail = "") {
+  state.privateRoadBackup.status = status;
+  state.privateRoadBackup.text = text;
+  state.privateRoadBackup.detail = detail;
+  rd65RenderBackupStatus();
+}
+
+function rd65RenderBackupStatus() {
+  const element = $("privateRoadBackupStatus");
+
+  if (!element) return;
+
+  element.textContent = state.privateRoadBackup.text;
+  element.className =
+    `private-road-backup-status ${state.privateRoadBackup.status}`;
+
+  if (state.privateRoadBackup.detail) {
+    element.title = state.privateRoadBackup.detail;
+  } else {
+    element.removeAttribute("title");
+  }
+}
+
+function rd65InitBackupUI() {
+  rd65EnsureBackupStatusRow();
+
+  if (!state.auth.user) {
+    rd65SetBackupStatus("signed-out", "Sign in to back up");
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd65InitBackupUI,
+    { once: true }
+  );
+} else {
+  rd65InitBackupUI();
+}
+
+/* -------------------------------------------------- */
+/* Local account metadata                             */
+/* -------------------------------------------------- */
+
+function rd65BackupStore() {
+  const store = readJson(RD65_BACKUP_META_KEY, {});
+
+  return store && typeof store === "object" && !Array.isArray(store)
+    ? store
+    : {};
+}
+
+function rd65BackupMeta(userId = state.auth.user?.id) {
+  const id = String(userId || "");
+  const value = id ? rd65BackupStore()[id] : null;
+
+  return value && typeof value === "object"
+    ? value
+    : null;
+}
+
+function rd65SaveBackupMeta(meta, userId = state.auth.user?.id) {
+  const id = String(userId || "");
+
+  if (!id) return;
+
+  const store = rd65BackupStore();
+  store[id] = meta;
+  writeJson(RD65_BACKUP_META_KEY, store);
+}
+
+function rd65ClaimLocalProgress() {
+  const userId = String(state.auth.user?.id || "");
+
+  if (!userId) return false;
+
+  const ownerId = String(
+    readJson(RD65_PROGRESS_OWNER_KEY, "") || ""
+  );
+
+  if (!ownerId || Object.keys(state.savedSegments).length === 0) {
+    writeJson(RD65_PROGRESS_OWNER_KEY, userId);
+    return true;
+  }
+
+  if (ownerId === userId) return true;
+
+  rd65SetBackupStatus(
+    "paused",
+    "Backup paused",
+    "The orange roads on this device belong to another Road Profile. Sign back into that profile before syncing."
+  );
+
+  return false;
+}
+
+function rd65ScheduleBackup(delayMs = 350) {
+  if (state.privateRoadBackup.timer !== null) {
+    clearTimeout(state.privateRoadBackup.timer);
+  }
+
+  state.privateRoadBackup.timer = setTimeout(() => {
+    state.privateRoadBackup.timer = null;
+    void rd65ReconcileBackup();
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+/* -------------------------------------------------- */
+/* Private Supabase road records                      */
+/* -------------------------------------------------- */
+
+async function rd65ServerRoadCount() {
+  const { data, error } = await state.auth.client.rpc(
+    "get_my_private_road_count"
+  );
+
+  if (error) throw error;
+
+  const count = Number(data);
+
+  return Number.isFinite(count) && count >= 0
+    ? Math.floor(count)
+    : 0;
+}
+
+function rd65RestoredSegment(row) {
+  const id = String(row?.segment_id || "");
+  const coords = normaliseSharedRoadCoords(row?.coordinates);
+  const lengthM = Math.round(Number(row?.length_m));
+
+  if (
+    !/^[A-Za-z0-9:._-]{1,160}$/.test(id) ||
+    !coords ||
+    !Number.isFinite(lengthM) ||
+    lengthM < 3 ||
+    lengthM > 5000
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    name: "Restored discovered road",
+    highway: "road",
+    coords,
+    lengthM,
+    unlockedAt: 1
+  };
+}
+
+async function rd65DownloadPrivateRoads() {
+  let afterSegmentId = null;
+  let added = 0;
+  let received = 0;
+
+  rd65SetBackupStatus("restoring", "Restoring...");
+
+  for (let page = 0; page < RD65_MAX_DOWNLOAD_PAGES; page++) {
+    if (state.privateRoadBackup.resetPending) {
+      return { added: 0, cancelled: true };
+    }
+
+    const { data, error } = await state.auth.client.rpc(
+      "get_my_private_roads",
+      {
+        p_after_segment_id: afterSegmentId,
+        p_page_size: RD65_DOWNLOAD_PAGE_SIZE
+      }
+    );
+
+    if (error) throw error;
+
+    if (state.privateRoadBackup.resetPending) {
+      return { added: 0, cancelled: true };
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      const segment = rd65RestoredSegment(row);
+
+      if (!segment) continue;
+
+      received++;
+
+      if (!state.savedSegments[segment.id]) {
+        state.savedSegments[segment.id] = segment;
+        state.savedSegmentIds.add(segment.id);
+        added++;
+      }
+
+      state.visited[segment.id] = state.visited[segment.id] || 1;
+    }
+
+    afterSegmentId = String(
+      rows[rows.length - 1]?.segment_id || ""
+    );
+
+    if (!afterSegmentId) {
+      throw new Error("Private road restore pagination failed");
+    }
+
+    rd65SetBackupStatus(
+      "restoring",
+      `Restoring ${formatNumber(received)}...`
+    );
+
+    if (rows.length < RD65_DOWNLOAD_PAGE_SIZE) break;
+
+    if (page === RD65_MAX_DOWNLOAD_PAGES - 1) {
+      throw new Error("Private road restore safety limit reached");
+    }
+  }
+
+  if (added > 0) {
+    saveVisited();
+    saveSavedSegments();
+    state.needsSavedSegmentsSave = false;
+
+    for (const segment of state.roadSegments) {
+      if (state.savedSegments[segment.id]) {
+        segment.visited = true;
+        styleSegment(segment);
+      }
+    }
+
+    drawSavedSegments();
+    renderAllStats();
+
+    if (typeof rd53ApplySavedRoadZoomStyle === "function") {
+      rd53ApplySavedRoadZoomStyle();
+    }
+
+    void maybeSyncProfileStats({ force: true, quiet: true });
+  }
+
+  return { added, cancelled: false };
+}
+
+async function rd65PrivateRoadRecord(segment) {
+  const id = String(segment?.id || "");
+
+  if (!/^[A-Za-z0-9:._-]{1,160}$/.test(id)) return null;
+
+  const sharedRecord = await buildSharedRoadRecord(segment);
+
+  if (!sharedRecord) return null;
+
+  const lengthM = Math.round(safeSegmentLengthM(segment));
+
+  if (lengthM < 3 || lengthM > 5000) return null;
+
+  return {
+    segment_id: id,
+    road_hash: sharedRecord.shared_road_hash,
+    coordinates: sharedRecord.coordinates,
+    length_m: lengthM
+  };
+}
+
+async function rd65UploadPrivateRoads(segments) {
+  const source = Array.isArray(segments)
+    ? segments.filter(Boolean)
+    : [];
+
+  for (
+    let start = 0;
+    start < source.length;
+    start += RD65_UPLOAD_BATCH_SIZE
+  ) {
+    const sourceBatch = source.slice(
+      start,
+      start + RD65_UPLOAD_BATCH_SIZE
+    );
+    const builtBatch = await Promise.all(
+      sourceBatch.map(rd65PrivateRoadRecord)
+    );
+    const roads = builtBatch.filter(Boolean);
+
+    if (roads.length > 0) {
+      const { error } = await state.auth.client.rpc(
+        "sync_my_private_roads",
+        { roads }
+      );
+
+      if (error) throw error;
+    }
+
+    rd65SetBackupStatus(
+      "syncing",
+      `Backing up ${formatNumber(
+        Math.min(start + sourceBatch.length, source.length)
+      )} / ${formatNumber(source.length)}`
+    );
+  }
+}
+
+/* -------------------------------------------------- */
+/* Restore, merge, then upload the combined progress  */
+/* -------------------------------------------------- */
+
+async function rd65ReconcileBackup() {
+  if (!state.auth.client || !state.auth.user) {
+    rd65SetBackupStatus("signed-out", "Sign in to back up");
+    return false;
+  }
+
+  if (!navigator.onLine) {
+    rd65SetBackupStatus("offline", "Offline • waiting");
+    return false;
+  }
+
+  if (state.isRecording) {
+    rd65SetBackupStatus("waiting", "Waiting for drive");
+    return false;
+  }
+
+  if (state.privateRoadBackup.busy) {
+    state.privateRoadBackup.pending = true;
+    return false;
+  }
+
+  if (!rd65ClaimLocalProgress()) return false;
+
+  const userId = String(state.auth.user.id || "");
+
+  state.privateRoadBackup.busy = true;
+  state.privateRoadBackup.pending = false;
+  rd65SetBackupStatus("checking", "Checking...");
+
+  try {
+    const meta = rd65BackupMeta(userId) || {};
+
+    if (meta.pendingClear || state.privateRoadBackup.resetPending) {
+      rd65SetBackupStatus("clearing", "Clearing backup...");
+
+      const { error } = await state.auth.client.rpc(
+        "clear_my_private_roads"
+      );
+
+      if (error) throw error;
+
+      state.privateRoadBackup.resetPending = false;
+
+      rd65SaveBackupMeta(
+        {
+          localCount: 0,
+          serverCount: 0,
+          restoredAt: new Date().toISOString(),
+          lastSyncAt: new Date().toISOString(),
+          pendingClear: false
+        },
+        userId
+      );
+
+      rd65SetBackupStatus("synced", "Synced • 0 roads");
+      return true;
+    }
+
+    let serverCount = await rd65ServerRoadCount();
+    let localCount = Object.keys(state.savedSegments).length;
+
+    const needsRestore =
+      serverCount > 0 &&
+      (
+        !meta.restoredAt ||
+        Number(meta.serverCount) !== serverCount ||
+        localCount < serverCount
+      );
+
+    if (needsRestore) {
+      const result = await rd65DownloadPrivateRoads();
+
+      if (result.cancelled) {
+        state.privateRoadBackup.pending = true;
+        return false;
+      }
+
+      localCount = Object.keys(state.savedSegments).length;
+    }
+
+    if (localCount > serverCount) {
+      rd65SetBackupStatus("syncing", "Backing up...");
+      await rd65UploadPrivateRoads(
+        Object.values(state.savedSegments)
+      );
+      serverCount = await rd65ServerRoadCount();
+    }
+
+    const finalLocalCount = Object.keys(state.savedSegments).length;
+
+    rd65SaveBackupMeta(
+      {
+        localCount: finalLocalCount,
+        serverCount,
+        restoredAt: new Date().toISOString(),
+        lastSyncAt: new Date().toISOString(),
+        pendingClear: false
+      },
+      userId
+    );
+
+    if (serverCount !== finalLocalCount) {
+      state.privateRoadBackup.pending = true;
+      throw new Error("Private progress needs another sync pass");
+    }
+
+    rd65SetBackupStatus(
+      "synced",
+      `Synced • ${formatNumber(finalLocalCount)} roads`
+    );
+
+    return true;
+  } catch (error) {
+    console.error(error);
+    rd65SetBackupStatus(
+      "error",
+      "Sync needs attention",
+      rd65BackupErrorMessage(error)
+    );
+    return false;
+  } finally {
+    state.privateRoadBackup.busy = false;
+
+    if (state.privateRoadBackup.pending) {
+      state.privateRoadBackup.pending = false;
+      rd65ScheduleBackup(1200);
+    }
+  }
+}
+
+/* -------------------------------------------------- */
+/* Upload only the newly finished drive               */
+/* -------------------------------------------------- */
+
+async function rd65BackupFinishedDrive(segments) {
+  if (!segments.length) {
+    rd65ScheduleBackup(250);
+    return;
+  }
+
+  if (
+    !state.auth.client ||
+    !state.auth.user ||
+    !navigator.onLine
+  ) {
+    rd65SetBackupStatus(
+      navigator.onLine ? "waiting" : "offline",
+      navigator.onLine ? "Waiting to sync" : "Offline • waiting"
+    );
+    return;
+  }
+
+  if (state.privateRoadBackup.busy) {
+    state.privateRoadBackup.pending = true;
+    return;
+  }
+
+  if (!rd65ClaimLocalProgress()) return;
+
+  const userId = String(state.auth.user.id || "");
+  const meta = rd65BackupMeta(userId);
+
+  if (!meta?.restoredAt || meta.pendingClear) {
+    rd65ScheduleBackup(250);
+    return;
+  }
+
+  state.privateRoadBackup.busy = true;
+
+  try {
+    rd65SetBackupStatus("syncing", "Backing up drive...");
+    await rd65UploadPrivateRoads(segments);
+
+    const serverCount = await rd65ServerRoadCount();
+    const localCount = Object.keys(state.savedSegments).length;
+
+    rd65SaveBackupMeta(
+      {
+        localCount,
+        serverCount,
+        restoredAt: meta.restoredAt,
+        lastSyncAt: new Date().toISOString(),
+        pendingClear: false
+      },
+      userId
+    );
+
+    if (serverCount === localCount) {
+      rd65SetBackupStatus(
+        "synced",
+        `Synced • ${formatNumber(localCount)} roads`
+      );
+    } else {
+      state.privateRoadBackup.pending = true;
+    }
+  } catch (error) {
+    console.error(error);
+    rd65SetBackupStatus(
+      "error",
+      "Sync needs attention",
+      rd65BackupErrorMessage(error)
+    );
+  } finally {
+    state.privateRoadBackup.busy = false;
+
+    if (state.privateRoadBackup.pending) {
+      state.privateRoadBackup.pending = false;
+      rd65ScheduleBackup(1200);
+    }
+  }
+}
+
+/* -------------------------------------------------- */
+/* Intentional reset protection                       */
+/* -------------------------------------------------- */
+
+function rd65QueueBackupClear() {
+  const userId = String(state.auth.user?.id || "");
+
+  if (!userId) return;
+
+  rd65SaveBackupMeta(
+    {
+      ...(rd65BackupMeta(userId) || {}),
+      pendingClear: true
+    },
+    userId
+  );
+
+  state.privateRoadBackup.resetPending = true;
+  state.privateRoadBackup.pending = true;
+
+  rd65SetBackupStatus(
+    navigator.onLine ? "clearing" : "offline",
+    navigator.onLine
+      ? "Clearing backup..."
+      : "Offline • reset waiting"
+  );
+
+  rd65ScheduleBackup(100);
+}
+
+/* -------------------------------------------------- */
+/* Existing-function wrappers                         */
+/* -------------------------------------------------- */
+
+ensureRoadProfile = async function (options = {}) {
+  const result = await roadDiscoveryV65.ensureRoadProfile(options);
+
+  if (state.auth.user) {
+    rd65SetBackupStatus(
+      navigator.onLine ? "checking" : "offline",
+      navigator.onLine ? "Checking..." : "Offline • waiting"
+    );
+    rd65ScheduleBackup(450);
+  }
+
+  return result;
+};
+
+finishDrive = function () {
+  const wasRunning = Boolean(
+    state.isRecording || state.watchId !== null
+  );
+  const newSegments = wasRunning
+    ? Array.from(state.tripUnlocked)
+        .map((id) => state.savedSegments[id])
+        .filter(Boolean)
+    : [];
+
+  const result = roadDiscoveryV65.finishDrive();
+
+  if (wasRunning) {
+    void rd65BackupFinishedDrive(newSegments);
+  }
+
+  return result;
+};
+
+handleOnlineReconnect = async function () {
+  const result = await roadDiscoveryV65.handleOnlineReconnect();
+
+  if (!state.isRecording) {
+    rd65ScheduleBackup(250);
+  }
+
+  return result;
+};
+
+resetDiscoveredRoads = function () {
+  const before = Object.keys(state.savedSegments).length;
+  const result = roadDiscoveryV65.resetDiscoveredRoads();
+  const after = Object.keys(state.savedSegments).length;
+
+  if (before > 0 && after === 0) {
+    rd65QueueBackupClear();
+  }
+
+  return result;
+};
+
+renderAuthState = function () {
+  const result = roadDiscoveryV65.renderAuthState();
+
+  rd65EnsureBackupStatusRow();
+
+  if (!state.auth.user) {
+    rd65SetBackupStatus("signed-out", "Sign in to back up");
+  }
+
+  rd65RenderBackupStatus();
+  return result;
+};
+
+function rd65BackupErrorMessage(error) {
+  const message = String(error?.message || "");
+  const lower = message.toLowerCase();
+
+  if (lower.includes("function") && lower.includes("does not exist")) {
+    return "Private progress backup SQL has not been installed.";
+  }
+
+  if (lower.includes("authentication")) {
+    return "Sign in again to continue backing up progress.";
+  }
+
+  if (lower.includes("network") || lower.includes("failed to fetch")) {
+    return "Connection was interrupted. Progress remains saved on this device and will retry.";
+  }
+
+  return message || "Could not sync private progress.";
+}
