@@ -14580,3 +14580,217 @@ function rd65BackupErrorMessage(error) {
 
   return message || "Could not sync private progress.";
 }
+
+/* ================================================== */
+/* Road Discovery AU v66 location marker visibility   */
+/* Append this block once to the bottom of app.js v65 */
+/* ================================================== */
+
+const RD66_LOCATION_MARKER_VISIBLE_KEY =
+  "roadDiscoveryAU.locationMarkerVisible.v1";
+
+const roadDiscoveryV66 = {
+  updateUserMarker,
+  beginGpsWatch,
+  finishDrive,
+  renderHideSeekState,
+  resetHideSeekState
+};
+
+state.locationMarkerVisible = rd66LoadLocationMarkerPreference();
+
+function rd66LoadLocationMarkerPreference() {
+  try {
+    const stored = localStorage.getItem(
+      RD66_LOCATION_MARKER_VISIBLE_KEY
+    );
+
+    return stored === null ? true : stored !== "false";
+  } catch (error) {
+    return true;
+  }
+}
+
+function rd66SaveLocationMarkerPreference() {
+  try {
+    localStorage.setItem(
+      RD66_LOCATION_MARKER_VISIBLE_KEY,
+      String(Boolean(state.locationMarkerVisible))
+    );
+  } catch (error) {
+    console.error(error);
+    showToast("Could not save marker setting");
+  }
+}
+
+function rd66LocationMarkerIsForcedVisible() {
+  return Boolean(
+    state.isRecording ||
+    hasActiveHideSeekRound()
+  );
+}
+
+function rd66LocationMarkerShouldShow() {
+  return Boolean(
+    state.locationMarkerVisible ||
+    rd66LocationMarkerIsForcedVisible()
+  );
+}
+
+function rd66ApplyLocationMarkerVisibility() {
+  const shouldShow = rd66LocationMarkerShouldShow();
+  const forcedVisible = rd66LocationMarkerIsForcedVisible();
+
+  document.body.classList.toggle(
+    "location-marker-hidden",
+    !shouldShow
+  );
+
+  state.userHeadingMarker?.setOpacity?.(shouldShow ? 1 : 0);
+
+  state.userMarker?.setStyle?.({
+    opacity: shouldShow ? 1 : 0,
+    fillOpacity: shouldShow ? 1 : 0
+  });
+
+  state.accuracyCircle?.setStyle?.({
+    opacity: shouldShow ? 0.35 : 0,
+    fillOpacity: shouldShow ? 0.06 : 0
+  });
+
+  const toggle = $("locationMarkerToggle");
+  const note = $("locationMarkerForcedNote");
+
+  if (toggle) {
+    toggle.checked = Boolean(state.locationMarkerVisible);
+  }
+
+  note?.classList.toggle(
+    "hidden",
+    !forcedVisible || state.locationMarkerVisible
+  );
+}
+
+function rd66InsertLocationMarkerSetting() {
+  if ($("locationMarkerToggle")) return;
+
+  const settingsContent = document.querySelector(
+    "#settingsPanel .panel-content"
+  );
+
+  if (!settingsContent) return;
+
+  const section = document.createElement("section");
+  section.className =
+    "panel-section location-marker-settings-section";
+
+  section.innerHTML = `
+    <h3>Map</h3>
+
+    <label
+      class="toggle-row"
+      for="locationMarkerToggle"
+    >
+      <div class="toggle-text">
+        <strong>Show my location marker</strong>
+
+        <span>
+          Turn this off for a clean zoomed-out view of your orange
+          roads. GPS, road painting, recentring and progress backup
+          keep working normally.
+        </span>
+      </div>
+
+      <input
+        id="locationMarkerToggle"
+        class="toggle-input"
+        type="checkbox"
+      />
+
+      <span
+        class="toggle-switch"
+        aria-hidden="true"
+      >
+        <span class="toggle-knob"></span>
+      </span>
+    </label>
+
+    <p
+      id="locationMarkerForcedNote"
+      class="location-marker-forced-note hidden"
+    >
+      Your marker is temporarily visible during an active drive or
+      Hide &amp; Seek round.
+    </p>
+  `;
+
+  settingsContent.insertBefore(
+    section,
+    settingsContent.firstElementChild
+  );
+
+  $("locationMarkerToggle")?.addEventListener(
+    "change",
+    (event) => {
+      state.locationMarkerVisible = Boolean(
+        event.currentTarget.checked
+      );
+
+      rd66SaveLocationMarkerPreference();
+      rd66ApplyLocationMarkerVisibility();
+
+      showToast(
+        state.locationMarkerVisible
+          ? "Location marker shown"
+          : rd66LocationMarkerIsForcedVisible()
+            ? "Marker will hide after the active game or drive"
+            : "Location marker hidden"
+      );
+    }
+  );
+}
+
+function rd66InitLocationMarkerSetting() {
+  rd66InsertLocationMarkerSetting();
+  rd66ApplyLocationMarkerVisibility();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd66InitLocationMarkerSetting,
+    { once: true }
+  );
+} else {
+  rd66InitLocationMarkerSetting();
+}
+
+updateUserMarker = function (point) {
+  const result = roadDiscoveryV66.updateUserMarker(point);
+  rd66ApplyLocationMarkerVisibility();
+  return result;
+};
+
+beginGpsWatch = function () {
+  const result = roadDiscoveryV66.beginGpsWatch();
+  rd66ApplyLocationMarkerVisibility();
+  return result;
+};
+
+finishDrive = function () {
+  const result = roadDiscoveryV66.finishDrive();
+  rd66ApplyLocationMarkerVisibility();
+  return result;
+};
+
+renderHideSeekState = function () {
+  const result = roadDiscoveryV66.renderHideSeekState();
+  rd66ApplyLocationMarkerVisibility();
+  return result;
+};
+
+resetHideSeekState = function (options = {}) {
+  const result = roadDiscoveryV66.resetHideSeekState(options);
+  rd66ApplyLocationMarkerVisibility();
+  return result;
+};
