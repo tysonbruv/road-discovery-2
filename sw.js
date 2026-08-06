@@ -1,19 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v64 service worker
+  Road Discovery AU v65 service worker
 
-  Private local My Places map icons.
+  First-run introduction and permanent About card.
 
   Expected frontend versions:
-  - app.js?v=63
-  - style.css?v=47
+  - app.js?v=64
+  - style.css?v=48
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v64";
+const CACHE_NAME = "road-discovery-au-v65";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,6 +23,8 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=48",
+  "./app.js?v=64",
   "./style.css?v=47",
   "./app.js?v=63",
   "./style.css?v=46",
@@ -165,6 +167,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/style.css")) {
           return (
+            (await caches.match("./style.css?v=48")) ||
             (await caches.match("./style.css?v=47")) ||
             (await caches.match("./style.css?v=46")) ||
             (await caches.match("./style.css?v=45")) ||
@@ -183,6 +186,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=64")) ||
             (await caches.match("./app.js?v=63")) ||
             (await caches.match("./app.js?v=62")) ||
             (await caches.match("./app.js?v=61")) ||
