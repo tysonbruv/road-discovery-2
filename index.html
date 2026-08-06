@@ -362,6 +362,44 @@
       </div>
 
       <div class="panel-content">
+                <section class="panel-section">
+          <h3>Map</h3>
+
+          <label
+            class="toggle-row"
+            for="locationMarkerToggle"
+          >
+            <div class="toggle-text">
+              <strong>
+                Show my location marker
+              </strong>
+
+              <span>
+                Turn this off to hide your blue dot and direction arrow
+                while viewing the map.
+              </span>
+            </div>
+
+            <input
+              id="locationMarkerToggle"
+              class="toggle-input"
+              type="checkbox"
+            />
+
+            <span
+              class="toggle-switch"
+              aria-hidden="true"
+            >
+              <span class="toggle-knob"></span>
+            </span>
+          </label>
+
+          <p class="small-note">
+            Hiding the marker does not stop GPS, recentring, road
+            discovery or progress saving. Your marker will temporarily
+            appear during an active drive or Hide &amp; Seek game.
+          </p>
+        </section>
         <section class="panel-section">
           <h3>Friends</h3>
 
