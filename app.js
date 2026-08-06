@@ -13666,3 +13666,222 @@ resetHideSeekState = function (options = {}) {
   rd63ApplyPlacesVisibility();
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v64 introduction and About card  */
+/* Append this block once to the bottom of app.js v63 */
+/* ================================================== */
+
+const RD64_WELCOME_SEEN_KEY =
+  "roadDiscoveryAU.welcomeSeen.v1";
+
+let rd64AboutOpenedAsWelcome = false;
+
+function rd64HasSeenWelcome() {
+  try {
+    return localStorage.getItem(RD64_WELCOME_SEEN_KEY) === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+function rd64SaveWelcomeSeen() {
+  try {
+    localStorage.setItem(RD64_WELCOME_SEEN_KEY, "1");
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function rd64CreateAboutOverlay() {
+  if ($("roadDiscoveryAboutOverlay")) return;
+
+  const overlay = document.createElement("section");
+  overlay.id = "roadDiscoveryAboutOverlay";
+  overlay.className =
+    "confirm-overlay road-discovery-about-overlay hidden";
+  overlay.setAttribute("aria-hidden", "true");
+
+  overlay.innerHTML = `
+    <div
+      class="confirm-card road-discovery-about-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="roadDiscoveryAboutTitle"
+      aria-describedby="roadDiscoveryAboutDescription"
+    >
+      <div
+        class="road-discovery-about-mark"
+        aria-hidden="true"
+      >
+        AU
+      </div>
+
+      <div class="road-discovery-about-kicker">
+        Road Discovery AU
+      </div>
+
+      <h2 id="roadDiscoveryAboutTitle">
+        Explore, don’t navigate
+      </h2>
+
+      <p
+        id="roadDiscoveryAboutDescription"
+        class="road-discovery-about-intro"
+      >
+        Road Discovery AU is not a turn-by-turn navigation app.
+        It records the roads you explore and turns them orange.
+      </p>
+
+      <p class="road-discovery-about-message">
+        Maps tell you where to go. Road Discovery shows you where
+        you’ve been.
+      </p>
+
+      <p class="road-discovery-about-ride">
+        Choose your road, enjoy the ride, and paint the map orange.
+      </p>
+
+      <div class="road-discovery-about-safety">
+        <strong>Play safely.</strong>
+        Keep your eyes on the road and only operate the app when
+        safely stopped.
+      </div>
+
+      <button
+        id="closeRoadDiscoveryAboutBtn"
+        class="wide-btn road-discovery-about-close"
+        type="button"
+      >
+        Start Exploring
+      </button>
+    </div>
+  `;
+
+  ($("appShell") || document.body).appendChild(overlay);
+}
+
+function rd64InsertSettingsAboutButton() {
+  if ($("roadDiscoveryAboutBtn")) return;
+
+  const settingsContent = document.querySelector(
+    "#settingsPanel .panel-content"
+  );
+
+  if (!settingsContent) return;
+
+  const section = document.createElement("section");
+  section.className =
+    "panel-section road-discovery-about-settings";
+
+  section.innerHTML = `
+    <h3>About</h3>
+
+    <p class="road-discovery-about-settings-copy">
+      Learn what Road Discovery is designed to do and how to use it
+      safely.
+    </p>
+
+    <button
+      id="roadDiscoveryAboutBtn"
+      class="ghost-btn wide-btn"
+      type="button"
+    >
+      About Road Discovery
+    </button>
+  `;
+
+  settingsContent.insertBefore(
+    section,
+    settingsContent.firstElementChild
+  );
+}
+
+function rd64OpenAbout(options = {}) {
+  const overlay = $("roadDiscoveryAboutOverlay");
+  const closeButton = $("closeRoadDiscoveryAboutBtn");
+
+  if (!overlay || !closeButton) return;
+
+  rd64AboutOpenedAsWelcome = Boolean(options.firstRun);
+
+  if (!rd64AboutOpenedAsWelcome) {
+    closePanels();
+  }
+
+  closeButton.textContent = rd64AboutOpenedAsWelcome
+    ? "Start Exploring"
+    : "Back to Map";
+
+  overlay.classList.remove("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+  document.body.classList.add("road-discovery-about-open");
+
+  window.setTimeout(() => closeButton.focus(), 0);
+}
+
+function rd64CloseAbout() {
+  const overlay = $("roadDiscoveryAboutOverlay");
+
+  if (!overlay) return;
+
+  overlay.classList.add("hidden");
+  overlay.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("road-discovery-about-open");
+
+  rd64SaveWelcomeSeen();
+  rd64AboutOpenedAsWelcome = false;
+}
+
+function rd64BindAboutEvents() {
+  $("roadDiscoveryAboutBtn")?.addEventListener(
+    "click",
+    () => rd64OpenAbout({ firstRun: false })
+  );
+
+  $("closeRoadDiscoveryAboutBtn")?.addEventListener(
+    "click",
+    rd64CloseAbout
+  );
+
+  $("roadDiscoveryAboutOverlay")?.addEventListener(
+    "click",
+    (event) => {
+      if (event.target === $("roadDiscoveryAboutOverlay")) {
+        rd64CloseAbout();
+      }
+    }
+  );
+
+  window.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !$("roadDiscoveryAboutOverlay")?.classList.contains("hidden")
+    ) {
+      rd64CloseAbout();
+    }
+  });
+}
+
+function rd64InitAboutExperience() {
+  rd64CreateAboutOverlay();
+  rd64InsertSettingsAboutButton();
+  rd64BindAboutEvents();
+
+  if (!rd64HasSeenWelcome()) {
+    window.setTimeout(
+      () => rd64OpenAbout({ firstRun: true }),
+      450
+    );
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd64InitAboutExperience,
+    { once: true }
+  );
+} else {
+  rd64InitAboutExperience();
+}
