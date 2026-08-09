@@ -1,19 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v69 service worker
+  Road Discovery AU v70 service worker
 
-  Trophy Room and milestone progression.
+  Account-isolated local and Supabase road progress.
 
   Expected frontend versions:
-  - app.js?v=68
+  - app.js?v=69
   - style.css?v=51
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v69";
+const CACHE_NAME = "road-discovery-au-v70";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,6 +24,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=51",
+  "./app.js?v=69",
   "./app.js?v=68",
   "./app.js?v=67",
   "./style.css?v=50",
@@ -196,6 +197,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=69")) ||
             (await caches.match("./app.js?v=68")) ||
             (await caches.match("./app.js?v=67")) ||
             (await caches.match("./app.js?v=66")) ||
