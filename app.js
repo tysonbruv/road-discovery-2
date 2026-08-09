@@ -15364,3 +15364,515 @@ finishDrive = function () {
 
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v69 account progress isolation   */
+/* Append this block once to the bottom of app.js v68 */
+/* ================================================== */
+
+const RD69_ACCOUNT_PROGRESS_PREFIX =
+  "roadDiscoveryAU.accountProgress.v1";
+const RD69_LEGACY_OWNER_KEY =
+  "roadDiscoveryAU.legacyProgressOwner.v1";
+
+const roadDiscoveryV69 = {
+  loadSavedState,
+  saveVisited,
+  saveSavedSegments,
+  saveTodayUnlocks,
+  ensureRoadProfile,
+  signOutRoadProfile,
+  renderAuthState
+};
+
+const rd69LegacyProgress = {
+  visitedRaw: rd69ReadRaw(STORAGE_KEY),
+  savedRaw: rd69ReadRaw(SAVED_SEGMENTS_KEY),
+  todayRaw: rd69ReadRaw(TODAY_UNLOCKS_KEY),
+  ownerId: "",
+  available: false
+};
+
+state.accountProgress = {
+  activeUserId: "",
+  switching: false
+};
+
+function rd69ReadRaw(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (error) {
+    return null;
+  }
+}
+
+function rd69WriteRaw(key, value) {
+  localStorage.setItem(key, value);
+}
+
+function rd69RemoveRaw(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function rd69AccountKey(userId, part) {
+  return `${RD69_ACCOUNT_PROGRESS_PREFIX}.${String(userId)}.${part}`;
+}
+
+function rd69HasObjectEntries(raw) {
+  if (!raw) return false;
+
+  try {
+    const value = JSON.parse(raw);
+
+    return Boolean(
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value).length > 0
+    );
+  } catch (error) {
+    return false;
+  }
+}
+
+function rd69InitialiseLegacyProgress() {
+  rd69LegacyProgress.available = Boolean(
+    rd69HasObjectEntries(rd69LegacyProgress.savedRaw) ||
+    rd69HasObjectEntries(rd69LegacyProgress.visitedRaw)
+  );
+
+  if (!rd69LegacyProgress.available) return;
+
+  const rememberedOwner = String(
+    readJson(RD69_LEGACY_OWNER_KEY, "") || ""
+  );
+  const previousBackupOwner = String(
+    readJson(RD65_PROGRESS_OWNER_KEY, "") || ""
+  );
+
+  rd69LegacyProgress.ownerId =
+    rememberedOwner || previousBackupOwner;
+
+  if (rd69LegacyProgress.ownerId && !rememberedOwner) {
+    writeJson(
+      RD69_LEGACY_OWNER_KEY,
+      rd69LegacyProgress.ownerId
+    );
+  }
+}
+
+rd69InitialiseLegacyProgress();
+
+function rd69AccountProgressExists(userId) {
+  return Boolean(
+    rd69ReadRaw(rd69AccountKey(userId, "saved")) !== null ||
+    rd69ReadRaw(rd69AccountKey(userId, "visited")) !== null
+  );
+}
+
+function rd69MoveLegacyProgressToAccount(userId) {
+  const id = String(userId || "");
+
+  if (!id || !rd69LegacyProgress.available) {
+    return false;
+  }
+
+  if (
+    rd69LegacyProgress.ownerId &&
+    rd69LegacyProgress.ownerId !== id
+  ) {
+    return false;
+  }
+
+  const destinationEntries = [
+    [
+      rd69AccountKey(id, "visited"),
+      rd69LegacyProgress.visitedRaw || "{}"
+    ],
+    [
+      rd69AccountKey(id, "saved"),
+      rd69LegacyProgress.savedRaw || "{}"
+    ],
+    [
+      rd69AccountKey(id, "today"),
+      rd69LegacyProgress.todayRaw ||
+        JSON.stringify({
+          date: getTodayKey(),
+          keys: {}
+        })
+    ]
+  ];
+
+  const legacyEntries = [
+    [STORAGE_KEY, rd69LegacyProgress.visitedRaw],
+    [SAVED_SEGMENTS_KEY, rd69LegacyProgress.savedRaw],
+    [TODAY_UNLOCKS_KEY, rd69LegacyProgress.todayRaw]
+  ];
+
+  /*
+    Remove the old device-wide copies before writing the account keys.
+    This avoids temporarily doubling a large road collection in Safari's
+    local-storage quota. The old values are restored if any write fails.
+  */
+  for (const [key] of legacyEntries) {
+    rd69RemoveRaw(key);
+  }
+
+  try {
+    for (const [key, value] of destinationEntries) {
+      rd69WriteRaw(key, value);
+    }
+  } catch (error) {
+    console.error(error);
+
+    for (const [key] of destinationEntries) {
+      rd69RemoveRaw(key);
+    }
+
+    for (const [key, value] of legacyEntries) {
+      if (value !== null) {
+        try {
+          rd69WriteRaw(key, value);
+        } catch (restoreError) {
+          console.error(restoreError);
+        }
+      }
+    }
+
+    showToast("Could not separate account progress on this device");
+    return false;
+  }
+
+  rd69LegacyProgress.available = false;
+  rd69LegacyProgress.ownerId = id;
+  rd69RemoveRaw(RD69_LEGACY_OWNER_KEY);
+
+  return true;
+}
+
+function rd69NormaliseVisited(raw) {
+  const visited = {};
+  let value = raw;
+
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch (error) {
+      value = {};
+    }
+  }
+
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return visited;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    const timestamp =
+      typeof entry === "number"
+        ? entry
+        : Number(entry?.unlockedAt) ||
+          Number(entry?.at) ||
+          Number(entry?.timestamp) ||
+          0;
+
+    if (Number.isFinite(timestamp) && timestamp > 0) {
+      visited[key] = timestamp;
+    }
+  }
+
+  return visited;
+}
+
+function rd69NormaliseSaved(raw, visited) {
+  const saved = {};
+  let value = raw;
+
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch (error) {
+      value = {};
+    }
+  }
+
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return saved;
+  }
+
+  const previousVisited = state.visited;
+  state.visited = visited;
+
+  try {
+    for (const [key, entry] of Object.entries(value)) {
+      const segment = normaliseSavedSegment(key, entry);
+
+      if (segment) {
+        saved[segment.id] = segment;
+      }
+    }
+  } finally {
+    state.visited = previousVisited;
+  }
+
+  return saved;
+}
+
+function rd69NormaliseToday(raw) {
+  let value = raw;
+
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch (error) {
+      value = null;
+    }
+  }
+
+  if (
+    value &&
+    value.date === getTodayKey() &&
+    value.keys &&
+    typeof value.keys === "object" &&
+    !Array.isArray(value.keys)
+  ) {
+    return value;
+  }
+
+  return {
+    date: getTodayKey(),
+    keys: {}
+  };
+}
+
+function rd69ReadAccountProgress(userId) {
+  const visited = rd69NormaliseVisited(
+    rd69ReadRaw(rd69AccountKey(userId, "visited"))
+  );
+  const savedSegments = rd69NormaliseSaved(
+    rd69ReadRaw(rd69AccountKey(userId, "saved")),
+    visited
+  );
+  const todayUnlocks = rd69NormaliseToday(
+    rd69ReadRaw(rd69AccountKey(userId, "today"))
+  );
+
+  return {
+    visited,
+    savedSegments,
+    todayUnlocks
+  };
+}
+
+function rd69WriteAccountPart(part, value, options = {}) {
+  const userId = String(
+    state.accountProgress.activeUserId || ""
+  );
+
+  if (!userId) return false;
+
+  try {
+    rd69WriteRaw(
+      rd69AccountKey(userId, part),
+      JSON.stringify(value)
+    );
+    return true;
+  } catch (error) {
+    console.error(error);
+
+    if (!options.quiet) {
+      showToast(
+        part === "saved"
+          ? "Storage is full. Some orange roads may not save"
+          : "Could not save progress on this device"
+      );
+    }
+
+    return false;
+  }
+}
+
+function rd69PersistActiveProgress(options = {}) {
+  if (!state.accountProgress.activeUserId) return;
+
+  rd69WriteAccountPart("visited", state.visited, options);
+  rd69WriteAccountPart("saved", state.savedSegments, options);
+  rd69WriteAccountPart("today", state.todayUnlocks, options);
+}
+
+function rd69ApplyProgress(progress, userId = "") {
+  state.visited = progress.visited || {};
+  state.savedSegments = progress.savedSegments || {};
+  state.savedSegmentIds = new Set(
+    Object.keys(state.savedSegments)
+  );
+  state.savedDrawnIds.clear();
+  state.savedLayer?.clearLayers();
+  state.todayUnlocks = progress.todayUnlocks || {
+    date: getTodayKey(),
+    keys: {}
+  };
+  state.needsSavedSegmentsSave = false;
+  state.tripUnlocked.clear();
+
+  for (const segment of state.roadSegments) {
+    segment.visited = state.savedSegmentIds.has(segment.id);
+    segment.currentTrip = false;
+    styleSegment(segment);
+  }
+
+  drawSavedSegments();
+  renderAllStats();
+
+  if (typeof rd53ApplySavedRoadZoomStyle === "function") {
+    rd53ApplySavedRoadZoomStyle();
+  }
+
+  if (userId) {
+    writeJson(RD65_PROGRESS_OWNER_KEY, String(userId));
+  }
+}
+
+function rd69BlankProgressView() {
+  state.accountProgress.activeUserId = "";
+
+  rd69ApplyProgress(
+    {
+      visited: {},
+      savedSegments: {},
+      todayUnlocks: {
+        date: getTodayKey(),
+        keys: {}
+      }
+    },
+    ""
+  );
+}
+
+function rd69ActivateAccount(userId) {
+  const id = String(userId || "");
+
+  if (!id) {
+    rd69BlankProgressView();
+    return false;
+  }
+
+  if (state.accountProgress.activeUserId === id) {
+    return true;
+  }
+
+  state.accountProgress.switching = true;
+
+  try {
+    rd69PersistActiveProgress({ quiet: true });
+
+    if (!rd69AccountProgressExists(id)) {
+      rd69MoveLegacyProgressToAccount(id);
+    }
+
+    state.accountProgress.activeUserId = id;
+
+    const progress = rd69ReadAccountProgress(id);
+    rd69ApplyProgress(progress, id);
+    rd69PersistActiveProgress({ quiet: true });
+
+    return true;
+  } finally {
+    state.accountProgress.switching = false;
+  }
+}
+
+/* -------------------------------------------------- */
+/* Replace the old device-wide save destinations      */
+/* -------------------------------------------------- */
+
+loadSavedState = function () {
+  roadDiscoveryV69.loadSavedState();
+
+  /*
+    Authentication is checked immediately after startup. Keep the map
+    blank until the correct Supabase user ID is known.
+  */
+  state.visited = {};
+  state.savedSegments = {};
+  state.savedSegmentIds = new Set();
+  state.savedDrawnIds.clear();
+  state.todayUnlocks = {
+    date: getTodayKey(),
+    keys: {}
+  };
+  state.needsSavedSegmentsSave = false;
+};
+
+saveVisited = function () {
+  rd69WriteAccountPart("visited", state.visited);
+};
+
+saveSavedSegments = function () {
+  rd69WriteAccountPart("saved", state.savedSegments);
+};
+
+saveTodayUnlocks = function () {
+  rd69WriteAccountPart("today", state.todayUnlocks);
+};
+
+/* -------------------------------------------------- */
+/* Change the active road collection with auth        */
+/* -------------------------------------------------- */
+
+ensureRoadProfile = async function (options = {}) {
+  const userId = String(state.auth.user?.id || "");
+
+  if (userId) {
+    rd69ActivateAccount(userId);
+  }
+
+  return roadDiscoveryV69.ensureRoadProfile(options);
+};
+
+signOutRoadProfile = async function () {
+  if (state.isRecording || state.watchId !== null) {
+    showToast("Finish Drive before signing out");
+    return;
+  }
+
+  if (
+    state.privateRoadBackup?.busy ||
+    state.accountProgress.switching
+  ) {
+    showToast("Please wait for progress backup to finish");
+    return;
+  }
+
+  rd69PersistActiveProgress();
+
+  const result = await roadDiscoveryV69.signOutRoadProfile();
+
+  if (!state.auth.user) {
+    rd69BlankProgressView();
+  }
+
+  return result;
+};
+
+renderAuthState = function () {
+  const userId = String(state.auth.user?.id || "");
+
+  if (!userId && state.accountProgress.activeUserId) {
+    rd69PersistActiveProgress({ quiet: true });
+    rd69BlankProgressView();
+  }
+
+  return roadDiscoveryV69.renderAuthState();
+};
