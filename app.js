@@ -15886,3 +15886,399 @@ renderAuthState = function () {
 
   return roadDiscoveryV69.renderAuthState();
 };
+
+/* ================================================== */
+/* Road Discovery AU v71 personal trail colours       */
+/* Append this block once to the bottom of app.js v70 */
+/* ================================================== */
+
+const RD71_TRAIL_COLOUR_KEY =
+  "roadDiscoveryAU.trailColour.v1";
+
+const RD71_TRAIL_COLOURS = Object.freeze({
+  orange: {
+    label: "Road Orange",
+    trail: "#ff8a18",
+    current: "#ffb04a"
+  },
+  gold: {
+    label: "Gold",
+    trail: "#ffd54a",
+    current: "#ffe485"
+  },
+  red: {
+    label: "Red",
+    trail: "#ff4d4d",
+    current: "#ff8585"
+  },
+  pink: {
+    label: "Pink",
+    trail: "#ff5ca8",
+    current: "#ff8fc4"
+  },
+  purple: {
+    label: "Purple",
+    trail: "#a970ff",
+    current: "#c49cff"
+  },
+  blue: {
+    label: "Electric Blue",
+    trail: "#2979ff",
+    current: "#69a3ff"
+  },
+  cyan: {
+    label: "Cyan",
+    trail: "#21d4e8",
+    current: "#6ae7f3"
+  },
+  lime: {
+    label: "Lime",
+    trail: "#b7f238",
+    current: "#d2fa78"
+  },
+  green: {
+    label: "Green",
+    trail: "#37d67a",
+    current: "#76e7a6"
+  },
+  white: {
+    label: "White",
+    trail: "#e8f0ff",
+    current: "#ffffff"
+  }
+});
+
+const roadDiscoveryV71 = {
+  getSegmentStyle,
+  drawTripLine,
+  rd53ApplySavedRoadZoomStyle,
+  rd53UpdateMyRoadsButton,
+  showToast
+};
+
+state.trailColourKey = rd71LoadTrailColourKey();
+
+function rd71ValidTrailColourKey(value) {
+  return Object.prototype.hasOwnProperty.call(
+    RD71_TRAIL_COLOURS,
+    String(value || "")
+  );
+}
+
+function rd71LoadTrailColourKey() {
+  try {
+    const saved = localStorage.getItem(
+      RD71_TRAIL_COLOUR_KEY
+    );
+
+    return rd71ValidTrailColourKey(saved)
+      ? saved
+      : "orange";
+  } catch (error) {
+    console.error(error);
+    return "orange";
+  }
+}
+
+function rd71SelectedTrailColour() {
+  return (
+    RD71_TRAIL_COLOURS[state.trailColourKey] ||
+    RD71_TRAIL_COLOURS.orange
+  );
+}
+
+function rd71SaveTrailColourKey() {
+  try {
+    localStorage.setItem(
+      RD71_TRAIL_COLOUR_KEY,
+      state.trailColourKey
+    );
+  } catch (error) {
+    console.error(error);
+    showToast("Could not save trail colour");
+  }
+}
+
+function rd71TrailColourChoicesHtml() {
+  return Object.entries(RD71_TRAIL_COLOURS)
+    .map(([key, colour]) => {
+      const selected = key === state.trailColourKey;
+
+      return `
+        <button
+          class="trail-colour-choice${selected ? " selected" : ""}"
+          type="button"
+          data-trail-colour="${key}"
+          aria-label="${escapeHtml(colour.label)} trail colour"
+          aria-pressed="${String(selected)}"
+          style="--trail-choice-colour: ${colour.trail};"
+        >
+          <span
+            class="trail-colour-swatch"
+            aria-hidden="true"
+          ></span>
+
+          <span class="trail-colour-label">
+            ${escapeHtml(colour.label)}
+          </span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function rd71InsertTrailColourSetting() {
+  if ($("trailColourSetting")) return;
+
+  const mapSection = $("locationMarkerToggle")?.closest(
+    ".panel-section"
+  );
+
+  if (!mapSection) return;
+
+  const setting = document.createElement("div");
+  setting.id = "trailColourSetting";
+  setting.className = "trail-colour-setting";
+
+  setting.innerHTML = `
+    <div class="trail-colour-heading">
+      <div>
+        <strong>Trail colour</strong>
+
+        <span>
+          Changes your discovered roads on this device only.
+          Friends, waypoints, Multiplayer and Hide &amp; Seek keep
+          their normal colours.
+        </span>
+      </div>
+
+      <span
+        id="trailColourCurrent"
+        class="trail-colour-current"
+      ></span>
+    </div>
+
+    <div
+      id="trailColourGrid"
+      class="trail-colour-grid"
+      role="group"
+      aria-label="Choose trail colour"
+    >
+      ${rd71TrailColourChoicesHtml()}
+    </div>
+  `;
+
+  mapSection.appendChild(setting);
+
+  $("trailColourGrid")?.addEventListener(
+    "click",
+    (event) => {
+      const button = event.target.closest(
+        "[data-trail-colour]"
+      );
+
+      if (!button) return;
+
+      rd71SelectTrailColour(
+        button.dataset.trailColour
+      );
+    }
+  );
+
+  rd71UpdateTrailColourUI();
+}
+
+function rd71UpdateTrailColourUI() {
+  const selected = rd71SelectedTrailColour();
+  const current = $("trailColourCurrent");
+
+  if (current) {
+    current.textContent = selected.label;
+  }
+
+  document
+    .querySelectorAll("[data-trail-colour]")
+    .forEach((button) => {
+      const isSelected =
+        button.dataset.trailColour === state.trailColourKey;
+
+      button.classList.toggle("selected", isSelected);
+      button.setAttribute(
+        "aria-pressed",
+        String(isSelected)
+      );
+    });
+}
+
+function rd71ApplyTrailColour() {
+  const selected = rd71SelectedTrailColour();
+
+  document.documentElement.style.setProperty(
+    "--rd-user-trail-colour",
+    selected.trail
+  );
+  document.documentElement.style.setProperty(
+    "--rd-user-current-trail-colour",
+    selected.current
+  );
+
+  rd53ApplySavedRoadZoomStyle();
+
+  state.tripLayer?.eachLayer?.((layer) => {
+    layer?.setStyle?.({
+      color: selected.current
+    });
+  });
+
+  for (const segment of state.roadSegments) {
+    if (segment.visited || segment.currentTrip) {
+      styleSegment(segment);
+    }
+  }
+
+  rd71UpdateTrailColourUI();
+}
+
+function rd71SelectTrailColour(key) {
+  const value = String(key || "");
+
+  if (!rd71ValidTrailColourKey(value)) return;
+
+  state.trailColourKey = value;
+  rd71SaveTrailColourKey();
+  rd71ApplyTrailColour();
+
+  showToast(
+    `${rd71SelectedTrailColour().label} trail selected`
+  );
+}
+
+function rd71InitTrailColours() {
+  rd71InsertTrailColourSetting();
+  rd71ApplyTrailColour();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd71InitTrailColours,
+    { once: true }
+  );
+} else {
+  rd71InitTrailColours();
+}
+
+/* -------------------------------------------------- */
+/* Apply the preference only to the user's own roads  */
+/* -------------------------------------------------- */
+
+getSegmentStyle = function (segment) {
+  const style = roadDiscoveryV71.getSegmentStyle(segment);
+  const selected = rd71SelectedTrailColour();
+
+  if (segment?.currentTrip) {
+    style.color = selected.current;
+  } else if (segment?.visited) {
+    style.color = selected.trail;
+  }
+
+  return style;
+};
+
+drawSavedSegment = function (segment) {
+  if (
+    !state.savedLayer ||
+    !segment ||
+    !segment.id ||
+    !validCoords(segment.coords) ||
+    state.savedDrawnIds.has(segment.id)
+  ) {
+    return;
+  }
+
+  const selected = rd71SelectedTrailColour();
+  const zoomStyle = rd53SavedRoadStyle();
+
+  L.polyline(segment.coords, {
+    color: selected.trail,
+    weight: zoomStyle.weight,
+    opacity: zoomStyle.opacity,
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false
+  }).addTo(state.savedLayer);
+
+  state.savedDrawnIds.add(segment.id);
+};
+
+drawTripLine = function (a, b) {
+  if (!state.tripLayer) return;
+
+  L.polyline(
+    [
+      [a.lat, a.lng],
+      [b.lat, b.lng]
+    ],
+    {
+      color: rd71SelectedTrailColour().current,
+      weight: 7,
+      opacity: 0.35,
+      lineCap: "round",
+      lineJoin: "round",
+      interactive: false
+    }
+  ).addTo(state.tripLayer);
+};
+
+rd53ApplySavedRoadZoomStyle = function () {
+  const result =
+    roadDiscoveryV71.rd53ApplySavedRoadZoomStyle();
+  const selected = rd71SelectedTrailColour();
+
+  state.savedLayer?.eachLayer?.((layer) => {
+    layer?.setStyle?.({
+      color: selected.trail
+    });
+  });
+
+  return result;
+};
+
+rd53UpdateMyRoadsButton = function () {
+  const result =
+    roadDiscoveryV71.rd53UpdateMyRoadsButton();
+  const button = els.myRoadsBtn || $("myRoadsBtn");
+
+  if (!button) return result;
+
+  const driveActive = rd53DriveRoadLayersActive();
+  const visible = driveActive || state.myRoadsVisible;
+
+  button.setAttribute(
+    "aria-label",
+    driveActive
+      ? "My roads are shown during Drive Mode"
+      : visible
+        ? "Hide my roads"
+        : "Show my roads"
+  );
+
+  button.title = driveActive
+    ? "My Roads • shown during Drive"
+    : visible
+      ? "My Roads • visible"
+      : "My Roads • hidden";
+
+  return result;
+};
+
+showToast = function (message) {
+  const neutralMessage =
+    message === "My orange roads shown"
+      ? "My roads shown"
+      : message === "My orange roads hidden"
+        ? "My roads hidden"
+        : message;
+
+  return roadDiscoveryV71.showToast(neutralMessage);
+};
