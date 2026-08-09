@@ -1,19 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v68 service worker
+  Road Discovery AU v69 service worker
 
-  Settings section ordering update.
+  Trophy Room and milestone progression.
 
   Expected frontend versions:
-  - app.js?v=67
-  - style.css?v=50
+  - app.js?v=68
+  - style.css?v=51
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v68";
+const CACHE_NAME = "road-discovery-au-v69";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,8 +23,10 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
-  "./style.css?v=50",
+  "./style.css?v=51",
+  "./app.js?v=68",
   "./app.js?v=67",
+  "./style.css?v=50",
   "./app.js?v=66",
   "./style.css?v=49",
   "./app.js?v=65",
@@ -172,6 +174,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/style.css")) {
           return (
+            (await caches.match("./style.css?v=51")) ||
             (await caches.match("./style.css?v=50")) ||
             (await caches.match("./style.css?v=49")) ||
             (await caches.match("./style.css?v=48")) ||
@@ -193,6 +196,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=68")) ||
             (await caches.match("./app.js?v=67")) ||
             (await caches.match("./app.js?v=66")) ||
             (await caches.match("./app.js?v=65")) ||
