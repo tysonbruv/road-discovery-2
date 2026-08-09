@@ -14886,10 +14886,20 @@ const RD68_ACHIEVEMENTS = Object.freeze([
     name: "Orange Nation",
     description: "Discover 10,000,000 roads."
   },
-  {
+    {
     threshold: 18000000,
-    name: "Australia Complete",
-    description: "Reach the 18,000,000-road Australian goal."
+    name: "Road Master",
+    description: "Discover 18,000,000 roads."
+  },
+  {
+    threshold: 25000000,
+    name: "Global Explorer",
+    description: "Discover 25,000,000 roads."
+  },
+  {
+    threshold: 50000000,
+    name: "Road Legend",
+    description: "Discover 50,000,000 roads."
   }
 ]);
 
@@ -15123,7 +15133,7 @@ function rd68RenderProgression() {
 
   if (settingsProgress) {
     settingsProgress.textContent = complete
-      ? "All Australian milestones completed"
+      ? "All road milestones completed"
       : `${rd68MilestoneCount(count)} / ` +
         `${rd68MilestoneCount(target)} • Next: ${next.name}`;
   }
@@ -15153,7 +15163,7 @@ function rd68RenderProgression() {
 
   if (progressText) {
     progressText.textContent = complete
-      ? `${formatNumber(count)} roads • Australia goal completed`
+      ? `${formatNumber(count)} roads • All milestones completed`
       : `${formatNumber(count)} / ${formatNumber(target)} roads`;
   }
 
