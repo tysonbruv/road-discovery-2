@@ -14818,3 +14818,549 @@ resetHideSeekState = function (options = {}) {
   rd66ApplyLocationMarkerVisibility();
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v68 milestone progression        */
+/* Append this block once to the bottom of app.js v67 */
+/* ================================================== */
+
+const RD68_ACHIEVEMENTS = Object.freeze([
+  {
+    threshold: 5000,
+    name: "Ignition",
+    description: "Discover 5,000 roads."
+  },
+  {
+    threshold: 10000,
+    name: "Local Explorer",
+    description: "Discover 10,000 roads."
+  },
+  {
+    threshold: 17500,
+    name: "Road Hunter",
+    description: "Discover 17,500 roads."
+  },
+  {
+    threshold: 30000,
+    name: "Orange District",
+    description: "Discover 30,000 roads."
+  },
+  {
+    threshold: 50000,
+    name: "Road Pioneer",
+    description: "Discover 50,000 roads.",
+    reward: "Public leaderboard access"
+  },
+  {
+    threshold: 100000,
+    name: "City Explorer",
+    description: "Discover 100,000 roads."
+  },
+  {
+    threshold: 250000,
+    name: "Region Runner",
+    description: "Discover 250,000 roads."
+  },
+  {
+    threshold: 500000,
+    name: "Road Veteran",
+    description: "Discover 500,000 roads."
+  },
+  {
+    threshold: 1000000,
+    name: "Million Road Club",
+    description: "Discover 1,000,000 roads."
+  },
+  {
+    threshold: 2500000,
+    name: "State Explorer",
+    description: "Discover 2,500,000 roads."
+  },
+  {
+    threshold: 5000000,
+    name: "Continental Explorer",
+    description: "Discover 5,000,000 roads."
+  },
+  {
+    threshold: 10000000,
+    name: "Orange Nation",
+    description: "Discover 10,000,000 roads."
+  },
+  {
+    threshold: 18000000,
+    name: "Australia Complete",
+    description: "Reach the 18,000,000-road Australian goal."
+  }
+]);
+
+const roadDiscoveryV68 = {
+  renderAllStats,
+  startDrive,
+  finishDrive
+};
+
+let rd68DriveStartCount = null;
+
+function rd68UnlockedCount() {
+  return Object.keys(state.savedSegments || {}).length;
+}
+
+function rd68NextAchievement(count = rd68UnlockedCount()) {
+  return (
+    RD68_ACHIEVEMENTS.find(
+      (achievement) => count < achievement.threshold
+    ) || RD68_ACHIEVEMENTS[RD68_ACHIEVEMENTS.length - 1]
+  );
+}
+
+function rd68MilestoneCount(value) {
+  return formatCompactNumber(Number(value) || 0);
+}
+
+function rd68ProgressPercent(count, target) {
+  if (!target) return 0;
+
+  return Math.max(
+    0,
+    Math.min(100, (Number(count || 0) / target) * 100)
+  );
+}
+
+function rd68CreateTrophyRoom() {
+  if ($("rd68TrophyOverlay")) return;
+
+  const overlay = document.createElement("section");
+  overlay.id = "rd68TrophyOverlay";
+  overlay.className = "confirm-overlay rd-trophy-overlay hidden";
+  overlay.setAttribute("aria-hidden", "true");
+
+  overlay.innerHTML = `
+    <div
+      class="confirm-card rd-trophy-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rd68TrophyTitle"
+    >
+      <div class="rd-trophy-header">
+        <div class="rd-trophy-heading">
+          <div class="rd-trophy-mark" aria-hidden="true">★</div>
+
+          <div>
+            <div class="rd-trophy-kicker">Road Discovery AU</div>
+            <h2 id="rd68TrophyTitle">Trophy Room</h2>
+          </div>
+        </div>
+
+        <button
+          id="rd68TrophyCloseBtn"
+          class="rd-trophy-close"
+          type="button"
+          aria-label="Close Trophy Room"
+        >
+          ×
+        </button>
+      </div>
+
+      <div
+        id="rd68AchievementCelebration"
+        class="rd-achievement-celebration hidden"
+        aria-live="polite"
+      ></div>
+
+      <div class="rd-trophy-summary">
+        <div class="rd-trophy-summary-topline">
+          <div>
+            <span>Total discovered</span>
+            <strong id="rd68TrophyTotal">0</strong>
+          </div>
+
+          <div class="rd-trophy-next">
+            <span>Next milestone</span>
+            <strong id="rd68TrophyNext">5K</strong>
+          </div>
+        </div>
+
+        <div class="rd-trophy-progress-track" aria-hidden="true">
+          <span id="rd68TrophyProgressBar"></span>
+        </div>
+
+        <p id="rd68TrophyProgressText">0 / 5K roads</p>
+      </div>
+
+      <div
+        id="rd68AchievementList"
+        class="rd-achievement-list"
+      ></div>
+
+      <button
+        id="rd68TrophyDoneBtn"
+        class="wide-btn rd-trophy-done"
+        type="button"
+      >
+        Back to Map
+      </button>
+    </div>
+  `;
+
+  ($("appShell") || document.body).appendChild(overlay);
+}
+
+function rd68InsertAchievementSetting() {
+  if ($("rd68OpenTrophyRoomBtn")) return;
+
+  const settingsContent = document.querySelector(
+    "#settingsPanel .panel-content"
+  );
+
+  if (!settingsContent) return;
+
+  const section = document.createElement("section");
+  section.className = "panel-section rd-achievement-settings";
+
+  section.innerHTML = `
+    <h3>Achievements</h3>
+
+    <p class="rd-achievement-settings-copy">
+      View your milestones, completed achievements and next road goal.
+    </p>
+
+    <button
+      id="rd68OpenTrophyRoomBtn"
+      class="ghost-btn wide-btn"
+      type="button"
+    >
+      Open Trophy Room
+    </button>
+
+    <p
+      id="rd68AchievementSettingsProgress"
+      class="rd-achievement-settings-progress"
+    ></p>
+  `;
+
+  const aboutSection = settingsContent.querySelector(
+    ".road-discovery-about-settings"
+  );
+
+  if (aboutSection) {
+    aboutSection.insertAdjacentElement("afterend", section);
+  } else {
+    settingsContent.insertBefore(
+      section,
+      settingsContent.firstElementChild
+    );
+  }
+}
+
+function rd68AchievementCard(
+  achievement,
+  count,
+  nextThreshold
+) {
+  const unlocked = count >= achievement.threshold;
+  const current =
+    !unlocked && achievement.threshold === nextThreshold;
+
+  const stateClass = unlocked
+    ? "unlocked"
+    : current
+      ? "current"
+      : "locked";
+
+  const stateText = unlocked
+    ? "Unlocked"
+    : current
+      ? "Next"
+      : "Locked";
+
+  const reward = achievement.reward
+    ? `<div class="rd-achievement-reward">${escapeHtml(
+        achievement.reward
+      )}</div>`
+    : "";
+
+  return `
+    <article class="rd-achievement-card ${stateClass}">
+      <div class="rd-achievement-icon" aria-hidden="true">
+        ${unlocked ? "✓" : current ? "★" : "•"}
+      </div>
+
+      <div class="rd-achievement-copy">
+        <div class="rd-achievement-count">
+          ${rd68MilestoneCount(achievement.threshold)} roads
+        </div>
+
+        <h3>${escapeHtml(achievement.name)}</h3>
+        <p>${escapeHtml(achievement.description)}</p>
+        ${reward}
+      </div>
+
+      <span class="rd-achievement-state">${stateText}</span>
+    </article>
+  `;
+}
+
+function rd68RenderProgression() {
+  const count = rd68UnlockedCount();
+  const next = rd68NextAchievement(count);
+  const target = next.threshold;
+
+  const complete =
+    count >=
+    RD68_ACHIEVEMENTS[
+      RD68_ACHIEVEMENTS.length - 1
+    ].threshold;
+
+  if (els.unlockedStat) {
+    els.unlockedStat.textContent =
+      `${rd68MilestoneCount(count)} / ` +
+      `${rd68MilestoneCount(target)}`;
+  }
+
+  const settingsProgress = $(
+    "rd68AchievementSettingsProgress"
+  );
+
+  if (settingsProgress) {
+    settingsProgress.textContent = complete
+      ? "All Australian milestones completed"
+      : `${rd68MilestoneCount(count)} / ` +
+        `${rd68MilestoneCount(target)} • Next: ${next.name}`;
+  }
+
+  const total = $("rd68TrophyTotal");
+  const nextValue = $("rd68TrophyNext");
+  const progressBar = $("rd68TrophyProgressBar");
+  const progressText = $("rd68TrophyProgressText");
+  const list = $("rd68AchievementList");
+
+  if (total) {
+    total.textContent = formatNumber(count);
+  }
+
+  if (nextValue) {
+    nextValue.textContent = complete
+      ? "Complete"
+      : rd68MilestoneCount(target);
+  }
+
+  if (progressBar) {
+    progressBar.style.width = `${rd68ProgressPercent(
+      count,
+      target
+    )}%`;
+  }
+
+  if (progressText) {
+    progressText.textContent = complete
+      ? `${formatNumber(count)} roads • Australia goal completed`
+      : `${formatNumber(count)} / ${formatNumber(target)} roads`;
+  }
+
+  if (list) {
+    list.innerHTML = RD68_ACHIEVEMENTS.map(
+      (achievement) =>
+        rd68AchievementCard(
+          achievement,
+          count,
+          target
+        )
+    ).join("");
+  }
+}
+
+function rd68RenderCelebration(achievements = []) {
+  const celebration = $("rd68AchievementCelebration");
+
+  if (!celebration) return;
+
+  if (!achievements.length) {
+    celebration.innerHTML = "";
+    celebration.classList.add("hidden");
+    return;
+  }
+
+  const heading =
+    achievements.length === 1
+      ? "Achievement unlocked"
+      : `${achievements.length} achievements unlocked`;
+
+  celebration.innerHTML = `
+    <strong>${heading}</strong>
+
+    <span>
+      ${achievements
+        .map(
+          (achievement) =>
+            `${escapeHtml(achievement.name)} — ` +
+            `${rd68MilestoneCount(
+              achievement.threshold
+            )} roads`
+        )
+        .join("<br />")}
+    </span>
+  `;
+
+  celebration.classList.remove("hidden");
+}
+
+function rd68OpenTrophyRoom(options = {}) {
+  const overlay = $("rd68TrophyOverlay");
+
+  if (!overlay) return;
+
+  closePanels();
+  rd68RenderProgression();
+  rd68RenderCelebration(options.achievements || []);
+
+  overlay.classList.remove("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+  document.body.classList.add("rd-trophy-open");
+
+  window.setTimeout(
+    () => $("rd68TrophyCloseBtn")?.focus(),
+    0
+  );
+}
+
+function rd68CloseTrophyRoom() {
+  const overlay = $("rd68TrophyOverlay");
+
+  if (!overlay) return;
+
+  overlay.classList.add("hidden");
+  overlay.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("rd-trophy-open");
+  rd68RenderCelebration([]);
+}
+
+function rd68BindAchievementEvents() {
+  $("rd68OpenTrophyRoomBtn")?.addEventListener(
+    "click",
+    () => rd68OpenTrophyRoom()
+  );
+
+  $("rd68TrophyCloseBtn")?.addEventListener(
+    "click",
+    rd68CloseTrophyRoom
+  );
+
+  $("rd68TrophyDoneBtn")?.addEventListener(
+    "click",
+    rd68CloseTrophyRoom
+  );
+
+  $("rd68TrophyOverlay")?.addEventListener(
+    "click",
+    (event) => {
+      if (event.target === $("rd68TrophyOverlay")) {
+        rd68CloseTrophyRoom();
+      }
+    }
+  );
+
+  window.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !$("rd68TrophyOverlay")?.classList.contains(
+        "hidden"
+      )
+    ) {
+      rd68CloseTrophyRoom();
+    }
+  });
+}
+
+function rd68CrossedAchievements(before, after) {
+  return RD68_ACHIEVEMENTS.filter(
+    (achievement) =>
+      achievement.threshold > before &&
+      achievement.threshold <= after
+  );
+}
+
+function rd68InitAchievements() {
+  rd68CreateTrophyRoom();
+  rd68InsertAchievementSetting();
+  rd68BindAchievementEvents();
+  rd68RenderProgression();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd68InitAchievements,
+    { once: true }
+  );
+} else {
+  rd68InitAchievements();
+}
+
+renderAllStats = function () {
+  const result = roadDiscoveryV68.renderAllStats();
+  rd68RenderProgression();
+  return result;
+};
+
+startDrive = async function () {
+  const wasRunning = Boolean(
+    state.isRecording || state.watchId !== null
+  );
+
+  const before = rd68UnlockedCount();
+  const result = await roadDiscoveryV68.startDrive();
+
+  if (!wasRunning && state.isRecording) {
+    rd68DriveStartCount = before;
+  }
+
+  return result;
+};
+
+finishDrive = function () {
+  const wasRunning = Boolean(
+    state.isRecording || state.watchId !== null
+  );
+
+  const before = Number.isFinite(rd68DriveStartCount)
+    ? rd68DriveStartCount
+    : Math.max(
+        0,
+        rd68UnlockedCount() -
+          state.tripUnlocked.size
+      );
+
+  const result = roadDiscoveryV68.finishDrive();
+  const after = rd68UnlockedCount();
+
+  rd68DriveStartCount = null;
+  rd68RenderProgression();
+
+  if (wasRunning) {
+    const crossed = rd68CrossedAchievements(
+      before,
+      after
+    );
+
+    if (
+      crossed.length > 0 &&
+      !hasActiveHideSeekRound()
+    ) {
+      window.setTimeout(
+        () => {
+          if (
+            !state.isRecording &&
+            !hasActiveHideSeekRound()
+          ) {
+            rd68OpenTrophyRoom({
+              achievements: crossed
+            });
+          }
+        },
+        650
+      );
+    }
+  }
+
+  return result;
+};
