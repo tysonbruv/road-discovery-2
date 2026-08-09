@@ -4532,3 +4532,143 @@ body.rd-trophy-open {
     transition: none;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU v52 personal trail colours       */
+/* Append this block once to the bottom of style.css  */
+/* ================================================== */
+
+.trail-colour-setting {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.trail-colour-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 13px;
+}
+
+.trail-colour-heading > div {
+  display: grid;
+  gap: 5px;
+}
+
+.trail-colour-heading strong {
+  color: #f5f7fb;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.trail-colour-heading > div > span {
+  color: #9ca3af;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.trail-colour-current {
+  max-width: 116px;
+  padding: 5px 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #dce3ed;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trail-colour-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trail-colour-choice {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  min-width: 0;
+  min-height: 46px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #dce3ed;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.trail-colour-choice:hover {
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.trail-colour-choice:active {
+  transform: scale(0.98);
+}
+
+.trail-colour-choice.selected {
+  border-color: var(--trail-choice-colour);
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow:
+    0 0 0 1px var(--trail-choice-colour),
+    0 0 16px rgba(255, 255, 255, 0.07);
+}
+
+.trail-colour-choice:focus-visible {
+  outline: 3px solid rgba(75, 179, 255, 0.42);
+  outline-offset: 2px;
+}
+
+.trail-colour-swatch {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.42);
+  border-radius: 50%;
+  background: var(--trail-choice-colour);
+  box-shadow: 0 0 10px var(--trail-choice-colour);
+}
+
+.trail-colour-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 380px) {
+  .trail-colour-grid {
+    gap: 7px;
+  }
+
+  .trail-colour-choice {
+    padding-inline: 8px;
+  }
+
+  .trail-colour-label {
+    font-size: 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trail-colour-choice {
+    transition: none;
+  }
+}
