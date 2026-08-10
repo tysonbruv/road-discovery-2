@@ -18213,3 +18213,757 @@ if (document.readyState === "loading") {
 } else {
   rd74InitHawkesburyDiscovery();
 }
+
+/* ================================================== */
+/* Road Discovery AU v76 Public Leaderboard           */
+/* Append this block once to the bottom of app.js v75 */
+/* ================================================== */
+
+const RD76_LEADERBOARD_LIMIT = 100;
+
+const rd76Leaderboard = {
+  activeUserId: null,
+  requestId: 0,
+  loading: false,
+  saving: false,
+  loaded: false,
+  isPublic: false,
+  roadCount: 0,
+  rank: null,
+  entries: [],
+  error: ""
+};
+
+const roadDiscoveryV76 = {
+  closePanels,
+  renderAuthState
+};
+
+function rd76CurrentUserId() {
+  return String(state.auth.user?.id || "");
+}
+
+function rd76ResetLeaderboardState(userId = "") {
+  rd76Leaderboard.activeUserId = String(userId || "");
+  rd76Leaderboard.requestId++;
+  rd76Leaderboard.loading = false;
+  rd76Leaderboard.saving = false;
+  rd76Leaderboard.loaded = false;
+  rd76Leaderboard.isPublic = false;
+  rd76Leaderboard.roadCount = 0;
+  rd76Leaderboard.rank = null;
+  rd76Leaderboard.entries = [];
+  rd76Leaderboard.error = "";
+}
+
+function rd76PrepareForCurrentUser() {
+  const userId = rd76CurrentUserId();
+
+  if (rd76Leaderboard.activeUserId !== userId) {
+    rd76ResetLeaderboardState(userId);
+  }
+
+  return userId;
+}
+
+function rd76SafeCount(value) {
+  const number = Number(value);
+
+  return Number.isFinite(number) && number >= 0
+    ? Math.floor(number)
+    : 0;
+}
+
+function rd76Number(value) {
+  return rd76SafeCount(value).toLocaleString("en-AU");
+}
+
+function rd76NormaliseRank(value) {
+  const number = Number(value);
+
+  return Number.isFinite(number) && number > 0
+    ? Math.floor(number)
+    : null;
+}
+
+function rd76CreateGeneralMenuButton() {
+  if ($("rd76OpenLeaderboardBtn")) return;
+
+  const settingsButton = $("rd73OpenSettingsBtn");
+  const list = settingsButton?.parentElement;
+
+  if (!list) return;
+
+  const button = document.createElement("button");
+  button.id = "rd76OpenLeaderboardBtn";
+  button.className = "rd-general-menu-item";
+  button.type = "button";
+
+  button.innerHTML = `
+    <span
+      class="rd-general-menu-icon leaderboard"
+      aria-hidden="true"
+    >
+      1
+    </span>
+
+    <span class="rd-general-menu-copy">
+      <strong>Public Leaderboard</strong>
+
+      <small id="rd76GeneralMenuLeaderboardStatus">
+        Public road-count rankings • Beta
+      </small>
+    </span>
+
+    <span
+      class="rd-general-menu-arrow"
+      aria-hidden="true"
+    >
+      ›
+    </span>
+  `;
+
+  list.insertBefore(button, settingsButton);
+}
+
+function rd76CreateLeaderboardPanel() {
+  if ($("rd76LeaderboardPanel")) return;
+
+  const panel = document.createElement("aside");
+  panel.id = "rd76LeaderboardPanel";
+  panel.className =
+    "side-panel rd-leaderboard-panel hidden";
+  panel.setAttribute("aria-hidden", "true");
+  panel.setAttribute("aria-label", "Public Leaderboard");
+
+  panel.innerHTML = `
+    <div class="panel-header rd-leaderboard-header">
+      <div class="rd-leaderboard-heading">
+        <button
+          id="rd76LeaderboardBackBtn"
+          class="panel-close-btn rd-leaderboard-back-btn"
+          type="button"
+          aria-label="Back to General Menu"
+        >
+          ‹
+        </button>
+
+        <div>
+          <h2>Public Leaderboard</h2>
+          <p>Road-count rankings • Beta</p>
+        </div>
+      </div>
+
+      <button
+        id="rd76LeaderboardCloseBtn"
+        class="panel-close-btn"
+        type="button"
+        aria-label="Close Public Leaderboard"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="panel-content rd-leaderboard-content">
+      <section class="rd-leaderboard-privacy">
+        <strong>Your routes and location stay private</strong>
+
+        <p>
+          Joining only publishes your generated Road username and
+          discovered-road count. Your email, friend code, road map,
+          road IDs and location are never shown here.
+        </p>
+      </section>
+
+      <section class="rd-leaderboard-join-card">
+        <label
+          class="toggle-row"
+          for="rd76LeaderboardToggle"
+        >
+          <div class="toggle-text">
+            <strong>Show me on the leaderboard</strong>
+
+            <span id="rd76LeaderboardToggleDescription">
+              Public participation is off by default.
+            </span>
+          </div>
+
+          <input
+            id="rd76LeaderboardToggle"
+            class="toggle-input"
+            type="checkbox"
+          />
+
+          <span class="toggle-switch" aria-hidden="true">
+            <span class="toggle-knob"></span>
+          </span>
+        </label>
+      </section>
+
+      <section class="rd-leaderboard-my-card">
+        <div class="rd-leaderboard-my-title">
+          <span>Your standing</span>
+
+          <span
+            id="rd76LeaderboardVisibilityBadge"
+            class="rd-leaderboard-visibility-badge"
+          >
+            Hidden
+          </span>
+        </div>
+
+        <div class="rd-leaderboard-my-stats">
+          <div>
+            <span>Rank</span>
+            <strong id="rd76LeaderboardMyRank">—</strong>
+          </div>
+
+          <div>
+            <span>Synced roads</span>
+            <strong id="rd76LeaderboardMyRoads">0</strong>
+          </div>
+        </div>
+
+        <p id="rd76LeaderboardAccountName">
+          Sign in to view the leaderboard.
+        </p>
+      </section>
+
+      <div class="rd-leaderboard-list-heading">
+        <div>
+          <strong>Top road explorers</strong>
+          <span>Top 100 plus your position</span>
+        </div>
+
+        <button
+          id="rd76LeaderboardRefreshBtn"
+          class="ghost-btn rd-leaderboard-refresh-btn"
+          type="button"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div
+        id="rd76LeaderboardList"
+        class="rd-leaderboard-list"
+        aria-live="polite"
+      ></div>
+
+      <p class="rd-leaderboard-sync-note">
+        Scores use roads saved to your Road Profile. After Finish
+        Drive, allow the account backup to finish before refreshing.
+      </p>
+
+      <p class="rd-leaderboard-beta-note">
+        Beta leaderboard for friendly competition. Rankings may be
+        reviewed if progress appears invalid.
+      </p>
+    </div>
+  `;
+
+  ($("appShell") || document.body).appendChild(panel);
+  els.rd76LeaderboardPanel = panel;
+}
+
+function rd76RenderGeneralMenuStatus() {
+  const element = $("rd76GeneralMenuLeaderboardStatus");
+
+  if (!element) return;
+
+  const signedIn = Boolean(rd76CurrentUserId());
+
+  if (!signedIn) {
+    element.textContent = "Sign in to view public rankings";
+    return;
+  }
+
+  if (!rd76Leaderboard.loaded) {
+    element.textContent = "Public road-count rankings • Beta";
+    return;
+  }
+
+  if (!rd76Leaderboard.isPublic) {
+    element.textContent = "View rankings • You are hidden";
+    return;
+  }
+
+  const rank = rd76Leaderboard.rank
+    ? `#${rd76Leaderboard.rank}`
+    : "Public";
+
+  element.textContent =
+    `${rank} • ${rd76Number(rd76Leaderboard.roadCount)} roads`;
+}
+
+function rd76EntryHtml(entry) {
+  const rank = rd76NormaliseRank(entry?.rank_position);
+  const count = rd76SafeCount(entry?.road_count);
+  const username = String(
+    entry?.road_username || "Road Profile"
+  );
+  const isMe = Boolean(entry?.is_me);
+
+  const podiumClass =
+    rank === 1
+      ? " first"
+      : rank === 2
+        ? " second"
+        : rank === 3
+          ? " third"
+          : "";
+
+  return `
+    <article class="rd-leaderboard-row${isMe ? " is-me" : ""}">
+      <div class="rd-leaderboard-rank${podiumClass}">
+        ${rank ? `#${rank}` : "—"}
+      </div>
+
+      <div class="rd-leaderboard-user">
+        <strong>${escapeHtml(username)}</strong>
+        <span>${isMe ? "Your Road Profile" : "Road explorer"}</span>
+      </div>
+
+      <div class="rd-leaderboard-score">
+        <strong>${rd76Number(count)}</strong>
+        <span>roads</span>
+      </div>
+
+      ${
+        isMe
+          ? `<span class="rd-leaderboard-you-badge">You</span>`
+          : ""
+      }
+    </article>
+  `;
+}
+
+function rd76RenderLeaderboardList() {
+  const list = $("rd76LeaderboardList");
+
+  if (!list) return;
+
+  if (!rd76CurrentUserId()) {
+    list.innerHTML = `
+      <div class="rd-leaderboard-empty">
+        Sign in through your Road Profile to view the public
+        leaderboard.
+      </div>
+    `;
+    return;
+  }
+
+  if (rd76Leaderboard.loading && !rd76Leaderboard.loaded) {
+    list.innerHTML = `
+      <div class="rd-leaderboard-empty">
+        Loading leaderboard…
+      </div>
+    `;
+    return;
+  }
+
+  if (rd76Leaderboard.error) {
+    list.innerHTML = `
+      <div class="rd-leaderboard-empty error">
+        ${escapeHtml(rd76Leaderboard.error)}
+      </div>
+    `;
+    return;
+  }
+
+  if (rd76Leaderboard.entries.length === 0) {
+    list.innerHTML = `
+      <div class="rd-leaderboard-empty">
+        No Road Profiles are public yet. You could be the first.
+      </div>
+    `;
+    return;
+  }
+
+  let html = "";
+
+  for (const entry of rd76Leaderboard.entries) {
+    const rank = rd76NormaliseRank(entry?.rank_position);
+    const isMe = Boolean(entry?.is_me);
+
+    if (isMe && rank && rank > RD76_LEADERBOARD_LIMIT) {
+      html += `
+        <div class="rd-leaderboard-position-gap">
+          Your position
+        </div>
+      `;
+    }
+
+    html += rd76EntryHtml(entry);
+  }
+
+  list.innerHTML = html;
+}
+
+function rd76RenderLeaderboard() {
+  rd76PrepareForCurrentUser();
+
+  const signedIn = Boolean(rd76CurrentUserId());
+  const busy =
+    rd76Leaderboard.loading || rd76Leaderboard.saving;
+
+  const toggle = $("rd76LeaderboardToggle");
+  const description = $(
+    "rd76LeaderboardToggleDescription"
+  );
+  const badge = $("rd76LeaderboardVisibilityBadge");
+  const rank = $("rd76LeaderboardMyRank");
+  const roads = $("rd76LeaderboardMyRoads");
+  const account = $("rd76LeaderboardAccountName");
+  const refresh = $("rd76LeaderboardRefreshBtn");
+
+  if (toggle) {
+    toggle.checked = Boolean(
+      signedIn && rd76Leaderboard.isPublic
+    );
+    toggle.disabled = !signedIn || busy;
+  }
+
+  if (description) {
+    description.textContent = !signedIn
+      ? "Sign in before joining the public leaderboard."
+      : rd76Leaderboard.isPublic
+        ? "Your Road username and synced road count are public."
+        : "Public participation is off. Your score is hidden.";
+  }
+
+  if (badge) {
+    badge.textContent = rd76Leaderboard.isPublic
+      ? "Public"
+      : "Hidden";
+
+    badge.classList.toggle(
+      "is-public",
+      rd76Leaderboard.isPublic
+    );
+  }
+
+  if (rank) {
+    rank.textContent = rd76Leaderboard.rank
+      ? `#${rd76Leaderboard.rank}`
+      : "—";
+  }
+
+  if (roads) {
+    roads.textContent = rd76Number(
+      rd76Leaderboard.roadCount
+    );
+  }
+
+  if (account) {
+    account.textContent = signedIn
+      ? String(
+          state.auth.profile?.username ||
+          "Loading Road Profile…"
+        )
+      : "Sign in to view the leaderboard.";
+  }
+
+  if (refresh) {
+    refresh.disabled = !signedIn || busy;
+    refresh.textContent = rd76Leaderboard.loading
+      ? "Loading…"
+      : "Refresh";
+  }
+
+  rd76RenderLeaderboardList();
+  rd76RenderGeneralMenuStatus();
+}
+
+async function rd76LoadLeaderboard(options = {}) {
+  const { quiet = false } = options;
+  const userId = rd76PrepareForCurrentUser();
+
+  if (!state.auth.client || !userId) {
+    rd76RenderLeaderboard();
+    return false;
+  }
+
+  if (rd76Leaderboard.loading || rd76Leaderboard.saving) {
+    return false;
+  }
+
+  const requestId = ++rd76Leaderboard.requestId;
+
+  rd76Leaderboard.loading = true;
+  rd76Leaderboard.error = "";
+  rd76RenderLeaderboard();
+
+  try {
+    const [statusResult, leaderboardResult] =
+      await Promise.all([
+        state.auth.client.rpc(
+          "get_my_leaderboard_status"
+        ),
+        state.auth.client.rpc(
+          "get_public_road_leaderboard",
+          { p_limit: RD76_LEADERBOARD_LIMIT }
+        )
+      ]);
+
+    if (statusResult.error) {
+      throw statusResult.error;
+    }
+
+    if (leaderboardResult.error) {
+      throw leaderboardResult.error;
+    }
+
+    if (
+      requestId !== rd76Leaderboard.requestId ||
+      userId !== rd76CurrentUserId()
+    ) {
+      return false;
+    }
+
+    const status = Array.isArray(statusResult.data)
+      ? statusResult.data[0]
+      : statusResult.data;
+
+    if (!status || typeof status !== "object") {
+      throw new Error("Leaderboard status was empty");
+    }
+
+    rd76Leaderboard.isPublic = Boolean(status.is_public);
+    rd76Leaderboard.roadCount = rd76SafeCount(
+      status.road_count
+    );
+    rd76Leaderboard.rank = rd76NormaliseRank(
+      status.leaderboard_rank
+    );
+
+    rd76Leaderboard.entries = Array.isArray(
+      leaderboardResult.data
+    )
+      ? leaderboardResult.data
+      : [];
+
+    rd76Leaderboard.loaded = true;
+    rd76Leaderboard.error = "";
+
+    if (state.auth.profile) {
+      state.auth.profile.show_leaderboard =
+        rd76Leaderboard.isPublic;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(error);
+
+    if (
+      requestId === rd76Leaderboard.requestId &&
+      userId === rd76CurrentUserId()
+    ) {
+      rd76Leaderboard.error = navigator.onLine
+        ? "Could not load the leaderboard. Try again."
+        : "Leaderboard unavailable while offline.";
+
+      if (!quiet) {
+        showToast("Could not load leaderboard");
+      }
+    }
+
+    return false;
+  } finally {
+    if (
+      requestId === rd76Leaderboard.requestId &&
+      userId === rd76CurrentUserId()
+    ) {
+      rd76Leaderboard.loading = false;
+      rd76RenderLeaderboard();
+    }
+  }
+}
+
+async function rd76ChangeLeaderboardVisibility(visible) {
+  const userId = rd76PrepareForCurrentUser();
+  const toggle = $("rd76LeaderboardToggle");
+
+  if (!state.auth.client || !userId) {
+    if (toggle) toggle.checked = false;
+    showToast("Sign in before joining the leaderboard");
+    return;
+  }
+
+  if (
+    rd76Leaderboard.saving ||
+    rd76Leaderboard.loading
+  ) {
+    rd76RenderLeaderboard();
+    return;
+  }
+
+  const previous = rd76Leaderboard.isPublic;
+
+  if (visible && !previous) {
+    const confirmed = window.confirm(
+      "Join the public leaderboard?\n\n" +
+      "Only your generated Road username and discovered-road " +
+      "count will be public. Your email, friend code, map, roads " +
+      "and location stay private."
+    );
+
+    if (!confirmed) {
+      rd76RenderLeaderboard();
+      return;
+    }
+  }
+
+  rd76Leaderboard.saving = true;
+  rd76Leaderboard.isPublic = Boolean(visible);
+  rd76RenderLeaderboard();
+
+  try {
+    const { data, error } = await state.auth.client.rpc(
+      "set_my_leaderboard_visibility",
+      { p_visible: Boolean(visible) }
+    );
+
+    if (error) throw error;
+
+    if (userId !== rd76CurrentUserId()) return;
+
+    rd76Leaderboard.isPublic = Boolean(data);
+
+    if (state.auth.profile) {
+      state.auth.profile.show_leaderboard =
+        rd76Leaderboard.isPublic;
+
+      writeJson(
+        ROAD_PROFILE_CACHE_KEY,
+        state.auth.profile
+      );
+    }
+
+    showToast(
+      rd76Leaderboard.isPublic
+        ? "You joined the public leaderboard"
+        : "You left the public leaderboard"
+    );
+  } catch (error) {
+    console.error(error);
+
+    if (userId === rd76CurrentUserId()) {
+      rd76Leaderboard.isPublic = previous;
+      showToast("Could not update leaderboard privacy");
+    }
+  } finally {
+    if (userId === rd76CurrentUserId()) {
+      rd76Leaderboard.saving = false;
+      rd76RenderLeaderboard();
+      void rd76LoadLeaderboard({ quiet: true });
+    }
+  }
+}
+
+function rd76CloseLeaderboardOnly() {
+  const panel = $("rd76LeaderboardPanel");
+
+  if (!panel) return;
+
+  panel.classList.add("hidden");
+  panel.setAttribute("aria-hidden", "true");
+}
+
+function rd76OpenLeaderboard() {
+  rd76PrepareForCurrentUser();
+  openPanel("rd76LeaderboardPanel");
+  rd76RenderLeaderboard();
+
+  if (rd76CurrentUserId()) {
+    void rd76LoadLeaderboard();
+  }
+}
+
+function rd76BackToGeneralMenu() {
+  rd76CloseLeaderboardOnly();
+  rd73OpenGeneralMenu();
+}
+
+function rd76BindLeaderboardEvents() {
+  $("rd76OpenLeaderboardBtn")?.addEventListener(
+    "click",
+    rd76OpenLeaderboard
+  );
+
+  $("rd76LeaderboardBackBtn")?.addEventListener(
+    "click",
+    rd76BackToGeneralMenu
+  );
+
+  $("rd76LeaderboardCloseBtn")?.addEventListener(
+    "click",
+    () => closePanels()
+  );
+
+  $("rd76LeaderboardRefreshBtn")?.addEventListener(
+    "click",
+    () => void rd76LoadLeaderboard()
+  );
+
+  $("rd76LeaderboardToggle")?.addEventListener(
+    "change",
+    (event) => {
+      void rd76ChangeLeaderboardVisibility(
+        Boolean(event.currentTarget.checked)
+      );
+    }
+  );
+
+  window.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !$("rd76LeaderboardPanel")?.classList.contains(
+        "hidden"
+      )
+    ) {
+      closePanels();
+    }
+  });
+}
+
+function rd76InitLeaderboard() {
+  rd76CreateGeneralMenuButton();
+  rd76CreateLeaderboardPanel();
+  rd76BindLeaderboardEvents();
+  rd76PrepareForCurrentUser();
+  rd76RenderLeaderboard();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd76InitLeaderboard,
+    { once: true }
+  );
+} else {
+  rd76InitLeaderboard();
+}
+
+/* -------------------------------------------------- */
+/* Include leaderboard in shared panel/auth lifecycle */
+/* -------------------------------------------------- */
+
+closePanels = function (hideBackdrop = true) {
+  const result = roadDiscoveryV76.closePanels(
+    hideBackdrop
+  );
+
+  rd76CloseLeaderboardOnly();
+
+  return result;
+};
+
+renderAuthState = function () {
+  const result = roadDiscoveryV76.renderAuthState();
+
+  rd76PrepareForCurrentUser();
+  rd76RenderLeaderboard();
+
+  return result;
+};
