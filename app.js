@@ -17963,3 +17963,253 @@ rd72RenderHiddenDiscoveries = function () {
 
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v74 Hawkesbury Lookout           */
+/* Append this block once to the bottom of app.js v73 */
+/* ================================================== */
+
+const RD74_HAWKESBURY_DISCOVERY = Object.freeze({
+  id: "hawkesbury_lookout",
+  region: "Lower Blue Mountains, NSW",
+  answer: "Hawkesbury Lookout",
+  completionMessage:
+    "Hawkesbury Lookout riddle complete.",
+  riddle:
+    "My name belongs to one river, but another runs below my gaze. From the edge of the mountains, I watch the plain stretch toward Sydney's distant lights.",
+  zones: [
+    {
+      lat: -33.66721,
+      lng: 150.65192,
+      radiusM: 250
+    }
+  ]
+});
+
+const roadDiscoveryV74 = {
+  rd72DiscoveryById,
+  rd72ResetDriveDiscoveryState,
+  rd72CheckDiscoveryPoint,
+  rd72RenderHiddenDiscoveries,
+  rd73RenderGeneralMenuProgress
+};
+
+state.hiddenDiscoveries.hawkesburyLastCheckAt = 0;
+
+function rd74AllHiddenDiscoveries() {
+  return [
+    ...RD72_HIDDEN_DISCOVERIES,
+    RD74_HAWKESBURY_DISCOVERY
+  ];
+}
+
+function rd74CompletedCount() {
+  return rd74AllHiddenDiscoveries().filter(
+    (discovery) =>
+      Boolean(
+        state.hiddenDiscoveries.completed[
+          discovery.id
+        ]
+      )
+  ).length;
+}
+
+function rd74RenderSixDiscoveryProgress() {
+  const completed = rd74CompletedCount();
+  const total =
+    rd74AllHiddenDiscoveries().length;
+
+  const progressText =
+    `${completed} of ${total} discovered`;
+
+  const settingsProgress = $(
+    "rd72HiddenSettingsProgress"
+  );
+
+  const roomProgress = $(
+    "rd72HiddenDiscoveryProgress"
+  );
+
+  const generalProgress = $(
+    "rd73HiddenDiscoveryProgress"
+  );
+
+  if (settingsProgress) {
+    settingsProgress.textContent =
+      state.auth.user
+        ? progressText
+        : `${progressText} • Sign in to save progress`;
+  }
+
+  if (roomProgress) {
+    roomProgress.textContent = progressText;
+  }
+
+  if (generalProgress) {
+    generalProgress.textContent =
+      `${completed} / ${total} discovered`;
+  }
+}
+
+function rd74RenderHawkesburyCard() {
+  const list = $(
+    "rd72HiddenDiscoveryList"
+  );
+
+  if (!list) return;
+
+  list.querySelector(
+    '[data-hidden-discovery-id="hawkesbury_lookout"]'
+  )?.remove();
+
+  const holder =
+    document.createElement("div");
+
+  holder.innerHTML = rd72DiscoveryCard(
+    RD74_HAWKESBURY_DISCOVERY,
+    RD72_HIDDEN_DISCOVERIES.length
+  ).trim();
+
+  const card = holder.firstElementChild;
+
+  if (!card) return;
+
+  card.dataset.hiddenDiscoveryId =
+    RD74_HAWKESBURY_DISCOVERY.id;
+
+  list.appendChild(card);
+}
+
+function rd74CheckHawkesburyPoint(point) {
+  const hidden = state.hiddenDiscoveries;
+
+  const userId = String(
+    state.auth.user?.id || ""
+  );
+
+  if (
+    !state.isRecording ||
+    !userId ||
+    hidden.activeUserId !== userId ||
+    hidden.completed[
+      RD74_HAWKESBURY_DISCOVERY.id
+    ] ||
+    hidden.pending.has(
+      RD74_HAWKESBURY_DISCOVERY.id
+    ) ||
+    !Number.isFinite(point?.lat) ||
+    !Number.isFinite(point?.lng) ||
+    !Number.isFinite(point?.accuracy) ||
+    point.accuracy > MAX_GPS_ACCURACY_M
+  ) {
+    return;
+  }
+
+  const checkedAt =
+    Number(point.timestamp) || Date.now();
+
+  if (
+    checkedAt -
+      hidden.hawkesburyLastCheckAt <
+    RD72_DISCOVERY_CHECK_MIN_MS
+  ) {
+    return;
+  }
+
+  hidden.hawkesburyLastCheckAt =
+    checkedAt;
+
+  const entered =
+    RD74_HAWKESBURY_DISCOVERY.zones.some(
+      (zone) =>
+        rd72PointInside(point, zone)
+    );
+
+  if (entered) {
+    hidden.pending.add(
+      RD74_HAWKESBURY_DISCOVERY.id
+    );
+  }
+}
+
+/* -------------------------------------------------- */
+/* Expand existing discovery helpers to six           */
+/* -------------------------------------------------- */
+
+rd72DiscoveryById = function (
+  discoveryId
+) {
+  const existing =
+    roadDiscoveryV74.rd72DiscoveryById(
+      discoveryId
+    );
+
+  if (existing) return existing;
+
+  return discoveryId ===
+    RD74_HAWKESBURY_DISCOVERY.id
+      ? RD74_HAWKESBURY_DISCOVERY
+      : null;
+};
+
+rd72ResetDriveDiscoveryState =
+  function () {
+    const result =
+      roadDiscoveryV74
+        .rd72ResetDriveDiscoveryState();
+
+    state.hiddenDiscoveries
+      .hawkesburyLastCheckAt = 0;
+
+    return result;
+  };
+
+rd72CheckDiscoveryPoint = function (
+  point
+) {
+  const result =
+    roadDiscoveryV74
+      .rd72CheckDiscoveryPoint(point);
+
+  rd74CheckHawkesburyPoint(point);
+
+  return result;
+};
+
+rd72RenderHiddenDiscoveries =
+  function () {
+    const result =
+      roadDiscoveryV74
+        .rd72RenderHiddenDiscoveries();
+
+    rd74RenderHawkesburyCard();
+    rd74RenderSixDiscoveryProgress();
+
+    return result;
+  };
+
+rd73RenderGeneralMenuProgress =
+  function () {
+    const result =
+      roadDiscoveryV74
+        .rd73RenderGeneralMenuProgress();
+
+    rd74RenderSixDiscoveryProgress();
+
+    return result;
+  };
+
+function rd74InitHawkesburyDiscovery() {
+  rd72RenderHiddenDiscoveries();
+  rd74RenderSixDiscoveryProgress();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd74InitHawkesburyDiscovery,
+    { once: true }
+  );
+} else {
+  rd74InitHawkesburyDiscovery();
+}
