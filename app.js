@@ -18967,3 +18967,1171 @@ renderAuthState = function () {
 
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v77 Leaderboard Unlock + Map     */
+/* Append this block once to the bottom of app.js v76 */
+/* ================================================== */
+
+const RD77_LEADERBOARD_UNLOCK = 50000;
+const RD77_PUBLIC_MAP_PAGE_SIZE = 5000;
+const RD77_PUBLIC_MAP_MAX_PAGES = 200;
+
+Object.assign(rd76Leaderboard, {
+  publicMapVisible: false,
+  eligible: false,
+  unlockTarget: RD77_LEADERBOARD_UNLOCK,
+  roadsUntilUnlock: RD77_LEADERBOARD_UNLOCK
+});
+
+const rd77PublicMap = {
+  requestId: 0,
+  username: "",
+  roads: [],
+  totalRoads: 0,
+  loading: false,
+  map: null,
+  roadLayer: null,
+  renderer: null
+};
+
+const roadDiscoveryV77 = {
+  rd76ResetLeaderboardState,
+  rd76RenderLeaderboard,
+  rd76RenderGeneralMenuStatus,
+  rd76ChangeLeaderboardVisibility,
+  renderAuthState
+};
+
+/* -------------------------------------------------- */
+/* Leaderboard unlock and second privacy toggle       */
+/* -------------------------------------------------- */
+
+rd76ResetLeaderboardState = function (userId = "") {
+  const result =
+    roadDiscoveryV77.rd76ResetLeaderboardState(userId);
+
+  rd76Leaderboard.publicMapVisible = false;
+  rd76Leaderboard.eligible = false;
+  rd76Leaderboard.unlockTarget = RD77_LEADERBOARD_UNLOCK;
+  rd76Leaderboard.roadsUntilUnlock =
+    RD77_LEADERBOARD_UNLOCK;
+
+  return result;
+};
+
+function rd77CreateUnlockProgress() {
+  if ($("rd77LeaderboardUnlockProgress")) return;
+
+  const joinCard = document.querySelector(
+    "#rd76LeaderboardPanel .rd-leaderboard-join-card"
+  );
+
+  if (!joinCard) return;
+
+  const progress = document.createElement("div");
+  progress.id = "rd77LeaderboardUnlockProgress";
+  progress.className = "rd-leaderboard-unlock-progress";
+
+  progress.innerHTML = `
+    <div class="rd-leaderboard-unlock-copy">
+      <strong id="rd77LeaderboardUnlockTitle">
+        Leaderboard unlock
+      </strong>
+
+      <span id="rd77LeaderboardUnlockText">
+        0 / 50K roads
+      </span>
+    </div>
+
+    <div
+      class="rd-leaderboard-unlock-track"
+      aria-hidden="true"
+    >
+      <span id="rd77LeaderboardUnlockBar"></span>
+    </div>
+  `;
+
+  joinCard.appendChild(progress);
+}
+
+function rd77CreatePublicMapToggle() {
+  if ($("rd77PublicMapToggle")) return;
+
+  const joinCard = document.querySelector(
+    "#rd76LeaderboardPanel .rd-leaderboard-join-card"
+  );
+
+  if (!joinCard) return;
+
+  const section = document.createElement("section");
+  section.className =
+    "rd-leaderboard-public-map-card";
+
+  section.innerHTML = `
+    <label
+      class="toggle-row"
+      for="rd77PublicMapToggle"
+    >
+      <div class="toggle-text">
+        <strong>Show my road map</strong>
+
+        <span id="rd77PublicMapToggleDescription">
+          Join the leaderboard first.
+        </span>
+      </div>
+
+      <input
+        id="rd77PublicMapToggle"
+        class="toggle-input"
+        type="checkbox"
+      />
+
+      <span class="toggle-switch" aria-hidden="true">
+        <span class="toggle-knob"></span>
+      </span>
+    </label>
+
+    <p class="rd-leaderboard-public-map-note">
+      Optional. This adds a View Map button to your public ranking.
+      It shares historical painted roads only—never live tracking.
+    </p>
+  `;
+
+  joinCard.insertAdjacentElement("afterend", section);
+}
+
+function rd77CompactRoadCount(value) {
+  if (typeof rd73CompactNumber === "function") {
+    return rd73CompactNumber(rd76SafeCount(value));
+  }
+
+  return rd76Number(value);
+}
+
+rd76RenderGeneralMenuStatus = function () {
+  if (
+    rd76CurrentUserId() &&
+    rd76Leaderboard.loaded &&
+    !rd76Leaderboard.eligible
+  ) {
+    const element = $(
+      "rd76GeneralMenuLeaderboardStatus"
+    );
+
+    if (element) {
+      element.textContent =
+        `${rd77CompactRoadCount(
+          rd76Leaderboard.roadCount
+        )} / 50K • Leaderboard locked`;
+    }
+
+    return;
+  }
+
+  roadDiscoveryV77.rd76RenderGeneralMenuStatus();
+};
+
+rd76RenderLeaderboard = function () {
+  roadDiscoveryV77.rd76RenderLeaderboard();
+
+  const signedIn = Boolean(rd76CurrentUserId());
+  const busy =
+    rd76Leaderboard.loading || rd76Leaderboard.saving;
+  const loaded = rd76Leaderboard.loaded;
+
+  const eligible = Boolean(
+    signedIn && loaded && rd76Leaderboard.eligible
+  );
+
+  const target = Math.max(
+    1,
+    rd76SafeCount(rd76Leaderboard.unlockTarget) ||
+      RD77_LEADERBOARD_UNLOCK
+  );
+
+  const count = rd76SafeCount(
+    rd76Leaderboard.roadCount
+  );
+
+  const progressPercent = Math.min(
+    100,
+    Math.max(0, (count / target) * 100)
+  );
+
+  const leaderboardToggle = $(
+    "rd76LeaderboardToggle"
+  );
+
+  const leaderboardDescription = $(
+    "rd76LeaderboardToggleDescription"
+  );
+
+  const mapToggle = $("rd77PublicMapToggle");
+
+  const mapDescription = $(
+    "rd77PublicMapToggleDescription"
+  );
+
+  const progress = $(
+    "rd77LeaderboardUnlockProgress"
+  );
+
+  const progressTitle = $(
+    "rd77LeaderboardUnlockTitle"
+  );
+
+  const progressText = $(
+    "rd77LeaderboardUnlockText"
+  );
+
+  const progressBar = $(
+    "rd77LeaderboardUnlockBar"
+  );
+
+  const mapCard = document.querySelector(
+    "#rd76LeaderboardPanel " +
+    ".rd-leaderboard-public-map-card"
+  );
+
+  if (leaderboardToggle) {
+    leaderboardToggle.disabled =
+      !signedIn || !loaded || !eligible || busy;
+
+    leaderboardToggle.checked = Boolean(
+      eligible && rd76Leaderboard.isPublic
+    );
+  }
+
+  if (leaderboardDescription) {
+    leaderboardDescription.textContent = !signedIn
+      ? "Sign in to check your 50K unlock progress."
+      : !loaded
+        ? "Checking your synced-road count…"
+        : !eligible
+          ? `${rd76Number(
+              rd76Leaderboard.roadsUntilUnlock
+            )} more roads required to unlock.`
+          : rd76Leaderboard.isPublic
+            ? "Your Road username and road count are public."
+            : "Unlocked. Turn this on to join publicly.";
+  }
+
+  if (mapToggle) {
+    mapToggle.checked = Boolean(
+      eligible &&
+      rd76Leaderboard.isPublic &&
+      rd76Leaderboard.publicMapVisible
+    );
+
+    mapToggle.disabled =
+      !eligible ||
+      !rd76Leaderboard.isPublic ||
+      busy;
+  }
+
+  if (mapDescription) {
+    mapDescription.textContent = !eligible
+      ? "Unlocks with the public leaderboard at 50K roads."
+      : !rd76Leaderboard.isPublic
+        ? "Join the public leaderboard before sharing your map."
+        : rd76Leaderboard.publicMapVisible
+          ? "Signed-in users can open your historical road map."
+          : "Your historical road map remains private.";
+  }
+
+  progress?.classList.toggle("unlocked", eligible);
+
+  mapCard?.classList.toggle(
+    "disabled",
+    !eligible || !rd76Leaderboard.isPublic
+  );
+
+  if (progressTitle) {
+    progressTitle.textContent = eligible
+      ? "50K leaderboard unlocked"
+      : "Leaderboard unlock";
+  }
+
+  if (progressText) {
+    progressText.textContent =
+      `${rd77CompactRoadCount(count)} / ` +
+      `${rd77CompactRoadCount(target)} roads`;
+  }
+
+  if (progressBar) {
+    progressBar.style.width = `${progressPercent}%`;
+  }
+
+  rd76RenderGeneralMenuStatus();
+};
+
+/* -------------------------------------------------- */
+/* Read the expanded protected status                 */
+/* -------------------------------------------------- */
+
+rd76LoadLeaderboard = async function (options = {}) {
+  const { quiet = false } = options;
+  const userId = rd76PrepareForCurrentUser();
+
+  if (!state.auth.client || !userId) {
+    rd76RenderLeaderboard();
+    return false;
+  }
+
+  if (
+    rd76Leaderboard.loading ||
+    rd76Leaderboard.saving
+  ) {
+    return false;
+  }
+
+  const requestId = ++rd76Leaderboard.requestId;
+
+  rd76Leaderboard.loading = true;
+  rd76Leaderboard.error = "";
+  rd76RenderLeaderboard();
+
+  try {
+    const [statusResult, leaderboardResult] =
+      await Promise.all([
+        state.auth.client.rpc(
+          "get_my_leaderboard_status"
+        ),
+        state.auth.client.rpc(
+          "get_public_road_leaderboard",
+          { p_limit: RD76_LEADERBOARD_LIMIT }
+        )
+      ]);
+
+    if (statusResult.error) {
+      throw statusResult.error;
+    }
+
+    if (leaderboardResult.error) {
+      throw leaderboardResult.error;
+    }
+
+    if (
+      requestId !== rd76Leaderboard.requestId ||
+      userId !== rd76CurrentUserId()
+    ) {
+      return false;
+    }
+
+    const status = Array.isArray(statusResult.data)
+      ? statusResult.data[0]
+      : statusResult.data;
+
+    if (!status || typeof status !== "object") {
+      throw new Error("Leaderboard status was empty");
+    }
+
+    rd76Leaderboard.isPublic = Boolean(
+      status.is_public
+    );
+
+    rd76Leaderboard.publicMapVisible = Boolean(
+      status.public_map_visible
+    );
+
+    rd76Leaderboard.roadCount = rd76SafeCount(
+      status.road_count
+    );
+
+    rd76Leaderboard.eligible = Boolean(
+      status.is_eligible
+    );
+
+    rd76Leaderboard.unlockTarget =
+      rd76SafeCount(status.unlock_target) ||
+      RD77_LEADERBOARD_UNLOCK;
+
+    rd76Leaderboard.roadsUntilUnlock =
+      rd76SafeCount(status.roads_until_unlock);
+
+    rd76Leaderboard.rank = rd76NormaliseRank(
+      status.leaderboard_rank
+    );
+
+    rd76Leaderboard.entries = Array.isArray(
+      leaderboardResult.data
+    )
+      ? leaderboardResult.data
+      : [];
+
+    rd76Leaderboard.loaded = true;
+    rd76Leaderboard.error = "";
+
+    if (state.auth.profile) {
+      state.auth.profile.show_leaderboard =
+        rd76Leaderboard.isPublic;
+
+      state.auth.profile.show_public_map =
+        rd76Leaderboard.publicMapVisible;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(error);
+
+    if (
+      requestId === rd76Leaderboard.requestId &&
+      userId === rd76CurrentUserId()
+    ) {
+      rd76Leaderboard.error = navigator.onLine
+        ? "Could not load the leaderboard. Try again."
+        : "Leaderboard unavailable while offline.";
+
+      if (!quiet) {
+        showToast("Could not load leaderboard");
+      }
+    }
+
+    return false;
+  } finally {
+    if (
+      requestId === rd76Leaderboard.requestId &&
+      userId === rd76CurrentUserId()
+    ) {
+      rd76Leaderboard.loading = false;
+      rd76RenderLeaderboard();
+    }
+  }
+};
+
+rd76ChangeLeaderboardVisibility =
+  async function (visible) {
+    if (visible && !rd76Leaderboard.eligible) {
+      rd76RenderLeaderboard();
+
+      showToast(
+        "Public leaderboard unlocks at 50K roads"
+      );
+
+      return;
+    }
+
+    await roadDiscoveryV77
+      .rd76ChangeLeaderboardVisibility(visible);
+
+    if (!rd76Leaderboard.isPublic) {
+      rd76Leaderboard.publicMapVisible = false;
+    }
+
+    rd76RenderLeaderboard();
+  };
+
+async function rd77ChangePublicMapVisibility(visible) {
+  const userId = rd76PrepareForCurrentUser();
+  const toggle = $("rd77PublicMapToggle");
+
+  if (!state.auth.client || !userId) {
+    if (toggle) toggle.checked = false;
+
+    showToast(
+      "Sign in before sharing a public map"
+    );
+
+    return;
+  }
+
+  if (
+    !rd76Leaderboard.eligible ||
+    !rd76Leaderboard.isPublic
+  ) {
+    rd76RenderLeaderboard();
+    showToast("Join the 50K leaderboard first");
+    return;
+  }
+
+  if (
+    rd76Leaderboard.saving ||
+    rd76Leaderboard.loading
+  ) {
+    rd76RenderLeaderboard();
+    return;
+  }
+
+  const previous =
+    rd76Leaderboard.publicMapVisible;
+
+  if (visible && !previous) {
+    const confirmed = window.confirm(
+      "Show your road map publicly?\n\n" +
+      "Signed-in Road Discovery users will be able to open your " +
+      "historical painted-road map from the leaderboard.\n\n" +
+      "Your live location, drive order, start and finish points, " +
+      "speed, heading, waypoints and private icons are not shared."
+    );
+
+    if (!confirmed) {
+      rd76RenderLeaderboard();
+      return;
+    }
+  }
+
+  rd76Leaderboard.saving = true;
+  rd76Leaderboard.publicMapVisible =
+    Boolean(visible);
+
+  rd76RenderLeaderboard();
+
+  try {
+    const { data, error } =
+      await state.auth.client.rpc(
+        "set_my_public_map_visibility",
+        { p_visible: Boolean(visible) }
+      );
+
+    if (error) throw error;
+
+    if (userId !== rd76CurrentUserId()) {
+      return;
+    }
+
+    rd76Leaderboard.publicMapVisible =
+      Boolean(data);
+
+    if (state.auth.profile) {
+      state.auth.profile.show_public_map =
+        rd76Leaderboard.publicMapVisible;
+
+      writeJson(
+        ROAD_PROFILE_CACHE_KEY,
+        state.auth.profile
+      );
+    }
+
+    showToast(
+      rd76Leaderboard.publicMapVisible
+        ? "Public road map sharing on"
+        : "Public road map sharing off"
+    );
+  } catch (error) {
+    console.error(error);
+
+    if (userId === rd76CurrentUserId()) {
+      rd76Leaderboard.publicMapVisible =
+        previous;
+
+      showToast(
+        "Could not update public map privacy"
+      );
+    }
+  } finally {
+    if (userId === rd76CurrentUserId()) {
+      rd76Leaderboard.saving = false;
+      rd76RenderLeaderboard();
+
+      void rd76LoadLeaderboard({
+        quiet: true
+      });
+    }
+  }
+}
+
+/* -------------------------------------------------- */
+/* Public map button in opted-in leaderboard rows     */
+/* -------------------------------------------------- */
+
+rd76EntryHtml = function (entry) {
+  const rank = rd76NormaliseRank(
+    entry?.rank_position
+  );
+
+  const count = rd76SafeCount(
+    entry?.road_count
+  );
+
+  const username = String(
+    entry?.road_username || "Road Profile"
+  );
+
+  const isMe = Boolean(entry?.is_me);
+
+  const hasPublicMap = Boolean(
+    entry?.has_public_map
+  );
+
+  const podiumClass =
+    rank === 1
+      ? " first"
+      : rank === 2
+        ? " second"
+        : rank === 3
+          ? " third"
+          : "";
+
+  return `
+    <article class="rd-leaderboard-row${
+      isMe ? " is-me" : ""
+    }${hasPublicMap ? " has-public-map" : ""}">
+      <div class="rd-leaderboard-rank${podiumClass}">
+        ${rank ? `#${rank}` : "—"}
+      </div>
+
+      <div class="rd-leaderboard-user">
+        <strong>${escapeHtml(username)}</strong>
+
+        <span>
+          ${isMe ? "Your Road Profile" : "Road explorer"}
+        </span>
+      </div>
+
+      <div class="rd-leaderboard-score">
+        <strong>${rd76Number(count)}</strong>
+        <span>roads</span>
+      </div>
+
+      ${
+        hasPublicMap
+          ? `
+            <button
+              class="rd77-view-public-map-btn"
+              type="button"
+              data-road-username="${escapeHtml(username)}"
+            >
+              View Map
+            </button>
+          `
+          : ""
+      }
+
+      ${
+        isMe
+          ? `
+            <span class="rd-leaderboard-you-badge">
+              You
+            </span>
+          `
+          : ""
+      }
+    </article>
+  `;
+};
+
+/* -------------------------------------------------- */
+/* Read-only full public road map                     */
+/* -------------------------------------------------- */
+
+function rd77CreatePublicMapOverlay() {
+  if ($("rd77PublicMapOverlay")) return;
+
+  const overlay = document.createElement("section");
+  overlay.id = "rd77PublicMapOverlay";
+
+  overlay.className =
+    "friend-map-overlay " +
+    "rd-public-map-overlay hidden";
+
+  overlay.setAttribute(
+    "aria-hidden",
+    "true"
+  );
+
+  overlay.setAttribute(
+    "aria-label",
+    "Public road map"
+  );
+
+  overlay.innerHTML = `
+    <header
+      class="friend-map-header rd-public-map-header"
+    >
+      <button
+        id="rd77ClosePublicMapBtn"
+        class="back-btn"
+        type="button"
+      >
+        ← Leaderboard
+      </button>
+
+      <div>
+        <h2 id="rd77PublicMapTitle">
+          Public Road Map
+        </h2>
+
+        <p>
+          Historical road-completion progress.
+          Not live tracking.
+        </p>
+      </div>
+    </header>
+
+    <div class="friend-full-map-shell">
+      <div
+        id="rd77PublicMap"
+        class="friend-full-map rd-public-map"
+        role="img"
+        aria-label="Public historical discovered roads"
+      ></div>
+
+      <div
+        id="rd77PublicMapStatus"
+        class="friend-full-map-status"
+        role="status"
+      >
+        Loading public road map…
+      </div>
+    </div>
+  `;
+
+  ($("appShell") || document.body)
+    .appendChild(overlay);
+}
+
+function rd77SetPublicMapStatus(message) {
+  const status = $("rd77PublicMapStatus");
+
+  if (!status) return;
+
+  if (!message) {
+    status.textContent = "";
+    status.classList.add("hidden");
+    return;
+  }
+
+  status.textContent = message;
+  status.classList.remove("hidden");
+}
+
+function rd77DestroyPublicMap() {
+  rd77PublicMap.requestId++;
+  rd77PublicMap.loading = false;
+  rd77PublicMap.username = "";
+  rd77PublicMap.roads = [];
+  rd77PublicMap.totalRoads = 0;
+
+  if (rd77PublicMap.map) {
+    rd77PublicMap.map.remove();
+  }
+
+  rd77PublicMap.map = null;
+  rd77PublicMap.roadLayer = null;
+  rd77PublicMap.renderer = null;
+}
+
+function rd77ClosePublicMap(options = {}) {
+  const {
+    returnToLeaderboard = true
+  } = options;
+
+  const overlay = $("rd77PublicMapOverlay");
+
+  rd77DestroyPublicMap();
+
+  overlay?.classList.add("hidden");
+  overlay?.setAttribute("aria-hidden", "true");
+
+  if (returnToLeaderboard) {
+    rd76OpenLeaderboard();
+  }
+}
+
+function rd77EnsurePublicMap() {
+  const container = $("rd77PublicMap");
+
+  if (
+    rd77PublicMap.map ||
+    !window.L ||
+    !container
+  ) {
+    return;
+  }
+
+  rd77PublicMap.map = L.map(container, {
+    zoomControl: true,
+    preferCanvas: true,
+    attributionControl: false,
+    tap: true
+  }).setView(DEFAULT_CENTER, 4);
+
+  L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/" +
+    "dark_all/{z}/{x}/{y}{r}.png",
+    {
+      maxZoom: 20,
+      crossOrigin: true,
+      attribution:
+        "&copy; OpenStreetMap contributors " +
+        "&copy; CARTO"
+    }
+  ).addTo(rd77PublicMap.map);
+
+  rd77PublicMap.renderer = L.canvas({
+    padding: 0.5
+  });
+
+  rd77PublicMap.map.on(
+    "zoomend",
+    rd77ApplyPublicMapRoadStyle
+  );
+
+  window.setTimeout(() => {
+    rd77PublicMap.map?.invalidateSize(true);
+  }, 80);
+}
+
+function rd77PublicMapRoadStyle() {
+  if (
+    typeof rd62OrangeRoadStyleForZoom ===
+    "function"
+  ) {
+    return rd62OrangeRoadStyleForZoom(
+      rd77PublicMap.map?.getZoom?.()
+    );
+  }
+
+  return {
+    weight: 3,
+    opacity: 0.85
+  };
+}
+
+function rd77ApplyPublicMapRoadStyle() {
+  rd77PublicMap.roadLayer?.setStyle?.(
+    rd77PublicMapRoadStyle()
+  );
+}
+
+function rd77DrawPublicMapRoads() {
+  const map = rd77PublicMap.map;
+
+  if (!map) return;
+
+  if (rd77PublicMap.roadLayer) {
+    map.removeLayer(
+      rd77PublicMap.roadLayer
+    );
+
+    rd77PublicMap.roadLayer = null;
+  }
+
+  const latLngs = rd77PublicMap.roads
+    .map((road) => {
+      return normaliseSharedRoadCoords(
+        road?.coordinates
+      );
+    })
+    .filter(Boolean);
+
+  if (latLngs.length === 0) {
+    map.setView(DEFAULT_CENTER, 4);
+
+    rd77SetPublicMapStatus(
+      "No public roads available"
+    );
+
+    return;
+  }
+
+  const style = rd77PublicMapRoadStyle();
+
+  rd77PublicMap.roadLayer =
+    L.polyline(latLngs, {
+      renderer: rd77PublicMap.renderer,
+      color: ROAD_ORANGE,
+      weight: style.weight,
+      opacity: style.opacity,
+      lineCap: "round",
+      lineJoin: "round",
+      interactive: false
+    }).addTo(map);
+
+  const bounds =
+    rd77PublicMap.roadLayer.getBounds();
+
+  if (bounds.isValid()) {
+    map.fitBounds(bounds, {
+      padding: [28, 28],
+      maxZoom: 17
+    });
+  }
+
+  rd77SetPublicMapStatus("");
+}
+
+async function rd77OpenPublicMap(
+  usernameValue
+) {
+  const username = String(
+    usernameValue || ""
+  ).trim();
+
+  if (
+    !state.auth.client ||
+    !state.auth.user
+  ) {
+    showToast(
+      "Sign in to open public road maps"
+    );
+
+    return;
+  }
+
+  if (!username) {
+    showToast(
+      "Public road map is unavailable"
+    );
+
+    return;
+  }
+
+  const requestId =
+    ++rd77PublicMap.requestId;
+
+  closePanels();
+
+  rd77PublicMap.username = username;
+  rd77PublicMap.roads = [];
+  rd77PublicMap.totalRoads = 0;
+  rd77PublicMap.loading = true;
+
+  const overlay = $(
+    "rd77PublicMapOverlay"
+  );
+
+  const title = $(
+    "rd77PublicMapTitle"
+  );
+
+  if (title) {
+    title.textContent =
+      `${username}’s Map`;
+  }
+
+  overlay?.classList.remove("hidden");
+
+  overlay?.setAttribute(
+    "aria-hidden",
+    "false"
+  );
+
+  rd77SetPublicMapStatus(
+    "Loading public road map…"
+  );
+
+  let offset = 0;
+
+  try {
+    for (
+      let page = 0;
+      page < RD77_PUBLIC_MAP_MAX_PAGES;
+      page++
+    ) {
+      const { data, error } =
+        await state.auth.client.rpc(
+          "get_public_road_map",
+          {
+            p_road_username: username,
+            p_offset: offset,
+            p_page_size:
+              RD77_PUBLIC_MAP_PAGE_SIZE
+          }
+        );
+
+      if (
+        requestId !==
+          rd77PublicMap.requestId ||
+        $("rd77PublicMapOverlay")
+          ?.classList.contains("hidden")
+      ) {
+        return;
+      }
+
+      if (error) throw error;
+
+      const payload = Array.isArray(data)
+        ? data[0]
+        : data;
+
+      if (
+        !payload ||
+        typeof payload !== "object"
+      ) {
+        throw new Error(
+          "Public road map response was empty"
+        );
+      }
+
+      const pageRoads = (
+        Array.isArray(payload.roads)
+          ? payload.roads
+          : []
+      )
+        .map((road) => {
+          const coordinates =
+            normaliseSharedRoadCoords(
+              road?.coordinates
+            );
+
+          return coordinates
+            ? { coordinates }
+            : null;
+        })
+        .filter(Boolean);
+
+      rd77PublicMap.roads.push(
+        ...pageRoads
+      );
+
+      rd77PublicMap.totalRoads =
+        rd76SafeCount(
+          payload.total_roads
+        );
+
+      rd77SetPublicMapStatus(
+        `Loading ${rd76Number(
+          rd77PublicMap.roads.length
+        )} / ${rd76Number(
+          rd77PublicMap.totalRoads
+        )} roads…`
+      );
+
+      if (!payload.has_more) {
+        break;
+      }
+
+      const nextOffset =
+        rd76SafeCount(
+          payload.next_offset
+        );
+
+      if (nextOffset <= offset) {
+        throw new Error(
+          "Public road map pagination failed"
+        );
+      }
+
+      offset = nextOffset;
+
+      if (
+        page ===
+        RD77_PUBLIC_MAP_MAX_PAGES - 1
+      ) {
+        throw new Error(
+          "Public road map is too large " +
+          "to load safely"
+        );
+      }
+    }
+
+    if (
+      requestId !==
+      rd77PublicMap.requestId
+    ) {
+      return;
+    }
+
+    rd77PublicMap.loading = false;
+
+    rd77EnsurePublicMap();
+    rd77DrawPublicMapRoads();
+  } catch (error) {
+    console.error(error);
+
+    if (
+      requestId !==
+      rd77PublicMap.requestId
+    ) {
+      return;
+    }
+
+    rd77PublicMap.loading = false;
+    rd77PublicMap.roads = [];
+
+    rd77SetPublicMapStatus(
+      navigator.onLine
+        ? "This public road map is unavailable"
+        : "Public road maps are unavailable while offline"
+    );
+  }
+}
+
+/* -------------------------------------------------- */
+/* Bind the new controls                              */
+/* -------------------------------------------------- */
+
+function rd77BindLeaderboardMapEvents() {
+  $("rd77PublicMapToggle")?.addEventListener(
+    "change",
+    (event) => {
+      void rd77ChangePublicMapVisibility(
+        Boolean(
+          event.currentTarget.checked
+        )
+      );
+    }
+  );
+
+  $("rd76LeaderboardList")?.addEventListener(
+    "click",
+    (event) => {
+      const button = event.target.closest(
+        ".rd77-view-public-map-btn"
+      );
+
+      if (!button) return;
+
+      void rd77OpenPublicMap(
+        button.dataset.roadUsername
+      );
+    }
+  );
+
+  $("rd77ClosePublicMapBtn")?.addEventListener(
+    "click",
+    () => rd77ClosePublicMap()
+  );
+
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.key === "Escape" &&
+        !$("rd77PublicMapOverlay")
+          ?.classList.contains("hidden")
+      ) {
+        rd77ClosePublicMap();
+      }
+    }
+  );
+}
+
+function rd77InitLeaderboardUnlockAndMap() {
+  rd77CreateUnlockProgress();
+  rd77CreatePublicMapToggle();
+  rd77CreatePublicMapOverlay();
+  rd77BindLeaderboardMapEvents();
+  rd76RenderLeaderboard();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd77InitLeaderboardUnlockAndMap,
+    { once: true }
+  );
+} else {
+  rd77InitLeaderboardUnlockAndMap();
+}
+
+/* Remove an open public map immediately after sign-out. */
+
+renderAuthState = function () {
+  const result =
+    roadDiscoveryV77.renderAuthState();
+
+  if (
+    !rd76CurrentUserId() &&
+    !$("rd77PublicMapOverlay")
+      ?.classList.contains("hidden")
+  ) {
+    rd77ClosePublicMap({
+      returnToLeaderboard: false
+    });
+  }
+
+  return result;
+};
