@@ -20135,3 +20135,446 @@ renderAuthState = function () {
 
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v78 Road Profile drive gate      */
+/* Append this block once to the bottom of app.js v77 */
+/* ================================================== */
+
+const RD78_OWNERLESS_LEGACY_BLOCK_KEY =
+  "roadDiscoveryAU.ownerlessLegacyBlocked.v1";
+
+const roadDiscoveryV78 = {
+  startDrive,
+  ensureRoadProfile,
+  renderAuthState,
+  rd69MoveLegacyProgressToAccount
+};
+
+let rd78OwnerlessLegacyPending = false;
+
+function rd78ReadStorageValue(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (error) {
+    return null;
+  }
+}
+
+function rd78WriteStorageValue(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
+
+function rd78RemoveStorageValue(key) {
+  try {
+    localStorage.removeItem(key);
+    return true;
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
+
+/* -------------------------------------------------- */
+/* Stop ownerless old device data joining an account  */
+/* -------------------------------------------------- */
+
+const rd78LegacyWasAlreadyBlocked =
+  rd78ReadStorageValue(
+    RD78_OWNERLESS_LEGACY_BLOCK_KEY
+  ) === "1";
+
+if (
+  rd69LegacyProgress.available &&
+  (
+    rd78LegacyWasAlreadyBlocked ||
+    !rd69LegacyProgress.ownerId
+  )
+) {
+  /*
+    Keep this collection ownerless even if the active-account view
+    updates the older backup-owner key later in the same session.
+  */
+  rd69LegacyProgress.ownerId = "";
+  rd78OwnerlessLegacyPending = true;
+
+  rd78WriteStorageValue(
+    RD78_OWNERLESS_LEGACY_BLOCK_KEY,
+    "1"
+  );
+} else if (!rd69LegacyProgress.available) {
+  rd78RemoveStorageValue(
+    RD78_OWNERLESS_LEGACY_BLOCK_KEY
+  );
+}
+
+rd69MoveLegacyProgressToAccount = function (userId) {
+  if (
+    rd69LegacyProgress.available &&
+    (
+      rd78OwnerlessLegacyPending ||
+      rd78ReadStorageValue(
+        RD78_OWNERLESS_LEGACY_BLOCK_KEY
+      ) === "1"
+    )
+  ) {
+    rd69LegacyProgress.ownerId = "";
+    rd78OwnerlessLegacyPending = true;
+
+    rd78WriteStorageValue(
+      RD78_OWNERLESS_LEGACY_BLOCK_KEY,
+      "1"
+    );
+
+    return false;
+  }
+
+  return roadDiscoveryV78.rd69MoveLegacyProgressToAccount(
+    userId
+  );
+};
+
+/* -------------------------------------------------- */
+/* Road Profile required prompt                       */
+/* -------------------------------------------------- */
+
+function rd78CreateProfileRequiredOverlay() {
+  if ($("rd78ProfileRequiredOverlay")) return;
+
+  const overlay = document.createElement("section");
+
+  overlay.id = "rd78ProfileRequiredOverlay";
+  overlay.className =
+    "confirm-overlay rd78-profile-required-overlay hidden";
+  overlay.setAttribute("aria-hidden", "true");
+
+  overlay.innerHTML = `
+    <div
+      class="confirm-card rd78-profile-required-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rd78ProfileRequiredTitle"
+      aria-describedby="rd78ProfileRequiredDescription"
+    >
+      <div
+        class="rd78-profile-mark"
+        aria-hidden="true"
+      >
+        RD
+      </div>
+
+      <div class="rd78-profile-kicker">
+        Road Discovery AU
+      </div>
+
+      <h2 id="rd78ProfileRequiredTitle">
+        Road Profile required
+      </h2>
+
+      <p
+        id="rd78ProfileRequiredDescription"
+        class="rd78-profile-required-message"
+      >
+        Sign in to save progress and compete.
+      </p>
+
+      <p class="rd78-profile-required-detail">
+        Your discovered roads belong to your Road Profile and can be
+        restored on another device.
+      </p>
+
+      <div class="rd78-profile-required-actions">
+        <button
+          id="rd78OpenRoadProfileBtn"
+          class="wide-btn"
+          type="button"
+        >
+          Open Road Profile
+        </button>
+
+        <button
+          id="rd78ProfileRequiredNotNowBtn"
+          class="ghost-btn wide-btn"
+          type="button"
+        >
+          Not Now
+        </button>
+      </div>
+    </div>
+  `;
+
+  ($("appShell") || document.body).appendChild(overlay);
+}
+
+function rd78OpenProfileRequired() {
+  rd78CreateProfileRequiredOverlay();
+
+  const overlay = $("rd78ProfileRequiredOverlay");
+
+  if (!overlay) return;
+
+  overlay.classList.remove("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+
+  window.setTimeout(() => {
+    $("rd78OpenRoadProfileBtn")?.focus();
+  }, 0);
+}
+
+function rd78CloseProfileRequired() {
+  const overlay = $("rd78ProfileRequiredOverlay");
+
+  if (!overlay) return;
+
+  overlay.classList.add("hidden");
+  overlay.setAttribute("aria-hidden", "true");
+}
+
+/* -------------------------------------------------- */
+/* One-time explanation for truly ownerless old roads */
+/* -------------------------------------------------- */
+
+function rd78CreateOwnerlessLegacyOverlay() {
+  if ($("rd78OwnerlessLegacyOverlay")) return;
+
+  const overlay = document.createElement("section");
+
+  overlay.id = "rd78OwnerlessLegacyOverlay";
+  overlay.className =
+    "confirm-overlay rd78-ownerless-overlay hidden";
+  overlay.setAttribute("aria-hidden", "true");
+
+  overlay.innerHTML = `
+    <div
+      class="confirm-card rd78-ownerless-card"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="rd78OwnerlessTitle"
+      aria-describedby="rd78OwnerlessDescription"
+    >
+      <div
+        class="rd78-ownerless-mark"
+        aria-hidden="true"
+      >
+        !
+      </div>
+
+      <div class="rd78-profile-kicker">
+        Road Profile protection
+      </div>
+
+      <h2 id="rd78OwnerlessTitle">
+        Unsigned road progress found
+      </h2>
+
+      <p
+        id="rd78OwnerlessDescription"
+        class="rd78-profile-required-message"
+      >
+        Roads created without a recorded Road Profile cannot be
+        transferred into this account or used for competition.
+      </p>
+
+      <p class="rd78-profile-required-detail">
+        Your signed-in Road Profile will start fresh. Progress already
+        owned by a Road Profile is not affected.
+      </p>
+
+      <button
+        id="rd78OwnerlessStartFreshBtn"
+        class="wide-btn"
+        type="button"
+      >
+        Start Fresh
+      </button>
+    </div>
+  `;
+
+  ($("appShell") || document.body).appendChild(overlay);
+}
+
+function rd78OpenOwnerlessLegacyNotice() {
+  if (
+    !rd78OwnerlessLegacyPending ||
+    !state.auth.user ||
+    !state.auth.profile
+  ) {
+    return;
+  }
+
+  rd78CreateOwnerlessLegacyOverlay();
+
+  const overlay = $("rd78OwnerlessLegacyOverlay");
+
+  if (!overlay) return;
+
+  overlay.classList.remove("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+
+  window.setTimeout(() => {
+    $("rd78OwnerlessStartFreshBtn")?.focus();
+  }, 0);
+}
+
+function rd78ClearOwnerlessLegacyProgress() {
+  [
+    STORAGE_KEY,
+    SAVED_SEGMENTS_KEY,
+    TODAY_UNLOCKS_KEY,
+    RD69_LEGACY_OWNER_KEY
+  ].forEach((key) => {
+    rd78RemoveStorageValue(key);
+  });
+
+  const ownerlessRoadsRemain = Boolean(
+    rd69HasObjectEntries(
+      rd69ReadRaw(STORAGE_KEY)
+    ) ||
+    rd69HasObjectEntries(
+      rd69ReadRaw(SAVED_SEGMENTS_KEY)
+    )
+  );
+
+  if (ownerlessRoadsRemain) {
+    showToast(
+      "Could not clear unsigned road progress"
+    );
+    return;
+  }
+
+  rd69LegacyProgress.visitedRaw = null;
+  rd69LegacyProgress.savedRaw = null;
+  rd69LegacyProgress.todayRaw = null;
+  rd69LegacyProgress.ownerId = "";
+  rd69LegacyProgress.available = false;
+
+  rd78OwnerlessLegacyPending = false;
+
+  rd78RemoveStorageValue(
+    RD78_OWNERLESS_LEGACY_BLOCK_KEY
+  );
+
+  const overlay = $("rd78OwnerlessLegacyOverlay");
+
+  overlay?.classList.add("hidden");
+  overlay?.setAttribute("aria-hidden", "true");
+
+  showToast("Road Profile ready");
+}
+
+/* -------------------------------------------------- */
+/* Bind and initialise                                */
+/* -------------------------------------------------- */
+
+function rd78BindProfileGateEvents() {
+  $("rd78OpenRoadProfileBtn")?.addEventListener(
+    "click",
+    () => {
+      rd78CloseProfileRequired();
+      openFriendsPanel();
+    }
+  );
+
+  $("rd78ProfileRequiredNotNowBtn")?.addEventListener(
+    "click",
+    rd78CloseProfileRequired
+  );
+
+  $("rd78ProfileRequiredOverlay")?.addEventListener(
+    "click",
+    (event) => {
+      if (event.target === event.currentTarget) {
+        rd78CloseProfileRequired();
+      }
+    }
+  );
+
+  $("rd78OwnerlessStartFreshBtn")?.addEventListener(
+    "click",
+    rd78ClearOwnerlessLegacyProgress
+  );
+
+  window.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !$("rd78ProfileRequiredOverlay")?.classList.contains(
+        "hidden"
+      )
+    ) {
+      rd78CloseProfileRequired();
+    }
+  });
+}
+
+function rd78InitProfileGate() {
+  rd78CreateProfileRequiredOverlay();
+  rd78CreateOwnerlessLegacyOverlay();
+  rd78BindProfileGateEvents();
+  rd78OpenOwnerlessLegacyNotice();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd78InitProfileGate,
+    { once: true }
+  );
+} else {
+  rd78InitProfileGate();
+}
+
+/* -------------------------------------------------- */
+/* Final wrappers                                     */
+/* -------------------------------------------------- */
+
+startDrive = async function () {
+  if (state.auth.checkingSession) {
+    showToast("Checking Road Profile…");
+    return;
+  }
+
+  if (!state.auth.user || !state.auth.profile) {
+    rd78OpenProfileRequired();
+    return;
+  }
+
+  return roadDiscoveryV78.startDrive();
+};
+
+ensureRoadProfile = async function (options = {}) {
+  const profile =
+    await roadDiscoveryV78.ensureRoadProfile(options);
+
+  if (profile && rd78OwnerlessLegacyPending) {
+    window.setTimeout(
+      rd78OpenOwnerlessLegacyNotice,
+      0
+    );
+  }
+
+  return profile;
+};
+
+renderAuthState = function () {
+  const result =
+    roadDiscoveryV78.renderAuthState();
+
+  if (state.auth.user && state.auth.profile) {
+    rd78CloseProfileRequired();
+
+    if (rd78OwnerlessLegacyPending) {
+      window.setTimeout(
+        rd78OpenOwnerlessLegacyNotice,
+        0
+      );
+    }
+  }
+
+  return result;
+};
