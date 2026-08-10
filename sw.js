@@ -6,7 +6,7 @@
   Personal trail colour choices.
 
   Expected frontend versions:
-  - app.js?v=73
+  - app.js?v=75
   - style.css?v=54
 
   Previous files are recognised during the update so the site can
@@ -24,6 +24,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=54",
+  "./app.js?v=75",
   "./app.js?v=74",
   "./app.js?v=73",
   "./style.css?v=53",
@@ -208,6 +209,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=75")) ||
             (await caches.match("./app.js?v=74")) ||
             (await caches.match("./app.js?v=73")) ||
             (await caches.match("./app.js?v=72")) ||
