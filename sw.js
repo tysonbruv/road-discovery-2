@@ -1,19 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v75 service worker
+  Road Discovery AU v77 service worker
 
   Personal trail colour choices.
 
   Expected frontend versions:
-  - app.js?v=75
-  - style.css?v=54
+  - app.js?v=76
+  - style.css?v=55
 
   Previous files are recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v75";
+const CACHE_NAME = "road-discovery-au-v77";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,6 +23,8 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=55",
+  "./app.js?v=76",
   "./style.css?v=54",
   "./app.js?v=75",
   "./app.js?v=74",
@@ -184,6 +186,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/style.css")) {
           return (
+            (await caches.match("./style.css?v=55")) ||
             (await caches.match("./style.css?v=54")) ||
             (await caches.match("./style.css?v=53")) ||
             (await caches.match("./style.css?v=52")) ||
@@ -209,6 +212,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=76")) ||
             (await caches.match("./app.js?v=75")) ||
             (await caches.match("./app.js?v=74")) ||
             (await caches.match("./app.js?v=73")) ||
