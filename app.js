@@ -17971,7 +17971,7 @@ rd72RenderHiddenDiscoveries = function () {
 
 const RD74_HAWKESBURY_DISCOVERY = Object.freeze({
   id: "hawkesbury_lookout",
-  region: "Lower Blue Mountains, NSW",
+  region: "Blue Mountains, NSW",
   answer: "Hawkesbury Lookout",
   completionMessage:
     "Hawkesbury Lookout riddle complete.",
