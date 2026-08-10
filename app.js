@@ -17494,3 +17494,472 @@ rd68OpenTrophyRoom = function (options = {}) {
     options
   );
 };
+
+/* ================================================== */
+/* Road Discovery AU v73 General Menu                 */
+/* Append this block once to the bottom of app.js v72 */
+/* ================================================== */
+
+const roadDiscoveryV73 = {
+  closePanels,
+  renderAllStats,
+  renderAuthState,
+  rd72RenderHiddenDiscoveries
+};
+
+function rd73CreateGeneralMenu() {
+  if ($("rd73GeneralMenuPanel")) return;
+
+  const panel = document.createElement("aside");
+
+  panel.id = "rd73GeneralMenuPanel";
+  panel.className =
+    "side-panel rd-general-menu-panel hidden";
+
+  panel.setAttribute("aria-hidden", "true");
+  panel.setAttribute("aria-label", "General Menu");
+
+  panel.innerHTML = `
+    <div class="panel-header rd-general-menu-header">
+      <div>
+        <h2>General Menu</h2>
+
+        <p>
+          Progress, discoveries and app controls.
+        </p>
+      </div>
+
+      <button
+        id="rd73CloseGeneralMenuBtn"
+        class="panel-close-btn"
+        type="button"
+        aria-label="Close General Menu"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="panel-content rd-general-menu-content">
+      <div class="rd-general-menu-list">
+        <button
+          id="rd73OpenHiddenDiscoveriesBtn"
+          class="rd-general-menu-item"
+          type="button"
+        >
+          <span
+            class="rd-general-menu-icon hidden-discovery"
+            aria-hidden="true"
+          >
+            ◇
+          </span>
+
+          <span class="rd-general-menu-copy">
+            <strong>Hidden Discoveries</strong>
+
+            <small id="rd73HiddenDiscoveryProgress">
+              0 / 5 discovered
+            </small>
+          </span>
+
+          <span
+            class="rd-general-menu-arrow"
+            aria-hidden="true"
+          >
+            ›
+          </span>
+        </button>
+
+        <button
+          id="rd73OpenTrophyRoomBtn"
+          class="rd-general-menu-item"
+          type="button"
+        >
+          <span
+            class="rd-general-menu-icon trophy"
+            aria-hidden="true"
+          >
+            ★
+          </span>
+
+          <span class="rd-general-menu-copy">
+            <strong>Trophy Room</strong>
+
+            <small id="rd73TrophyProgress">
+              View road milestones and achievements
+            </small>
+          </span>
+
+          <span
+            class="rd-general-menu-arrow"
+            aria-hidden="true"
+          >
+            ›
+          </span>
+        </button>
+
+        <button
+          id="rd73OpenSettingsBtn"
+          class="rd-general-menu-item"
+          type="button"
+        >
+          <span
+            class="rd-general-menu-icon settings"
+            aria-hidden="true"
+          >
+            ⚙
+          </span>
+
+          <span class="rd-general-menu-copy">
+            <strong>Settings</strong>
+
+            <small>
+              Map, trail colour, Friends and Data
+            </small>
+          </span>
+
+          <span
+            class="rd-general-menu-arrow"
+            aria-hidden="true"
+          >
+            ›
+          </span>
+        </button>
+
+        <button
+          id="rd73OpenAboutBtn"
+          class="rd-general-menu-item"
+          type="button"
+        >
+          <span
+            class="rd-general-menu-icon about"
+            aria-hidden="true"
+          >
+            i
+          </span>
+
+          <span class="rd-general-menu-copy">
+            <strong>About Road Discovery</strong>
+
+            <small>
+              What the app does and how to use it safely
+            </small>
+          </span>
+
+          <span
+            class="rd-general-menu-arrow"
+            aria-hidden="true"
+          >
+            ›
+          </span>
+        </button>
+      </div>
+
+      <p class="rd-general-menu-safety">
+        Plan while stopped. Keep your eyes on the road while moving.
+      </p>
+    </div>
+  `;
+
+  ($("appShell") || document.body).appendChild(panel);
+
+  els.rd73GeneralMenuPanel = panel;
+}
+
+function rd73CleanActualSettings() {
+  [
+    ".road-discovery-about-settings",
+    ".rd-achievement-settings",
+    ".rd-hidden-discovery-settings"
+  ].forEach((selector) => {
+    document.querySelector(
+      `#settingsPanel ${selector}`
+    )?.remove();
+  });
+
+  const settingsTitle = document.querySelector(
+    "#settingsPanel .panel-header h2"
+  );
+
+  const settingsDescription = document.querySelector(
+    "#settingsPanel .panel-header p"
+  );
+
+  if (settingsTitle) {
+    settingsTitle.textContent = "Settings";
+  }
+
+  if (settingsDescription) {
+    settingsDescription.textContent =
+      "Map, privacy and account controls.";
+  }
+
+  if (els.closeSettingsBtn) {
+    els.closeSettingsBtn.textContent = "‹";
+
+    els.closeSettingsBtn.classList.add(
+      "rd-settings-back-btn"
+    );
+
+    els.closeSettingsBtn.setAttribute(
+      "aria-label",
+      "Back to General Menu"
+    );
+
+    els.closeSettingsBtn.title =
+      "Back to General Menu";
+  }
+}
+
+function rd73UnlockedCount() {
+  if (typeof rd68UnlockedCount === "function") {
+    return rd68UnlockedCount();
+  }
+
+  return Object.keys(
+    state.savedSegments || {}
+  ).length;
+}
+
+function rd73CompactNumber(value) {
+  if (typeof rd68MilestoneCount === "function") {
+    return rd68MilestoneCount(value);
+  }
+
+  return formatCompactNumber(
+    Number(value) || 0
+  );
+}
+
+function rd73RenderGeneralMenuProgress() {
+  const hiddenProgress = $(
+    "rd73HiddenDiscoveryProgress"
+  );
+
+  if (hiddenProgress) {
+    const completed =
+      RD72_HIDDEN_DISCOVERIES.filter(
+        (discovery) =>
+          Boolean(
+            state.hiddenDiscoveries.completed[
+              discovery.id
+            ]
+          )
+      ).length;
+
+    hiddenProgress.textContent =
+      `${completed} / ` +
+      `${RD72_HIDDEN_DISCOVERIES.length} discovered`;
+  }
+
+  const trophyProgress = $(
+    "rd73TrophyProgress"
+  );
+
+  if (!trophyProgress) return;
+
+  const count = rd73UnlockedCount();
+
+  const finalAchievement =
+    RD68_ACHIEVEMENTS[
+      RD68_ACHIEVEMENTS.length - 1
+    ];
+
+  if (count >= finalAchievement.threshold) {
+    trophyProgress.textContent =
+      `${rd73CompactNumber(count)} roads • ` +
+      `All milestones completed`;
+
+    return;
+  }
+
+  const next = rd68NextAchievement(count);
+
+  trophyProgress.textContent =
+    `${rd73CompactNumber(count)} / ` +
+    `${rd73CompactNumber(next.threshold)} • ` +
+    `Next: ${next.name}`;
+}
+
+function rd73OpenGeneralMenu() {
+  rd73RenderGeneralMenuProgress();
+  openPanel("rd73GeneralMenuPanel");
+}
+
+function rd73CloseGeneralMenuOnly() {
+  const panel = $("rd73GeneralMenuPanel");
+
+  if (!panel) return;
+
+  panel.classList.add("hidden");
+  panel.setAttribute("aria-hidden", "true");
+}
+
+function rd73OpenActualSettings() {
+  openPanel("settingsPanel");
+}
+
+function rd73OpenHiddenDiscoveries() {
+  closePanels();
+  rd72OpenHiddenDiscoveryRoom();
+}
+
+function rd73OpenTrophyRoom() {
+  closePanels();
+  rd68OpenTrophyRoom();
+}
+
+function rd73OpenAbout() {
+  closePanels();
+
+  rd64OpenAbout({
+    firstRun: false
+  });
+}
+
+function rd73BindGeneralMenuEvents() {
+  /*
+    Capture the gear click before the old Settings
+    listener runs. The button stays in the same place.
+  */
+  els.settingsBtn?.addEventListener(
+    "click",
+    (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      rd73OpenGeneralMenu();
+    },
+    true
+  );
+
+  els.settingsBtn?.setAttribute(
+    "aria-label",
+    "Open General Menu"
+  );
+
+  if (els.settingsBtn) {
+    els.settingsBtn.title = "General Menu";
+  }
+
+  $("rd73CloseGeneralMenuBtn")?.addEventListener(
+    "click",
+    () => closePanels()
+  );
+
+  $("rd73OpenHiddenDiscoveriesBtn")?.addEventListener(
+    "click",
+    rd73OpenHiddenDiscoveries
+  );
+
+  $("rd73OpenTrophyRoomBtn")?.addEventListener(
+    "click",
+    rd73OpenTrophyRoom
+  );
+
+  $("rd73OpenSettingsBtn")?.addEventListener(
+    "click",
+    rd73OpenActualSettings
+  );
+
+  $("rd73OpenAboutBtn")?.addEventListener(
+    "click",
+    rd73OpenAbout
+  );
+
+  /*
+    The Settings header button now returns to
+    General Menu instead of closing everything.
+  */
+  els.closeSettingsBtn?.addEventListener(
+    "click",
+    (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      rd73OpenGeneralMenu();
+    },
+    true
+  );
+
+  /*
+    The original backdrop listener existed before
+    General Menu, so explicitly close the new panel.
+  */
+  els.panelBackdrop?.addEventListener(
+    "click",
+    rd73CloseGeneralMenuOnly
+  );
+
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.key === "Escape" &&
+        !$("rd73GeneralMenuPanel")
+          ?.classList.contains("hidden")
+      ) {
+        closePanels();
+      }
+    }
+  );
+}
+
+function rd73InitGeneralMenu() {
+  rd73CreateGeneralMenu();
+  rd73CleanActualSettings();
+  rd73BindGeneralMenuEvents();
+  rd73RenderGeneralMenuProgress();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd73InitGeneralMenu,
+    { once: true }
+  );
+} else {
+  rd73InitGeneralMenu();
+}
+
+/* -------------------------------------------------- */
+/* Include General Menu in shared panel lifecycle     */
+/* -------------------------------------------------- */
+
+closePanels = function (hideBackdrop = true) {
+  const result =
+    roadDiscoveryV73.closePanels(
+      hideBackdrop
+    );
+
+  rd73CloseGeneralMenuOnly();
+
+  return result;
+};
+
+renderAllStats = function () {
+  const result =
+    roadDiscoveryV73.renderAllStats();
+
+  rd73RenderGeneralMenuProgress();
+
+  return result;
+};
+
+renderAuthState = function () {
+  const result =
+    roadDiscoveryV73.renderAuthState();
+
+  rd73RenderGeneralMenuProgress();
+
+  return result;
+};
+
+rd72RenderHiddenDiscoveries = function () {
+  const result =
+    roadDiscoveryV73
+      .rd72RenderHiddenDiscoveries();
+
+  rd73RenderGeneralMenuProgress();
+
+  return result;
+};
