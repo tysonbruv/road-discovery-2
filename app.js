@@ -16282,3 +16282,1215 @@ showToast = function (message) {
 
   return roadDiscoveryV71.showToast(neutralMessage);
 };
+
+/* ================================================== */
+/* Road Discovery AU v72 Hidden Discoveries           */
+/* Append this block once to the bottom of app.js v71 */
+/* ================================================== */
+
+const RD72_DISCOVERY_STORAGE_PREFIX =
+  "roadDiscoveryAU.hiddenDiscoveries.v1";
+const RD72_DISCOVERY_CHECK_MIN_MS = 900;
+
+const RD72_HIDDEN_DISCOVERIES = Object.freeze([
+  {
+    id: "echo_point_three_sisters",
+    region: "Blue Mountains, NSW",
+    answer: "Echo Point Lookout — Three Sisters",
+    completionMessage: "Three Sisters riddle complete.",
+    riddle:
+      "Though my name promises a reply, I make no sound. From my edge, three sandstone figures rise above a deep blue valley.",
+    zones: [
+      {
+        lat: -33.73224,
+        lng: 150.31217,
+        radiusM: 350
+      }
+    ]
+  },
+  {
+    id: "lithgow_blast_furnace",
+    region: "Lithgow, NSW",
+    answer: "Lithgow Blast Furnace",
+    completionMessage: "Lithgow Blast Furnace riddle complete.",
+    riddle:
+      "I once breathed fire and turned stone into iron. My flames are gone, but my brick bones still remember Lithgow's industrial heart.",
+    zones: [
+      {
+        lat: -33.475056,
+        lng: 150.17035,
+        radiusM: 300
+      }
+    ]
+  },
+  {
+    id: "mount_piper_power_station",
+    region: "Central West, NSW",
+    answer: "Mount Piper Power Station",
+    completionMessage: "Mount Piper riddle complete.",
+    riddle:
+      "I swallow black stone but produce no jewellery. From the hills west of Lithgow, I send an invisible current toward more than a million homes.",
+    zones: [
+      {
+        lat: -33.355815,
+        lng: 150.03508,
+        radiusM: 450
+      }
+    ]
+  },
+  {
+    id: "bathurst_big_gold_panner",
+    region: "Bathurst, NSW",
+    answer: "The Big Gold Panner",
+    completionMessage: "Big Gold Panner riddle complete.",
+    riddle:
+      "I search endlessly for treasure with a pan too large to carry, yet the gold beneath my gaze is never taken.",
+    zones: [
+      {
+        lat: -33.420432,
+        lng: 149.626048,
+        radiusM: 250
+      }
+    ]
+  },
+  {
+    id: "mount_panorama_wahluu_circuit",
+    region: "Bathurst, NSW",
+    answer: "Mount Panorama/Wahluu Circuit",
+    completionMessage: "Mount Panorama/Wahluu riddle complete.",
+    riddle:
+      "Most days I am a public road with a sixty sign. On special days, engines roar and a nation watches. I climb a mountain known long before the chequered flag.",
+    checkpoints: [
+      {
+        id: "pit_straight",
+        lat: -33.439682,
+        lng: 149.558735,
+        radiusM: 190
+      },
+      {
+        id: "brocks_skyline",
+        lat: -33.455193,
+        lng: 149.551732,
+        radiusM: 210
+      },
+      {
+        id: "conrod_straight",
+        lat: -33.44986,
+        lng: 149.55905,
+        radiusM: 210
+      }
+    ],
+    note:
+      "Mount Panorama/Wahluu has enduring significance to the Wiradjuri people. The circuit is a public road outside closures: obey signs, closures and the posted speed limit."
+  }
+]);
+
+const roadDiscoveryV72 = {
+  startDrive,
+  finishDrive,
+  onGpsPosition,
+  ensureRoadProfile,
+  signOutRoadProfile,
+  renderAuthState,
+  rd68OpenTrophyRoom
+};
+
+state.hiddenDiscoveries = {
+  activeUserId: "",
+  completed: {},
+  unsynced: new Set(),
+  pending: new Set(),
+  circuitCheckpoints: new Set(),
+  lastCheckAt: 0,
+  loading: false,
+  syncing: false,
+  syncError: false,
+  deferredAchievementOptions: null
+};
+
+function rd72DiscoveryById(discoveryId) {
+  return (
+    RD72_HIDDEN_DISCOVERIES.find(
+      (discovery) => discovery.id === discoveryId
+    ) || null
+  );
+}
+
+function rd72ValidDiscoveryId(discoveryId) {
+  return Boolean(
+    rd72DiscoveryById(String(discoveryId || ""))
+  );
+}
+
+function rd72StorageKey(userId) {
+  return (
+    `${RD72_DISCOVERY_STORAGE_PREFIX}.` +
+    String(userId || "")
+  );
+}
+
+function rd72NormaliseCompletedAt(value) {
+  const date = new Date(value || Date.now());
+
+  return Number.isNaN(date.getTime())
+    ? new Date().toISOString()
+    : date.toISOString();
+}
+
+function rd72ReadLocalProgress(userId) {
+  const empty = {
+    completed: {},
+    unsynced: new Set()
+  };
+
+  if (!userId) return empty;
+
+  try {
+    const raw = localStorage.getItem(
+      rd72StorageKey(userId)
+    );
+
+    if (!raw) return empty;
+
+    const parsed = JSON.parse(raw);
+    const completed = {};
+
+    for (const [discoveryId, completedAt] of Object.entries(
+      parsed?.completed || {}
+    )) {
+      if (!rd72ValidDiscoveryId(discoveryId)) continue;
+
+      completed[discoveryId] =
+        rd72NormaliseCompletedAt(completedAt);
+    }
+
+    const unsynced = new Set(
+      Array.isArray(parsed?.unsynced)
+        ? parsed.unsynced.filter(rd72ValidDiscoveryId)
+        : []
+    );
+
+    return {
+      completed,
+      unsynced
+    };
+  } catch (error) {
+    console.error(error);
+    return empty;
+  }
+}
+
+function rd72SaveLocalProgress() {
+  const userId = String(
+    state.hiddenDiscoveries.activeUserId || ""
+  );
+
+  if (!userId) return;
+
+  try {
+    localStorage.setItem(
+      rd72StorageKey(userId),
+      JSON.stringify({
+        completed: state.hiddenDiscoveries.completed,
+        unsynced: Array.from(
+          state.hiddenDiscoveries.unsynced
+        )
+      })
+    );
+  } catch (error) {
+    console.error(error);
+    showToast("Could not save Hidden Discovery progress");
+  }
+}
+
+function rd72ResetDriveDiscoveryState() {
+  state.hiddenDiscoveries.pending.clear();
+  state.hiddenDiscoveries.circuitCheckpoints.clear();
+  state.hiddenDiscoveries.lastCheckAt = 0;
+}
+
+function rd72ClearAccountView() {
+  state.hiddenDiscoveries.activeUserId = "";
+  state.hiddenDiscoveries.completed = {};
+  state.hiddenDiscoveries.unsynced = new Set();
+  state.hiddenDiscoveries.loading = false;
+  state.hiddenDiscoveries.syncing = false;
+  state.hiddenDiscoveries.syncError = false;
+
+  rd72ResetDriveDiscoveryState();
+  rd72RenderHiddenDiscoveries();
+}
+
+function rd72ActivateAccount(userId) {
+  const id = String(userId || "");
+
+  if (!id) {
+    rd72ClearAccountView();
+    return;
+  }
+
+  if (state.hiddenDiscoveries.activeUserId === id) {
+    return;
+  }
+
+  state.hiddenDiscoveries.activeUserId = id;
+
+  const local = rd72ReadLocalProgress(id);
+
+  state.hiddenDiscoveries.completed = local.completed;
+  state.hiddenDiscoveries.unsynced = local.unsynced;
+  state.hiddenDiscoveries.loading = false;
+  state.hiddenDiscoveries.syncing = false;
+  state.hiddenDiscoveries.syncError = false;
+
+  rd72ResetDriveDiscoveryState();
+  rd72RenderHiddenDiscoveries();
+
+  void rd72LoadServerProgress(id);
+}
+
+function rd72RowsFromRpc(data) {
+  if (Array.isArray(data)) return data;
+
+  if (data && typeof data === "object") {
+    return [data];
+  }
+
+  return [];
+}
+
+function rd72MergeServerRows(rows) {
+  for (const row of rows) {
+    const discoveryId = String(
+      row?.discovery_id || row?.id || ""
+    );
+
+    if (!rd72ValidDiscoveryId(discoveryId)) continue;
+
+    const serverCompletedAt = rd72NormaliseCompletedAt(
+      row?.completed_at
+    );
+
+    const localCompletedAt =
+      state.hiddenDiscoveries.completed[discoveryId];
+
+    if (
+      !localCompletedAt ||
+      new Date(serverCompletedAt).getTime() <
+        new Date(localCompletedAt).getTime()
+    ) {
+      state.hiddenDiscoveries.completed[discoveryId] =
+        serverCompletedAt;
+    }
+
+    state.hiddenDiscoveries.unsynced.delete(discoveryId);
+  }
+}
+
+async function rd72LoadServerProgress(expectedUserId) {
+  const client = state.auth.client;
+  const userId = String(expectedUserId || "");
+
+  if (!client || !userId) return;
+
+  state.hiddenDiscoveries.loading = true;
+  rd72RenderHiddenDiscoveries();
+
+  const { data, error } = await client.rpc(
+    "get_my_hidden_discoveries"
+  );
+
+  if (
+    state.hiddenDiscoveries.activeUserId !== userId
+  ) {
+    return;
+  }
+
+  state.hiddenDiscoveries.loading = false;
+
+  if (error) {
+    console.error(error);
+    state.hiddenDiscoveries.syncError = true;
+    rd72RenderHiddenDiscoveries();
+    return;
+  }
+
+  state.hiddenDiscoveries.syncError = false;
+
+  rd72MergeServerRows(
+    rd72RowsFromRpc(data)
+  );
+
+  rd72SaveLocalProgress();
+  rd72RenderHiddenDiscoveries();
+
+  if (state.hiddenDiscoveries.unsynced.size > 0) {
+    void rd72SyncPendingCompletions();
+  }
+}
+
+async function rd72SyncPendingCompletions() {
+  const hidden = state.hiddenDiscoveries;
+  const client = state.auth.client;
+  const userId = String(hidden.activeUserId || "");
+  const currentUserId = String(
+    state.auth.user?.id || ""
+  );
+
+  if (
+    hidden.syncing ||
+    !client ||
+    !userId ||
+    currentUserId !== userId ||
+    hidden.unsynced.size === 0
+  ) {
+    return;
+  }
+
+  const discoveryIds = Array.from(
+    hidden.unsynced
+  ).filter(rd72ValidDiscoveryId);
+
+  if (discoveryIds.length === 0) return;
+
+  hidden.syncing = true;
+  rd72RenderHiddenDiscoveries();
+
+  const { data, error } = await client.rpc(
+    "complete_my_hidden_discoveries",
+    {
+      p_discovery_ids: discoveryIds
+    }
+  );
+
+  if (hidden.activeUserId !== userId) {
+    return;
+  }
+
+  hidden.syncing = false;
+
+  if (error) {
+    console.error(error);
+    hidden.syncError = true;
+
+    rd72SaveLocalProgress();
+    rd72RenderHiddenDiscoveries();
+    return;
+  }
+
+  const rows = rd72RowsFromRpc(data);
+
+  hidden.syncError = false;
+
+  if (rows.length > 0) {
+    rd72MergeServerRows(rows);
+  }
+
+  for (const discoveryId of discoveryIds) {
+    hidden.unsynced.delete(discoveryId);
+  }
+
+  rd72SaveLocalProgress();
+  rd72RenderHiddenDiscoveries();
+}
+
+function rd72PointInside(point, zone) {
+  return haversine(point, zone) <= zone.radiusM;
+}
+
+function rd72CheckDiscoveryPoint(point) {
+  const hidden = state.hiddenDiscoveries;
+  const userId = String(state.auth.user?.id || "");
+
+  if (
+    !state.isRecording ||
+    !userId ||
+    hidden.activeUserId !== userId ||
+    !Number.isFinite(point?.lat) ||
+    !Number.isFinite(point?.lng) ||
+    !Number.isFinite(point?.accuracy) ||
+    point.accuracy > MAX_GPS_ACCURACY_M
+  ) {
+    return;
+  }
+
+  const checkedAt =
+    Number(point.timestamp) || Date.now();
+
+  if (
+    checkedAt - hidden.lastCheckAt <
+    RD72_DISCOVERY_CHECK_MIN_MS
+  ) {
+    return;
+  }
+
+  hidden.lastCheckAt = checkedAt;
+
+  for (const discovery of RD72_HIDDEN_DISCOVERIES) {
+    if (
+      hidden.completed[discovery.id] ||
+      hidden.pending.has(discovery.id)
+    ) {
+      continue;
+    }
+
+    if (Array.isArray(discovery.zones)) {
+      const entered = discovery.zones.some((zone) =>
+        rd72PointInside(point, zone)
+      );
+
+      if (entered) {
+        hidden.pending.add(discovery.id);
+      }
+
+      continue;
+    }
+
+    if (!Array.isArray(discovery.checkpoints)) {
+      continue;
+    }
+
+    for (const checkpoint of discovery.checkpoints) {
+      if (rd72PointInside(point, checkpoint)) {
+        hidden.circuitCheckpoints.add(
+          checkpoint.id
+        );
+      }
+    }
+
+    const circuitComplete =
+      discovery.checkpoints.every((checkpoint) =>
+        hidden.circuitCheckpoints.has(checkpoint.id)
+      );
+
+    if (circuitComplete) {
+      hidden.pending.add(discovery.id);
+    }
+  }
+}
+
+function rd72CompleteDriveDiscoveries(discoveryIds) {
+  const hidden = state.hiddenDiscoveries;
+  const completedAt = new Date().toISOString();
+  const newlyCompleted = [];
+
+  for (const discoveryId of discoveryIds) {
+    if (
+      !rd72ValidDiscoveryId(discoveryId) ||
+      hidden.completed[discoveryId]
+    ) {
+      continue;
+    }
+
+    hidden.completed[discoveryId] = completedAt;
+    hidden.unsynced.add(discoveryId);
+    newlyCompleted.push(discoveryId);
+  }
+
+  rd72ResetDriveDiscoveryState();
+
+  if (newlyCompleted.length === 0) {
+    return;
+  }
+
+  rd72SaveLocalProgress();
+  rd72RenderHiddenDiscoveries();
+
+  void rd72SyncPendingCompletions();
+
+  if (hasActiveHideSeekRound()) {
+    return;
+  }
+
+  window.setTimeout(() => {
+    if (
+      !state.isRecording &&
+      !hasActiveHideSeekRound()
+    ) {
+      rd72OpenCompletion(newlyCompleted);
+    }
+  }, 300);
+}
+
+function rd72CompletedDate(discoveryId) {
+  const value =
+    state.hiddenDiscoveries.completed[discoveryId];
+
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Completed";
+  }
+
+  return new Intl.DateTimeFormat("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  }).format(date);
+}
+
+function rd72DiscoveryCard(discovery, index) {
+  const completed = Boolean(
+    state.hiddenDiscoveries.completed[discovery.id]
+  );
+
+  const answer = completed
+    ? `
+      <div class="rd-hidden-answer">
+        <span>Discovered</span>
+
+        <strong>
+          ${escapeHtml(discovery.answer)}
+        </strong>
+
+        <small>
+          ${escapeHtml(
+            rd72CompletedDate(discovery.id)
+          )}
+        </small>
+      </div>
+    `
+    : `
+      <div class="rd-hidden-locked-answer">
+        Answer hidden until discovered
+      </div>
+    `;
+
+  const note =
+    completed && discovery.note
+      ? `
+        <p class="rd-hidden-cultural-note">
+          ${escapeHtml(discovery.note)}
+        </p>
+      `
+      : "";
+
+  return `
+    <article
+      class="rd-hidden-card ${
+        completed ? "unlocked" : "locked"
+      }"
+    >
+      <div class="rd-hidden-card-topline">
+        <span>
+          Hidden Discovery ${String(index + 1).padStart(
+            2,
+            "0"
+          )}
+        </span>
+
+        <strong>
+          ${completed ? "✓ Complete" : "Undiscovered"}
+        </strong>
+      </div>
+
+      <div class="rd-hidden-region">
+        ${escapeHtml(discovery.region)}
+      </div>
+
+      <blockquote>
+        ${escapeHtml(discovery.riddle)}
+      </blockquote>
+
+      ${answer}
+      ${note}
+    </article>
+  `;
+}
+
+function rd72CreateHiddenDiscoveryUi() {
+  if (!$("rd72HiddenDiscoveryOverlay")) {
+    const room = document.createElement("section");
+
+    room.id = "rd72HiddenDiscoveryOverlay";
+    room.className =
+      "confirm-overlay rd-hidden-overlay hidden";
+
+    room.setAttribute("aria-hidden", "true");
+
+    room.innerHTML = `
+      <div
+        class="confirm-card rd-hidden-room-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rd72HiddenDiscoveryTitle"
+      >
+        <div class="rd-hidden-header">
+          <div>
+            <div class="rd-hidden-kicker">
+              Road Discovery AU
+            </div>
+
+            <h2 id="rd72HiddenDiscoveryTitle">
+              Hidden Discoveries
+            </h2>
+          </div>
+
+          <button
+            id="rd72HiddenDiscoveryCloseBtn"
+            class="rd-hidden-close"
+            type="button"
+            aria-label="Close Hidden Discoveries"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="rd-hidden-safety-note">
+          <strong>Start Drive required.</strong>
+
+          Solve and plan your journey before moving.
+          Discover a nearby road while Drive Mode is
+          active, then press Finish Drive to reveal the
+          Hidden Discovery. Stay on public roads, never
+          enter restricted or private property, and do
+          not use your phone while moving.
+        </div>
+
+        <div class="rd-hidden-summary">
+          <strong id="rd72HiddenDiscoveryProgress">
+            0 of 5 discovered
+          </strong>
+
+          <span id="rd72HiddenDiscoverySyncStatus"></span>
+        </div>
+
+        <div class="rd-hidden-state-heading">
+          New South Wales
+        </div>
+
+        <div
+          id="rd72HiddenDiscoveryList"
+          class="rd-hidden-list"
+        ></div>
+
+        <button
+          id="rd72HiddenDiscoveryDoneBtn"
+          class="wide-btn rd-hidden-done"
+          type="button"
+        >
+          Back to Map
+        </button>
+      </div>
+    `;
+
+    ($("appShell") || document.body).appendChild(room);
+  }
+
+  if (!$("rd72HiddenCompleteOverlay")) {
+    const completion =
+      document.createElement("section");
+
+    completion.id = "rd72HiddenCompleteOverlay";
+    completion.className =
+      "confirm-overlay rd-hidden-complete-overlay hidden";
+
+    completion.setAttribute("aria-hidden", "true");
+
+    completion.innerHTML = `
+      <div
+        class="confirm-card rd-hidden-complete-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rd72HiddenCompleteTitle"
+      >
+        <div
+          class="rd-hidden-complete-mark"
+          aria-hidden="true"
+        >
+          ◇
+        </div>
+
+        <div class="rd-hidden-kicker">
+          Road Discovery AU
+        </div>
+
+        <h2 id="rd72HiddenCompleteTitle">
+          Hidden Discovery Complete
+        </h2>
+
+        <div
+          id="rd72HiddenCompleteList"
+          class="rd-hidden-complete-list"
+        ></div>
+
+        <button
+          id="rd72HiddenCompleteDoneBtn"
+          class="wide-btn"
+          type="button"
+        >
+          Continue
+        </button>
+      </div>
+    `;
+
+    ($("appShell") || document.body).appendChild(
+      completion
+    );
+  }
+}
+
+function rd72InsertHiddenDiscoverySetting() {
+  if ($("rd72OpenHiddenDiscoveryBtn")) {
+    return;
+  }
+
+  const settingsContent = document.querySelector(
+    "#settingsPanel .panel-content"
+  );
+
+  if (!settingsContent) return;
+
+  const section = document.createElement("section");
+
+  section.className =
+    "panel-section rd-hidden-discovery-settings";
+
+  section.innerHTML = `
+    <h3>Hidden Discoveries</h3>
+
+    <p class="rd-hidden-settings-copy">
+      Solve location riddles, explore the road and
+      reveal each answer after Finish Drive.
+    </p>
+
+    <button
+      id="rd72OpenHiddenDiscoveryBtn"
+      class="ghost-btn wide-btn"
+      type="button"
+    >
+      Open Hidden Discoveries
+    </button>
+
+    <p
+      id="rd72HiddenSettingsProgress"
+      class="rd-hidden-settings-progress"
+    ></p>
+  `;
+
+  const achievements = settingsContent.querySelector(
+    ".rd-achievement-settings"
+  );
+
+  if (achievements) {
+    achievements.insertAdjacentElement(
+      "afterend",
+      section
+    );
+  } else {
+    settingsContent.insertBefore(
+      section,
+      settingsContent.firstElementChild
+    );
+  }
+}
+
+function rd72RenderHiddenDiscoveries() {
+  const hidden = state.hiddenDiscoveries;
+
+  const completedCount =
+    RD72_HIDDEN_DISCOVERIES.filter(
+      (discovery) =>
+        Boolean(hidden.completed[discovery.id])
+    ).length;
+
+  const total = RD72_HIDDEN_DISCOVERIES.length;
+
+  const progressText =
+    `${completedCount} of ${total} discovered`;
+
+  const settingsProgress = $(
+    "rd72HiddenSettingsProgress"
+  );
+
+  const roomProgress = $(
+    "rd72HiddenDiscoveryProgress"
+  );
+
+  const syncStatus = $(
+    "rd72HiddenDiscoverySyncStatus"
+  );
+
+  const list = $("rd72HiddenDiscoveryList");
+
+  if (settingsProgress) {
+    settingsProgress.textContent = state.auth.user
+      ? progressText
+      : `${progressText} • Sign in to save progress`;
+  }
+
+  if (roomProgress) {
+    roomProgress.textContent = progressText;
+  }
+
+  if (syncStatus) {
+    if (!state.auth.user) {
+      syncStatus.textContent =
+        "Sign in to complete and sync riddles";
+    } else if (hidden.loading) {
+      syncStatus.textContent =
+        "Loading account progress...";
+    } else if (hidden.syncing) {
+      syncStatus.textContent = "Syncing...";
+    } else if (hidden.syncError) {
+      syncStatus.textContent =
+        "Saved on this device • sync will retry";
+    } else if (hidden.unsynced.size > 0) {
+      syncStatus.textContent =
+        "Saved on this device • sync pending";
+    } else {
+      syncStatus.textContent =
+        "Saved to your Road Profile";
+    }
+  }
+
+  if (list) {
+    list.innerHTML =
+      RD72_HIDDEN_DISCOVERIES.map(
+        rd72DiscoveryCard
+      ).join("");
+  }
+}
+
+function rd72OpenHiddenDiscoveryRoom() {
+  const overlay = $(
+    "rd72HiddenDiscoveryOverlay"
+  );
+
+  if (!overlay) return;
+
+  closePanels();
+
+  if (typeof rd68CloseTrophyRoom === "function") {
+    rd68CloseTrophyRoom();
+  }
+
+  rd72RenderHiddenDiscoveries();
+
+  overlay.classList.remove("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+
+  document.body.classList.add("rd-hidden-open");
+
+  window.setTimeout(() => {
+    $("rd72HiddenDiscoveryCloseBtn")?.focus();
+  }, 0);
+}
+
+function rd72CloseHiddenDiscoveryRoom() {
+  const overlay = $(
+    "rd72HiddenDiscoveryOverlay"
+  );
+
+  if (!overlay) return;
+
+  overlay.classList.add("hidden");
+  overlay.setAttribute("aria-hidden", "true");
+
+  document.body.classList.remove(
+    "rd-hidden-open"
+  );
+}
+
+function rd72OpenCompletion(discoveryIds) {
+  const overlay = $("rd72HiddenCompleteOverlay");
+  const list = $("rd72HiddenCompleteList");
+  const title = $("rd72HiddenCompleteTitle");
+
+  const discoveries = discoveryIds
+    .map(rd72DiscoveryById)
+    .filter(Boolean);
+
+  if (
+    !overlay ||
+    !list ||
+    discoveries.length === 0
+  ) {
+    return;
+  }
+
+  if (title) {
+    title.textContent =
+      discoveries.length === 1
+        ? "Hidden Discovery Complete"
+        : "Hidden Discoveries Complete";
+  }
+
+  list.innerHTML = discoveries
+    .map(
+      (discovery) => `
+        <article>
+          <strong>
+            ${escapeHtml(discovery.answer)}
+          </strong>
+
+          <span>
+            ${escapeHtml(
+              discovery.completionMessage
+            )}
+          </span>
+        </article>
+      `
+    )
+    .join("");
+
+  closePanels();
+  rd72CloseHiddenDiscoveryRoom();
+
+  overlay.classList.remove("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+
+  document.body.classList.add(
+    "rd-hidden-complete-open"
+  );
+
+  window.setTimeout(() => {
+    $("rd72HiddenCompleteDoneBtn")?.focus();
+  }, 0);
+}
+
+function rd72CloseCompletion() {
+  const overlay = $("rd72HiddenCompleteOverlay");
+
+  if (!overlay) return;
+
+  overlay.classList.add("hidden");
+  overlay.setAttribute("aria-hidden", "true");
+
+  document.body.classList.remove(
+    "rd-hidden-complete-open"
+  );
+
+  const deferred =
+    state.hiddenDiscoveries
+      .deferredAchievementOptions;
+
+  state.hiddenDiscoveries
+    .deferredAchievementOptions = null;
+
+  if (deferred) {
+    window.setTimeout(() => {
+      roadDiscoveryV72.rd68OpenTrophyRoom(
+        deferred
+      );
+    }, 180);
+  }
+}
+
+function rd72BindHiddenDiscoveryEvents() {
+  $("rd72OpenHiddenDiscoveryBtn")?.addEventListener(
+    "click",
+    rd72OpenHiddenDiscoveryRoom
+  );
+
+  [
+    "rd72HiddenDiscoveryCloseBtn",
+    "rd72HiddenDiscoveryDoneBtn"
+  ].forEach((id) => {
+    $(id)?.addEventListener(
+      "click",
+      rd72CloseHiddenDiscoveryRoom
+    );
+  });
+
+  $("rd72HiddenCompleteDoneBtn")?.addEventListener(
+    "click",
+    rd72CloseCompletion
+  );
+
+  $("rd72HiddenDiscoveryOverlay")?.addEventListener(
+    "click",
+    (event) => {
+      if (
+        event.target ===
+        $("rd72HiddenDiscoveryOverlay")
+      ) {
+        rd72CloseHiddenDiscoveryRoom();
+      }
+    }
+  );
+
+  $("rd72HiddenCompleteOverlay")?.addEventListener(
+    "click",
+    (event) => {
+      if (
+        event.target ===
+        $("rd72HiddenCompleteOverlay")
+      ) {
+        rd72CloseCompletion();
+      }
+    }
+  );
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+
+    if (
+      !$("rd72HiddenCompleteOverlay")
+        ?.classList.contains("hidden")
+    ) {
+      rd72CloseCompletion();
+      return;
+    }
+
+    if (
+      !$("rd72HiddenDiscoveryOverlay")
+        ?.classList.contains("hidden")
+    ) {
+      rd72CloseHiddenDiscoveryRoom();
+    }
+  });
+
+  window.addEventListener("online", () => {
+    void rd72SyncPendingCompletions();
+  });
+}
+
+function rd72InitHiddenDiscoveries() {
+  rd72CreateHiddenDiscoveryUi();
+  rd72InsertHiddenDiscoverySetting();
+  rd72BindHiddenDiscoveryEvents();
+  rd72RenderHiddenDiscoveries();
+
+  const userId = String(
+    state.auth.user?.id || ""
+  );
+
+  if (userId) {
+    rd72ActivateAccount(userId);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd72InitHiddenDiscoveries,
+    { once: true }
+  );
+} else {
+  rd72InitHiddenDiscoveries();
+}
+
+/* -------------------------------------------------- */
+/* Reuse existing drive and account lifecycles        */
+/* -------------------------------------------------- */
+
+startDrive = async function () {
+  const wasRunning = Boolean(
+    state.isRecording || state.watchId !== null
+  );
+
+  if (!wasRunning) {
+    rd72ResetDriveDiscoveryState();
+  }
+
+  return roadDiscoveryV72.startDrive();
+};
+
+onGpsPosition = function (position) {
+  const result =
+    roadDiscoveryV72.onGpsPosition(position);
+
+  const point = positionToPoint(position);
+
+  rd72CheckDiscoveryPoint(point);
+
+  return result;
+};
+
+finishDrive = function () {
+  const wasRunning = Boolean(
+    state.isRecording || state.watchId !== null
+  );
+
+  const pending = Array.from(
+    state.hiddenDiscoveries.pending
+  );
+
+  const result =
+    roadDiscoveryV72.finishDrive();
+
+  if (wasRunning) {
+    rd72CompleteDriveDiscoveries(pending);
+  }
+
+  return result;
+};
+
+ensureRoadProfile = async function (options = {}) {
+  const userId = String(
+    state.auth.user?.id || ""
+  );
+
+  if (userId) {
+    rd72ActivateAccount(userId);
+  }
+
+  const result =
+    await roadDiscoveryV72.ensureRoadProfile(
+      options
+    );
+
+  const confirmedUserId = String(
+    state.auth.user?.id || ""
+  );
+
+  if (confirmedUserId) {
+    rd72ActivateAccount(confirmedUserId);
+  }
+
+  return result;
+};
+
+signOutRoadProfile = async function () {
+  rd72SaveLocalProgress();
+
+  const result =
+    await roadDiscoveryV72.signOutRoadProfile();
+
+  if (!state.auth.user) {
+    rd72ClearAccountView();
+  }
+
+  return result;
+};
+
+renderAuthState = function () {
+  const result =
+    roadDiscoveryV72.renderAuthState();
+
+  const userId = String(
+    state.auth.user?.id || ""
+  );
+
+  if (userId) {
+    rd72ActivateAccount(userId);
+  } else if (
+    state.hiddenDiscoveries.activeUserId
+  ) {
+    rd72ClearAccountView();
+  } else {
+    rd72RenderHiddenDiscoveries();
+  }
+
+  return result;
+};
+
+rd68OpenTrophyRoom = function (options = {}) {
+  const completionOpen =
+    !$("rd72HiddenCompleteOverlay")
+      ?.classList.contains("hidden");
+
+  if (completionOpen) {
+    state.hiddenDiscoveries
+      .deferredAchievementOptions = options;
+
+    return;
+  }
+
+  return roadDiscoveryV72.rd68OpenTrophyRoom(
+    options
+  );
+};
