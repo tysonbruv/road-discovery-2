@@ -1,7 +1,7 @@
 "use strict";
 
 /*
-  Road Discovery AU v72 service worker
+  Road Discovery AU v73 service worker
 
   Personal trail colour choices.
 
@@ -23,6 +23,8 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=53",
+  "./app.js?v=72",
   "./style.css?v=52",
   "./app.js?v=71",
   "./style.css?v=51",
@@ -178,6 +180,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/style.css")) {
           return (
+            (await caches.match("./style.css?v=53")) ||
             (await caches.match("./style.css?v=52")) ||
             (await caches.match("./style.css?v=51")) ||
             (await caches.match("./style.css?v=50")) ||
@@ -201,6 +204,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=72")) ||
             (await caches.match("./app.js?v=71")) ||
             (await caches.match("./app.js?v=70")) ||
             (await caches.match("./app.js?v=69")) ||
