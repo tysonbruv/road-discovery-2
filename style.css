@@ -5744,3 +5744,239 @@ body.rd-trophy-open {
     padding: 9px 10px;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU Leaderboard Unlock + Public Map  */
+/* Append once to the bottom of style.css v55         */
+/* ================================================== */
+
+.rd-leaderboard-unlock-progress {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+}
+
+.rd-leaderboard-unlock-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rd-leaderboard-unlock-copy strong,
+.rd-leaderboard-unlock-copy span {
+  display: block;
+}
+
+.rd-leaderboard-unlock-copy strong {
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 900;
+}
+
+.rd-leaderboard-unlock-copy span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.rd-leaderboard-unlock-track {
+  height: 7px;
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.rd-leaderboard-unlock-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    #765cff,
+    #b093ff
+  );
+  box-shadow:
+    0 0 12px rgba(139, 111, 255, 0.45);
+  transition: width 0.35s ease;
+}
+
+.rd-leaderboard-unlock-progress.unlocked
+  .rd-leaderboard-unlock-copy strong {
+  color: #8af1b5;
+}
+
+.rd-leaderboard-unlock-progress.unlocked
+  .rd-leaderboard-unlock-track span {
+  background: linear-gradient(
+    90deg,
+    #24b864,
+    #72e8a5
+  );
+  box-shadow:
+    0 0 12px rgba(56, 214, 122, 0.4);
+}
+
+.rd-leaderboard-public-map-card {
+  padding: 12px;
+  border:
+    1px solid rgba(255, 138, 24, 0.25);
+  border-radius: 17px;
+  background: rgba(255, 138, 24, 0.055);
+  transition:
+    opacity 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.rd-leaderboard-public-map-card
+  .toggle-row {
+  padding: 3px;
+  border: 0;
+  background: transparent;
+}
+
+.rd-leaderboard-public-map-card.disabled {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  opacity: 0.68;
+}
+
+.rd-leaderboard-public-map-card.disabled
+  .toggle-row {
+  cursor: not-allowed;
+}
+
+.rd-leaderboard-public-map-note {
+  margin: 10px 3px 0;
+  padding-top: 9px;
+  border-top:
+    1px solid rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.rd-leaderboard-row.has-public-map {
+  padding-bottom: 37px;
+}
+
+.rd77-view-public-map-btn {
+  position: absolute;
+  left: 70px;
+  bottom: 7px;
+  min-height: 23px;
+  padding: 0 9px;
+  border:
+    1px solid rgba(255, 138, 24, 0.36);
+  border-radius: 999px;
+  background: rgba(255, 138, 24, 0.12);
+  color: #ffbd7c;
+  font-size: 8.5px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.rd77-view-public-map-btn:active {
+  transform: scale(0.96);
+}
+
+.rd77-view-public-map-btn:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+}
+
+.rd-public-map-overlay {
+  z-index: 3200;
+}
+
+.rd-public-map-header {
+  min-height: 74px;
+}
+
+.rd-public-map-header > div {
+  min-width: 0;
+}
+
+.rd-public-map-header h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rd-public-map {
+  background: #05070a;
+}
+
+.rd-public-map .leaflet-control-zoom {
+  display: block;
+  margin-top: 14px;
+  margin-left: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  box-shadow: var(--shadow-soft);
+}
+
+.rd-public-map .leaflet-control-zoom a {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  background: rgba(5, 7, 10, 0.9);
+  color: var(--text);
+  line-height: 38px;
+}
+
+.rd-public-map .leaflet-control-zoom a + a {
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 420px) {
+  .rd-leaderboard-unlock-copy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .rd-leaderboard-unlock-copy span {
+    text-align: left;
+  }
+
+  .rd77-view-public-map-btn {
+    left: 62px;
+  }
+
+  .rd-public-map-header {
+    gap: 9px;
+  }
+
+  .rd-public-map-header .back-btn {
+    padding: 0 9px;
+    font-size: 11px;
+  }
+
+  .rd-public-map-header h2 {
+    font-size: 17px;
+  }
+
+  .rd-public-map-header p {
+    font-size: 10px;
+  }
+}
+
+@media (max-height: 650px) {
+  .rd-leaderboard-public-map-card {
+    padding: 10px;
+  }
+
+  .rd-leaderboard-unlock-progress {
+    margin-top: 9px;
+    padding-top: 9px;
+  }
+}
