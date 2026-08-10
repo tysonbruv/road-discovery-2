@@ -1,19 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v78 service worker
+  Road Discovery AU v79 service worker
 
-  Personal trail colour choices.
+  Road Profile required before Start Drive.
 
   Expected frontend versions:
-  - app.js?v=77
-  - style.css?v=56
+  - app.js?v=78
+  - style.css?v=57
 
-  Previous files are recognised during the update so the site can
+  Recent files are also recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v78";
+const CACHE_NAME = "road-discovery-au-v79";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,70 +23,21 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
+  "./style.css?v=57",
+  "./app.js?v=78",
+
+  /* Recent fallbacks used during a staged GitHub update. */
   "./style.css?v=56",
   "./app.js?v=77",
   "./style.css?v=55",
   "./app.js?v=76",
   "./style.css?v=54",
-  "./app.js?v=75",
-  "./app.js?v=74",
-  "./app.js?v=73",
-  "./style.css?v=53",
-  "./app.js?v=72",
-  "./style.css?v=52",
-  "./app.js?v=71",
-  "./style.css?v=51",
-  "./app.js?v=70",
-  "./app.js?v=69",
-  "./app.js?v=68",
-  "./app.js?v=67",
-  "./style.css?v=50",
-  "./app.js?v=66",
-  "./style.css?v=49",
-  "./app.js?v=65",
-  "./style.css?v=48",
-  "./app.js?v=64",
-  "./style.css?v=47",
-  "./app.js?v=63",
-  "./style.css?v=46",
-  "./app.js?v=62",
-  "./app.js?v=61",
-  "./app.js?v=60",
-  "./app.js?v=59",
-  "./style.css?v=45",
-  "./app.js?v=58",
-  "./style.css?v=44",
-  "./app.js?v=57",
-  "./app.js?v=56",
-  "./app.js?v=55",
-  "./app.js?v=54",
-  "./style.css?v=43",
-  "./app.js?v=53",
-  "./style.css?v=42",
-  "./app.js?v=52",
-  "./app.js?v=51",
-  "./app.js?v=50",
-  "./style.css?v=41",
-  "./app.js?v=49",
-  "./app.js?v=48",
-  "./style.css?v=40",
-  "./app.js?v=47",
-
-  /* Previous Hide & Seek version. */
-  "./style.css?v=39",
-  "./app.js?v=46",
-
-  /* Previous checkpoint fallback. */
-  "./style.css?v=38",
-  "./app.js?v=45",
-
-  /* Temporary fallbacks during a one-file-at-a-time upload. */
-  "./app.js?v=44",
-  "./style.css?v=37",
-  "./app.js?v=43",
-  "./style.css?v=36",
-  "./app.js?v=42"
+  "./app.js?v=75"
 ];
+
+/* -------------------------------------------------- */
+/* Install                                            */
+/* -------------------------------------------------- */
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -112,6 +63,10 @@ self.addEventListener("install", (event) => {
   );
 });
 
+/* -------------------------------------------------- */
+/* Activate                                           */
+/* -------------------------------------------------- */
+
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
@@ -119,13 +74,21 @@ self.addEventListener("activate", (event) => {
       .then((cacheNames) => {
         return Promise.all(
           cacheNames
-            .filter((cacheName) => cacheName !== CACHE_NAME)
-            .map((cacheName) => caches.delete(cacheName))
+            .filter(
+              (cacheName) => cacheName !== CACHE_NAME
+            )
+            .map((cacheName) =>
+              caches.delete(cacheName)
+            )
         );
       })
       .then(() => self.clients.claim())
   );
 });
+
+/* -------------------------------------------------- */
+/* Fetch                                              */
+/* -------------------------------------------------- */
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
@@ -136,21 +99,37 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  /* Do not intercept external tiles, road data, routing or Supabase. */
+  /*
+    External requests are not intercepted. This includes Leaflet,
+    Supabase, map tiles, Overpass road data and OSRM routes.
+  */
   if (url.origin !== self.location.origin) {
     return;
   }
+
+  /* ------------------------------------------------ */
+  /* Page navigation                                  */
+  /* ------------------------------------------------ */
 
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
-          if (networkResponse && networkResponse.ok) {
-            const responseCopy = networkResponse.clone();
+          if (
+            networkResponse &&
+            networkResponse.ok
+          ) {
+            const responseCopy =
+              networkResponse.clone();
 
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put("./index.html", responseCopy);
-            });
+            caches
+              .open(CACHE_NAME)
+              .then((cache) => {
+                cache.put(
+                  "./index.html",
+                  responseCopy
+                );
+              });
           }
 
           return networkResponse;
@@ -166,103 +145,93 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  /* ------------------------------------------------ */
+  /* Local JavaScript, CSS, manifest and icon files   */
+  /* ------------------------------------------------ */
+
   event.respondWith(
     fetch(request)
       .then((networkResponse) => {
-        if (networkResponse && networkResponse.ok) {
-          const responseCopy = networkResponse.clone();
+        if (
+          networkResponse &&
+          networkResponse.ok
+        ) {
+          const responseCopy =
+            networkResponse.clone();
 
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseCopy);
-          });
+          caches
+            .open(CACHE_NAME)
+            .then((cache) => {
+              cache.put(request, responseCopy);
+            });
         }
 
         return networkResponse;
       })
       .catch(async () => {
-        const exactCachedResponse = await caches.match(request);
+        const exactCachedResponse =
+          await caches.match(request);
 
         if (exactCachedResponse) {
           return exactCachedResponse;
         }
 
-        if (url.pathname.endsWith("/style.css")) {
+        if (
+          url.pathname.endsWith("/style.css")
+        ) {
           return (
-            (await caches.match("./style.css?v=56")) ||
-            (await caches.match("./style.css?v=55")) ||
-            (await caches.match("./style.css?v=54")) ||
-            (await caches.match("./style.css?v=53")) ||
-            (await caches.match("./style.css?v=52")) ||
-            (await caches.match("./style.css?v=51")) ||
-            (await caches.match("./style.css?v=50")) ||
-            (await caches.match("./style.css?v=49")) ||
-            (await caches.match("./style.css?v=48")) ||
-            (await caches.match("./style.css?v=47")) ||
-            (await caches.match("./style.css?v=46")) ||
-            (await caches.match("./style.css?v=45")) ||
-            (await caches.match("./style.css?v=44")) ||
-            (await caches.match("./style.css?v=43")) ||
-            (await caches.match("./style.css?v=42")) ||
-            (await caches.match("./style.css?v=41")) ||
-            (await caches.match("./style.css?v=40")) ||
-            (await caches.match("./style.css?v=39")) ||
-            (await caches.match("./style.css?v=38")) ||
-            (await caches.match("./style.css?v=37")) ||
-            (await caches.match("./style.css?v=36")) ||
+            (await caches.match(
+              "./style.css?v=57"
+            )) ||
+            (await caches.match(
+              "./style.css?v=56"
+            )) ||
+            (await caches.match(
+              "./style.css?v=55"
+            )) ||
+            (await caches.match(
+              "./style.css?v=54"
+            )) ||
             Response.error()
           );
         }
 
-        if (url.pathname.endsWith("/app.js")) {
+        if (
+          url.pathname.endsWith("/app.js")
+        ) {
           return (
-            (await caches.match("./app.js?v=77")) ||
-            (await caches.match("./app.js?v=76")) ||
-            (await caches.match("./app.js?v=75")) ||
-            (await caches.match("./app.js?v=74")) ||
-            (await caches.match("./app.js?v=73")) ||
-            (await caches.match("./app.js?v=72")) ||
-            (await caches.match("./app.js?v=71")) ||
-            (await caches.match("./app.js?v=70")) ||
-            (await caches.match("./app.js?v=69")) ||
-            (await caches.match("./app.js?v=68")) ||
-            (await caches.match("./app.js?v=67")) ||
-            (await caches.match("./app.js?v=66")) ||
-            (await caches.match("./app.js?v=65")) ||
-            (await caches.match("./app.js?v=64")) ||
-            (await caches.match("./app.js?v=63")) ||
-            (await caches.match("./app.js?v=62")) ||
-            (await caches.match("./app.js?v=61")) ||
-            (await caches.match("./app.js?v=60")) ||
-            (await caches.match("./app.js?v=59")) ||
-            (await caches.match("./app.js?v=58")) ||
-            (await caches.match("./app.js?v=57")) ||
-            (await caches.match("./app.js?v=56")) ||
-            (await caches.match("./app.js?v=55")) ||
-            (await caches.match("./app.js?v=54")) ||
-            (await caches.match("./app.js?v=53")) ||
-            (await caches.match("./app.js?v=52")) ||
-            (await caches.match("./app.js?v=51")) ||
-            (await caches.match("./app.js?v=50")) ||
-            (await caches.match("./app.js?v=49")) ||
-            (await caches.match("./app.js?v=48")) ||
-            (await caches.match("./app.js?v=47")) ||
-            (await caches.match("./app.js?v=46")) ||
-            (await caches.match("./app.js?v=45")) ||
-            (await caches.match("./app.js?v=44")) ||
-            (await caches.match("./app.js?v=43")) ||
-            (await caches.match("./app.js?v=42")) ||
+            (await caches.match(
+              "./app.js?v=78"
+            )) ||
+            (await caches.match(
+              "./app.js?v=77"
+            )) ||
+            (await caches.match(
+              "./app.js?v=76"
+            )) ||
+            (await caches.match(
+              "./app.js?v=75"
+            )) ||
             Response.error()
           );
         }
 
-        if (url.pathname.endsWith("/manifest.json")) {
+        if (
+          url.pathname.endsWith(
+            "/manifest.json"
+          )
+        ) {
           return (
-            (await caches.match("./manifest.json")) ||
+            (await caches.match(
+              "./manifest.json"
+            )) ||
             Response.error()
           );
         }
 
-        if (url.pathname.endsWith("/icon.svg")) {
+        if (
+          url.pathname.endsWith("/icon.svg")
+        ) {
           return (
             (await caches.match("./icon.svg")) ||
             Response.error()
