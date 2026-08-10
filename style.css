@@ -5332,3 +5332,415 @@ body.rd-trophy-open {
     margin-top: 3px;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU Public Leaderboard               */
+/* Append once to the bottom of style.css v54         */
+/* ================================================== */
+
+.rd-general-menu-icon.leaderboard {
+  border-color: rgba(139, 111, 255, 0.38);
+  background: rgba(139, 111, 255, 0.12);
+  color: #c1b2ff;
+  font-size: 23px;
+  font-weight: 950;
+}
+
+.rd-leaderboard-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rd-leaderboard-heading > div {
+  min-width: 0;
+}
+
+.rd-leaderboard-back-btn {
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 0.8;
+}
+
+.rd-leaderboard-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.rd-leaderboard-privacy,
+.rd-leaderboard-join-card,
+.rd-leaderboard-my-card {
+  border: 1px solid var(--line);
+  border-radius: 17px;
+}
+
+.rd-leaderboard-privacy {
+  padding: 13px;
+  border-color: rgba(75, 179, 255, 0.28);
+  background: rgba(75, 179, 255, 0.075);
+}
+
+.rd-leaderboard-privacy strong {
+  display: block;
+  color: #bfe4ff;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+
+.rd-leaderboard-privacy p {
+  margin: 6px 0 0;
+  color: rgba(213, 238, 255, 0.72);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.rd-leaderboard-join-card {
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.rd-leaderboard-join-card .toggle-row {
+  padding: 3px;
+  border: 0;
+  background: transparent;
+}
+
+.rd-leaderboard-my-card {
+  padding: 14px;
+  background:
+    radial-gradient(
+      circle at 90% 10%,
+      rgba(139, 111, 255, 0.15),
+      transparent 42%
+    ),
+    rgba(255, 255, 255, 0.035);
+}
+
+.rd-leaderboard-my-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rd-leaderboard-my-title > span:first-child {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.rd-leaderboard-visibility-badge {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.rd-leaderboard-visibility-badge.is-public {
+  border-color: rgba(56, 214, 122, 0.35);
+  background: rgba(56, 214, 122, 0.11);
+  color: #8af1b5;
+}
+
+.rd-leaderboard-my-stats {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.rd-leaderboard-my-stats > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.rd-leaderboard-my-stats span,
+.rd-leaderboard-my-stats strong {
+  display: block;
+}
+
+.rd-leaderboard-my-stats span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.rd-leaderboard-my-stats strong {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 21px;
+  font-weight: 950;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#rd76LeaderboardAccountName {
+  margin: 10px 1px 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.rd-leaderboard-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 1px 0;
+}
+
+.rd-leaderboard-list-heading strong,
+.rd-leaderboard-list-heading span {
+  display: block;
+}
+
+.rd-leaderboard-list-heading strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.rd-leaderboard-list-heading span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.rd-leaderboard-refresh-btn {
+  width: auto;
+  min-width: 78px;
+  min-height: 36px;
+  padding: 0 11px;
+  border-radius: 12px;
+  font-size: 11px;
+}
+
+.rd-leaderboard-list {
+  display: grid;
+  gap: 8px;
+}
+
+.rd-leaderboard-row {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 66px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.rd-leaderboard-row.is-me {
+  padding-bottom: 27px;
+  border-color: rgba(75, 179, 255, 0.42);
+  background: rgba(75, 179, 255, 0.09);
+  box-shadow: inset 3px 0 0 rgba(75, 179, 255, 0.7);
+}
+
+.rd-leaderboard-rank {
+  min-width: 44px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.rd-leaderboard-rank.first {
+  border-color: rgba(255, 196, 61, 0.42);
+  background: rgba(255, 196, 61, 0.13);
+  color: #ffd878;
+}
+
+.rd-leaderboard-rank.second {
+  border-color: rgba(210, 220, 234, 0.35);
+  background: rgba(210, 220, 234, 0.1);
+  color: #e2e9f2;
+}
+
+.rd-leaderboard-rank.third {
+  border-color: rgba(217, 139, 85, 0.4);
+  background: rgba(217, 139, 85, 0.12);
+  color: #efb184;
+}
+
+.rd-leaderboard-user,
+.rd-leaderboard-score {
+  min-width: 0;
+}
+
+.rd-leaderboard-user strong,
+.rd-leaderboard-user span,
+.rd-leaderboard-score strong,
+.rd-leaderboard-score span {
+  display: block;
+}
+
+.rd-leaderboard-user strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rd-leaderboard-user span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.rd-leaderboard-score {
+  text-align: right;
+}
+
+.rd-leaderboard-score strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.rd-leaderboard-score span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.rd-leaderboard-you-badge {
+  position: absolute;
+  right: 11px;
+  bottom: 7px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(75, 179, 255, 0.2);
+  color: #9bd5ff;
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.rd-leaderboard-empty {
+  padding: 22px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.rd-leaderboard-empty.error {
+  border-color: rgba(255, 77, 77, 0.3);
+  background: rgba(255, 77, 77, 0.07);
+  color: #ffc1c1;
+}
+
+.rd-leaderboard-position-gap {
+  padding: 7px 10px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.rd-leaderboard-sync-note,
+.rd-leaderboard-beta-note {
+  margin: 0;
+  padding: 10px 11px;
+  border-radius: 13px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.rd-leaderboard-sync-note {
+  border: 1px solid rgba(255, 138, 24, 0.18);
+  background: rgba(255, 138, 24, 0.06);
+  color: rgba(255, 224, 195, 0.72);
+}
+
+.rd-leaderboard-beta-note {
+  color: var(--faint);
+}
+
+@media (max-width: 420px) {
+  .rd-leaderboard-content {
+    gap: 10px;
+    padding: 11px;
+  }
+
+  .rd-leaderboard-row {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 9px 10px;
+  }
+
+  .rd-leaderboard-row.is-me {
+    padding-bottom: 26px;
+  }
+
+  .rd-leaderboard-rank {
+    min-width: 40px;
+    height: 40px;
+  }
+
+  .rd-leaderboard-score strong {
+    font-size: 13px;
+  }
+}
+
+@media (max-height: 650px) {
+  .rd-leaderboard-privacy,
+  .rd-leaderboard-join-card,
+  .rd-leaderboard-my-card {
+    padding: 10px;
+  }
+
+  .rd-leaderboard-my-stats {
+    margin-top: 9px;
+  }
+
+  .rd-leaderboard-my-stats > div {
+    padding: 9px 10px;
+  }
+}
