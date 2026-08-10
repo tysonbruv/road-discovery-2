@@ -1,7 +1,7 @@
 "use strict";
 
 /*
-  Road Discovery AU v74 service worker
+  Road Discovery AU v75 service worker
 
   Personal trail colour choices.
 
@@ -13,7 +13,7 @@
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v72";
+const CACHE_NAME = "road-discovery-au-v75";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,6 +24,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=54",
+  "./app.js?v=74",
   "./app.js?v=73",
   "./style.css?v=53",
   "./app.js?v=72",
@@ -207,6 +208,7 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=74")) ||
             (await caches.match("./app.js?v=73")) ||
             (await caches.match("./app.js?v=72")) ||
             (await caches.match("./app.js?v=71")) ||
