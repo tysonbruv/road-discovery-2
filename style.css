@@ -5122,3 +5122,213 @@ body.rd-trophy-open {
     max-height: calc(100dvh - 16px);
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU General Menu                     */
+/* Styles for the app.js v73 extension                */
+/* Append once to the bottom of style.css v53         */
+/* ================================================== */
+
+.rd-general-menu-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.rd-general-menu-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rd-general-menu-item {
+  width: 100%;
+  min-height: 82px;
+  display: grid;
+  grid-template-columns:
+    48px
+    minmax(0, 1fr)
+    22px;
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.038);
+  color: var(--text);
+  text-align: left;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.rd-general-menu-item:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rd-general-menu-item:active {
+  transform: scale(0.985);
+}
+
+.rd-general-menu-item:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.rd-general-menu-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.2);
+  font-size: 23px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.rd-general-menu-icon.hidden-discovery {
+  border-color: rgba(75, 179, 255, 0.35);
+  background: rgba(75, 179, 255, 0.11);
+  color: #7bc7ff;
+  font-size: 28px;
+}
+
+.rd-general-menu-icon.trophy {
+  border-color: rgba(255, 138, 24, 0.36);
+  background: rgba(255, 138, 24, 0.11);
+  color: #ffad5c;
+}
+
+.rd-general-menu-icon.settings {
+  color: rgba(244, 247, 251, 0.88);
+  font-size: 24px;
+}
+
+.rd-general-menu-icon.about {
+  border-color: rgba(56, 214, 122, 0.3);
+  background: rgba(56, 214, 122, 0.09);
+  color: #72e8a5;
+  font-family:
+    Georgia,
+    "Times New Roman",
+    serif;
+  font-size: 25px;
+  font-style: italic;
+}
+
+.rd-general-menu-copy {
+  min-width: 0;
+}
+
+.rd-general-menu-copy strong,
+.rd-general-menu-copy small {
+  display: block;
+}
+
+.rd-general-menu-copy strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.rd-general-menu-copy small {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.rd-general-menu-arrow {
+  color: var(--faint);
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: right;
+}
+
+.rd-general-menu-safety {
+  margin: auto 0 0;
+  padding: 11px 12px;
+  border:
+    1px solid rgba(255, 138, 24, 0.2);
+  border-radius: 14px;
+  background: rgba(255, 138, 24, 0.065);
+  color: rgba(255, 224, 195, 0.72);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.rd-settings-back-btn {
+  font-size: 35px;
+  font-weight: 500;
+  line-height: 0.8;
+}
+
+@media (max-width: 420px) {
+  .rd-general-menu-item {
+    min-height: 78px;
+    grid-template-columns:
+      44px
+      minmax(0, 1fr)
+      18px;
+    gap: 10px;
+    padding: 11px;
+  }
+
+  .rd-general-menu-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+  }
+
+  .rd-general-menu-copy strong {
+    font-size: 14px;
+  }
+
+  .rd-general-menu-copy small {
+    font-size: 10.5px;
+  }
+}
+
+@media (max-height: 600px) {
+  .rd-general-menu-content {
+    gap: 10px;
+    padding: 11px;
+  }
+
+  .rd-general-menu-list {
+    gap: 7px;
+  }
+
+  .rd-general-menu-item {
+    min-height: 66px;
+    grid-template-columns:
+      40px
+      minmax(0, 1fr)
+      18px;
+    padding: 9px 10px;
+  }
+
+  .rd-general-menu-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    font-size: 20px;
+  }
+
+  .rd-general-menu-copy small {
+    margin-top: 3px;
+  }
+}
