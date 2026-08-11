@@ -20578,3 +20578,590 @@ renderAuthState = function () {
 
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v79 discovery country browser    */
+/* Append this block once to the bottom of app.js v78 */
+/* ================================================== */
+
+const RD79_COUNTRIES = Object.freeze([
+  {
+    code: "AU",
+    name: "Australia"
+  },
+  {
+    code: "NZ",
+    name: "New Zealand",
+    comingSoon: true
+  }
+]);
+
+const RD79_AU_REGIONS = Object.freeze([
+  { code: "NSW", name: "New South Wales" },
+  {
+    code: "ACT",
+    name: "Australian Capital Territory"
+  },
+  { code: "QLD", name: "Queensland" },
+  { code: "VIC", name: "Victoria" },
+  { code: "TAS", name: "Tasmania" },
+  { code: "SA", name: "South Australia" },
+  { code: "WA", name: "Western Australia" },
+  { code: "NT", name: "Northern Territory" }
+]);
+
+const roadDiscoveryV79 = {
+  rd72OpenHiddenDiscoveryRoom,
+  rd72RenderHiddenDiscoveries
+};
+
+state.rd79HiddenDiscoveryBrowser = {
+  view: "countries",
+  countryCode: "",
+  regionCode: ""
+};
+
+function rd79AllDiscoveries() {
+  if (
+    typeof rd74AllHiddenDiscoveries === "function"
+  ) {
+    return rd74AllHiddenDiscoveries();
+  }
+
+  return Array.from(RD72_HIDDEN_DISCOVERIES);
+}
+
+function rd79DiscoveryCountryCode(discovery) {
+  const explicitCode =
+    discovery?.countryCode || discovery?.country;
+
+  return String(
+    explicitCode || "AU"
+  ).toUpperCase();
+}
+
+function rd79DiscoveryRegionCode(discovery) {
+  const explicitCode =
+    discovery?.regionCode || discovery?.stateCode;
+
+  if (explicitCode) {
+    return String(explicitCode).toUpperCase();
+  }
+
+  const regionText = String(
+    discovery?.region || ""
+  ).toUpperCase();
+
+  const match = regionText.match(
+    /\b(NSW|ACT|QLD|VIC|TAS|SA|WA|NT)\b/
+  );
+
+  return match ? match[1] : "";
+}
+
+function rd79DiscoveriesFor(
+  countryCode,
+  regionCode = ""
+) {
+  const country = String(
+    countryCode || ""
+  ).toUpperCase();
+
+  const region = String(
+    regionCode || ""
+  ).toUpperCase();
+
+  return rd79AllDiscoveries().filter(
+    (discovery) => {
+      if (
+        rd79DiscoveryCountryCode(discovery) !==
+        country
+      ) {
+        return false;
+      }
+
+      return (
+        !region ||
+        rd79DiscoveryRegionCode(discovery) === region
+      );
+    }
+  );
+}
+
+function rd79CompletedCount(discoveries) {
+  return discoveries.filter((discovery) =>
+    Boolean(
+      state.hiddenDiscoveries.completed[
+        discovery.id
+      ]
+    )
+  ).length;
+}
+
+function rd79ProgressText(discoveries) {
+  return (
+    `${rd79CompletedCount(discoveries)} of ` +
+    `${discoveries.length} discovered`
+  );
+}
+
+function rd79MenuCard(options) {
+  const {
+    kind,
+    code,
+    name,
+    discoveries,
+    comingSoon = false
+  } = options;
+
+  const hasDiscoveries =
+    discoveries.length > 0;
+
+  const disabled =
+    comingSoon || !hasDiscoveries;
+
+  const status = disabled
+    ? "Coming soon"
+    : `${rd79CompletedCount(discoveries)} / ` +
+      `${discoveries.length} discovered`;
+
+  const dataAttribute =
+    kind === "country"
+      ? `data-rd79-country="${escapeHtml(code)}"`
+      : `data-rd79-region="${escapeHtml(code)}"`;
+
+  return `
+    <button
+      class="rd79-menu-card ${
+        disabled ? "coming-soon" : "available"
+      }"
+      type="button"
+      ${dataAttribute}
+      ${
+        disabled
+          ? 'disabled aria-disabled="true"'
+          : ""
+      }
+    >
+      <span
+        class="rd79-menu-code"
+        aria-hidden="true"
+      >
+        ${escapeHtml(code)}
+      </span>
+
+      <span class="rd79-menu-copy">
+        <strong>
+          ${escapeHtml(name)}
+        </strong>
+
+        <small>
+          ${escapeHtml(status)}
+        </small>
+      </span>
+
+      <span
+        class="rd79-menu-arrow"
+        aria-hidden="true"
+      >
+        ${disabled ? "" : "›"}
+      </span>
+    </button>
+  `;
+}
+
+function rd79RoomElements() {
+  const overlay = $(
+    "rd72HiddenDiscoveryOverlay"
+  );
+
+  return {
+    overlay,
+
+    card: overlay?.querySelector(
+      ".rd-hidden-room-card"
+    ),
+
+    title: $(
+      "rd72HiddenDiscoveryTitle"
+    ),
+
+    heading: overlay?.querySelector(
+      ".rd-hidden-state-heading"
+    ),
+
+    progress: $(
+      "rd72HiddenDiscoveryProgress"
+    ),
+
+    list: $(
+      "rd72HiddenDiscoveryList"
+    ),
+
+    doneButton: $(
+      "rd72HiddenDiscoveryDoneBtn"
+    )
+  };
+}
+
+function rd79SetRoomLayout(options) {
+  const {
+    title,
+    heading,
+    progress,
+    doneText,
+    menuView
+  } = options;
+
+  const elements = rd79RoomElements();
+
+  if (elements.title) {
+    elements.title.textContent = title;
+  }
+
+  if (elements.heading) {
+    elements.heading.textContent = heading;
+  }
+
+  if (elements.progress) {
+    elements.progress.textContent = progress;
+  }
+
+  if (elements.doneButton) {
+    elements.doneButton.textContent = doneText;
+  }
+
+  elements.card?.classList.toggle(
+    "rd79-hidden-menu-view",
+    Boolean(menuView)
+  );
+
+  elements.list?.classList.toggle(
+    "rd79-menu-list",
+    Boolean(menuView)
+  );
+
+  return elements;
+}
+
+function rd79RenderCountryMenu() {
+  const allDiscoveries =
+    rd79AllDiscoveries();
+
+  const elements = rd79SetRoomLayout({
+    title: "Hidden Discoveries",
+    heading: "Choose a country",
+    progress: rd79ProgressText(
+      allDiscoveries
+    ),
+    doneText: "Back to Map",
+    menuView: true
+  });
+
+  if (!elements.list) return;
+
+  elements.list.innerHTML =
+    RD79_COUNTRIES.map((country) =>
+      rd79MenuCard({
+        kind: "country",
+        code: country.code,
+        name: country.name,
+
+        discoveries:
+          rd79DiscoveriesFor(
+            country.code
+          ),
+
+        comingSoon:
+          country.comingSoon
+      })
+    ).join("");
+}
+
+function rd79RenderAustraliaMenu() {
+  const australiaDiscoveries =
+    rd79DiscoveriesFor("AU");
+
+  const elements = rd79SetRoomLayout({
+    title: "Australia",
+    heading: "States and territories",
+
+    progress: rd79ProgressText(
+      australiaDiscoveries
+    ),
+
+    doneText: "Back to Countries",
+    menuView: true
+  });
+
+  if (!elements.list) return;
+
+  elements.list.innerHTML =
+    RD79_AU_REGIONS.map((region) =>
+      rd79MenuCard({
+        kind: "region",
+        code: region.code,
+        name: region.name,
+
+        discoveries:
+          rd79DiscoveriesFor(
+            "AU",
+            region.code
+          )
+      })
+    ).join("");
+}
+
+function rd79RegionName(regionCode) {
+  return (
+    RD79_AU_REGIONS.find(
+      (region) =>
+        region.code === regionCode
+    )?.name || regionCode
+  );
+}
+
+function rd79RenderRegionDiscoveries() {
+  const browser =
+    state.rd79HiddenDiscoveryBrowser;
+
+  const discoveries =
+    rd79DiscoveriesFor(
+      browser.countryCode,
+      browser.regionCode
+    );
+
+  const regionName =
+    rd79RegionName(
+      browser.regionCode
+    );
+
+  const elements = rd79SetRoomLayout({
+    title: regionName,
+
+    heading:
+      `${browser.regionCode} ` +
+      `Hidden Discoveries`,
+
+    progress:
+      rd79ProgressText(discoveries),
+
+    doneText: "Back to Australia",
+    menuView: false
+  });
+
+  if (!elements.list) return;
+
+  if (discoveries.length === 0) {
+    elements.list.innerHTML = `
+      <div class="rd79-empty-state">
+        <strong>
+          Coming soon
+        </strong>
+
+        <span>
+          Hidden Discoveries have not been
+          added here yet.
+        </span>
+      </div>
+    `;
+
+    return;
+  }
+
+  elements.list.innerHTML =
+    discoveries
+      .map(rd72DiscoveryCard)
+      .join("");
+}
+
+function rd79RenderCurrentView() {
+  const browser =
+    state.rd79HiddenDiscoveryBrowser;
+
+  if (browser.view === "regions") {
+    rd79RenderAustraliaMenu();
+    return;
+  }
+
+  if (browser.view === "discoveries") {
+    rd79RenderRegionDiscoveries();
+    return;
+  }
+
+  rd79RenderCountryMenu();
+}
+
+function rd79OpenCountry(countryCode) {
+  if (countryCode !== "AU") return;
+
+  const browser =
+    state.rd79HiddenDiscoveryBrowser;
+
+  browser.view = "regions";
+  browser.countryCode = "AU";
+  browser.regionCode = "";
+
+  rd79RenderCurrentView();
+}
+
+function rd79OpenRegion(regionCode) {
+  const discoveries =
+    rd79DiscoveriesFor(
+      "AU",
+      regionCode
+    );
+
+  if (discoveries.length === 0) {
+    return;
+  }
+
+  const browser =
+    state.rd79HiddenDiscoveryBrowser;
+
+  browser.view = "discoveries";
+  browser.countryCode = "AU";
+  browser.regionCode = regionCode;
+
+  rd79RenderCurrentView();
+}
+
+function rd79HandleMenuClick(event) {
+  const countryButton =
+    event.target.closest(
+      "[data-rd79-country]"
+    );
+
+  if (
+    countryButton &&
+    !countryButton.disabled
+  ) {
+    rd79OpenCountry(
+      countryButton.dataset.rd79Country
+    );
+
+    return;
+  }
+
+  const regionButton =
+    event.target.closest(
+      "[data-rd79-region]"
+    );
+
+  if (
+    regionButton &&
+    !regionButton.disabled
+  ) {
+    rd79OpenRegion(
+      regionButton.dataset.rd79Region
+    );
+  }
+}
+
+function rd79HandleRoomBack(event) {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  const browser =
+    state.rd79HiddenDiscoveryBrowser;
+
+  if (browser.view === "discoveries") {
+    browser.view = "regions";
+    browser.regionCode = "";
+
+    rd79RenderCurrentView();
+    return;
+  }
+
+  if (browser.view === "regions") {
+    browser.view = "countries";
+    browser.countryCode = "";
+
+    rd79RenderCurrentView();
+    return;
+  }
+
+  rd72CloseHiddenDiscoveryRoom();
+}
+
+function rd79ResetBrowserView() {
+  const browser =
+    state.rd79HiddenDiscoveryBrowser;
+
+  browser.view = "countries";
+  browser.countryCode = "";
+  browser.regionCode = "";
+}
+
+function rd79InitDiscoveryBrowser() {
+  const list = $(
+    "rd72HiddenDiscoveryList"
+  );
+
+  const doneButton = $(
+    "rd72HiddenDiscoveryDoneBtn"
+  );
+
+  if (
+    !list ||
+    !doneButton ||
+    list.dataset.rd79BrowserBound === "1"
+  ) {
+    return;
+  }
+
+  list.dataset.rd79BrowserBound = "1";
+
+  list.addEventListener(
+    "click",
+    rd79HandleMenuClick
+  );
+
+  /*
+    Capture this button before its original
+    Back to Map listener. It now travels back
+    through Region -> Country -> Map.
+  */
+  doneButton.addEventListener(
+    "click",
+    rd79HandleRoomBack,
+    true
+  );
+
+  rd79RenderCurrentView();
+}
+
+/* Start at the country screen whenever opened. */
+rd72OpenHiddenDiscoveryRoom = function () {
+  rd79ResetBrowserView();
+
+  const result =
+    roadDiscoveryV79
+      .rd72OpenHiddenDiscoveryRoom();
+
+  rd79RenderCurrentView();
+  return result;
+};
+
+/*
+  Preserve the selected country/state screen when
+  progress synchronises or changes.
+*/
+rd72RenderHiddenDiscoveries = function () {
+  const result =
+    roadDiscoveryV79
+      .rd72RenderHiddenDiscoveries();
+
+  rd79RenderCurrentView();
+  return result;
+};
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd79InitDiscoveryBrowser,
+    { once: true }
+  );
+} else {
+  rd79InitDiscoveryBrowser();
+}
