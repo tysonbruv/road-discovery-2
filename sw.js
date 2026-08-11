@@ -1,19 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v79 service worker
+  Road Discovery AU v80 service worker
 
-  Road Profile required before Start Drive.
+  Hidden Discoveries country and state browser.
 
   Expected frontend versions:
-  - app.js?v=78
-  - style.css?v=57
+  - app.js?v=79
+  - style.css?v=58
 
   Recent files are also recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v79";
+const CACHE_NAME = "road-discovery-au-v80";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,16 +23,16 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
-  "./style.css?v=57",
-  "./app.js?v=78",
+  "./style.css?v=58",
+  "./app.js?v=79",
 
   /* Recent fallbacks used during a staged GitHub update. */
+  "./style.css?v=57",
+  "./app.js?v=78",
   "./style.css?v=56",
   "./app.js?v=77",
   "./style.css?v=55",
-  "./app.js?v=76",
-  "./style.css?v=54",
-  "./app.js?v=75"
+  "./app.js?v=76"
 ];
 
 /* -------------------------------------------------- */
@@ -52,7 +52,8 @@ self.addEventListener("install", (event) => {
               await cache.add(file);
             } catch (error) {
               console.warn(
-                `Could not pre-cache ${file}. It will be cached when available.`,
+                `Could not pre-cache ${file}. ` +
+                  `It will be cached when available.`,
                 error
               );
             }
@@ -75,7 +76,8 @@ self.addEventListener("activate", (event) => {
         return Promise.all(
           cacheNames
             .filter(
-              (cacheName) => cacheName !== CACHE_NAME
+              (cacheName) =>
+                cacheName !== CACHE_NAME
             )
             .map((cacheName) =>
               caches.delete(cacheName)
@@ -136,7 +138,9 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(async () => {
           return (
-            (await caches.match("./index.html")) ||
+            (await caches.match(
+              "./index.html"
+            )) ||
             (await caches.match("./"))
           );
         })
@@ -162,7 +166,10 @@ self.addEventListener("fetch", (event) => {
           caches
             .open(CACHE_NAME)
             .then((cache) => {
-              cache.put(request, responseCopy);
+              cache.put(
+                request,
+                responseCopy
+              );
             });
         }
 
@@ -177,9 +184,14 @@ self.addEventListener("fetch", (event) => {
         }
 
         if (
-          url.pathname.endsWith("/style.css")
+          url.pathname.endsWith(
+            "/style.css"
+          )
         ) {
           return (
+            (await caches.match(
+              "./style.css?v=58"
+            )) ||
             (await caches.match(
               "./style.css?v=57"
             )) ||
@@ -189,17 +201,19 @@ self.addEventListener("fetch", (event) => {
             (await caches.match(
               "./style.css?v=55"
             )) ||
-            (await caches.match(
-              "./style.css?v=54"
-            )) ||
             Response.error()
           );
         }
 
         if (
-          url.pathname.endsWith("/app.js")
+          url.pathname.endsWith(
+            "/app.js"
+          )
         ) {
           return (
+            (await caches.match(
+              "./app.js?v=79"
+            )) ||
             (await caches.match(
               "./app.js?v=78"
             )) ||
@@ -208,9 +222,6 @@ self.addEventListener("fetch", (event) => {
             )) ||
             (await caches.match(
               "./app.js?v=76"
-            )) ||
-            (await caches.match(
-              "./app.js?v=75"
             )) ||
             Response.error()
           );
@@ -230,10 +241,14 @@ self.addEventListener("fetch", (event) => {
         }
 
         if (
-          url.pathname.endsWith("/icon.svg")
+          url.pathname.endsWith(
+            "/icon.svg"
+          )
         ) {
           return (
-            (await caches.match("./icon.svg")) ||
+            (await caches.match(
+              "./icon.svg"
+            )) ||
             Response.error()
           );
         }
