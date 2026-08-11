@@ -6120,3 +6120,186 @@ body.rd-trophy-open {
     transition: none !important;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU country/state discovery menu     */
+/* Append this block once to style.css v57            */
+/* ================================================== */
+
+.rd79-hidden-menu-view .rd-hidden-safety-note {
+  display: none;
+}
+
+.rd79-hidden-menu-view .rd-hidden-summary {
+  margin-top: 18px;
+}
+
+.rd-hidden-list.rd79-menu-list {
+  align-items: stretch;
+}
+
+.rd79-menu-card {
+  width: 100%;
+  min-width: 0;
+  min-height: 88px;
+  display: grid;
+  grid-template-columns:
+    52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.18);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.rd79-menu-card.available {
+  border-color:
+    rgba(75, 179, 255, 0.26);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(75, 179, 255, 0.095),
+      rgba(255, 255, 255, 0.025)
+    );
+  cursor: pointer;
+}
+
+.rd79-menu-card.available:active {
+  transform: scale(0.985);
+}
+
+.rd79-menu-card.coming-soon {
+  opacity: 0.58;
+  cursor: default;
+}
+
+.rd79-menu-code {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border:
+    1px solid rgba(75, 179, 255, 0.32);
+  border-radius: 15px;
+  background:
+    rgba(75, 179, 255, 0.1);
+  color: #8fd1ff;
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+}
+
+.rd79-menu-card.coming-soon
+  .rd79-menu-code {
+  border-color:
+    rgba(255, 255, 255, 0.12);
+  background:
+    rgba(255, 255, 255, 0.045);
+  color: var(--muted);
+}
+
+.rd79-menu-copy {
+  min-width: 0;
+}
+
+.rd79-menu-copy strong,
+.rd79-menu-copy small {
+  display: block;
+}
+
+.rd79-menu-copy strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.rd79-menu-copy small {
+  margin-top: 5px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.rd79-menu-card.available
+  .rd79-menu-copy small {
+  color:
+    rgba(185, 225, 255, 0.76);
+}
+
+.rd79-menu-arrow {
+  width: 22px;
+  color: #7bc7ff;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: right;
+}
+
+.rd79-empty-state {
+  grid-column: 1 / -1;
+  padding: 28px 18px;
+  border:
+    1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 17px;
+  background:
+    rgba(255, 255, 255, 0.025);
+  text-align: center;
+}
+
+.rd79-empty-state strong,
+.rd79-empty-state span {
+  display: block;
+}
+
+.rd79-empty-state strong {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.rd79-empty-state span {
+  margin-top: 7px;
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd79-menu-card.available:hover {
+    border-color:
+      rgba(75, 179, 255, 0.48);
+    background:
+      linear-gradient(
+        145deg,
+        rgba(75, 179, 255, 0.15),
+        rgba(255, 255, 255, 0.035)
+      );
+  }
+}
+
+@media (max-width: 480px) {
+  .rd79-menu-card {
+    min-height: 82px;
+    grid-template-columns:
+      48px minmax(0, 1fr) auto;
+    gap: 11px;
+    padding: 12px;
+  }
+
+  .rd79-menu-code {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+  }
+}
