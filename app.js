@@ -23482,3 +23482,2818 @@ if (document.readyState === "loading") {
 } else {
   rd85InitWolfPackMode();
 }
+
+/* ================================================== */
+/* Road Discovery AU v86 Road Conquest                */
+/* app.js Part 1 of 2                                 */
+/* Append below the existing v85 Wolf Pack block      */
+/* ================================================== */
+
+const RD86_CONQUEST_RED = "#ff4d4d";
+const RD86_CONQUEST_BLUE = "#4bb3ff";
+const RD86_CONQUEST_NEUTRAL = "#9aa3b2";
+const RD86_CONQUEST_LOCATION_SEND_MS = 3000;
+const RD86_CONQUEST_ROUTE_REROUTE_MS = 45000;
+const RD86_CONQUEST_ROUTE_REROUTE_M = 140;
+const RD86_CONQUEST_MIN_PLAYERS = 4;
+const RD86_CONQUEST_MAX_PLAYERS = 8;
+const RD86_CONQUEST_MIN_CANDIDATES = 18;
+const RD86_CONQUEST_MAX_CANDIDATES = 60;
+const RD86_CONQUEST_CANDIDATE_MIN_M = 700;
+const RD86_CONQUEST_CANDIDATE_MAX_M = 2450;
+const RD86_CONQUEST_CANDIDATE_SPACING_M = 135;
+const RD86_CONQUEST_ROAD_DENSITY_RADIUS_M = 450;
+const RD86_CONQUEST_MIN_ROAD_COUNT = 15;
+
+const roadDiscoveryV86 = {
+  renderMultiplayerState,
+  pollHideSeekState,
+  maybeSendMultiplayerLocation,
+  startMultiplayerMode,
+  stopMultiplayerMode,
+  leaveMultiplayerRoom,
+  startHideSeekRound,
+  markerColour: hs50OwnMarkerColour,
+  markerHaloColour: hs50OwnMarkerHaloColour
+};
+
+state.conquest = {
+  roundId: null,
+  phase: "",
+  viewerTeam: "",
+  viewerCheckedIn: false,
+  winner: null,
+
+  deploymentEndsAt: null,
+  graceEndsAt: null,
+  countdownEndsAt: null,
+  matchStartsAt: null,
+  matchEndsAt: null,
+  overtimeEndsAt: null,
+  serverOffsetMs: 0,
+
+  startPoint: null,
+  startRadiusM: 150,
+  objectiveRadiusM: 100,
+  cacheCollectRadiusM: 40,
+
+  redScore: 0,
+  blueScore: 0,
+  redReadyCount: 0,
+  blueReadyCount: 0,
+  redTotal: 0,
+  blueTotal: 0,
+
+  players: [],
+  objectives: [],
+  caches: [],
+
+  starting: false,
+  polling: false,
+  updatingLocation: false,
+  leaving: false,
+  preparationText: "",
+  unavailableMessage: "",
+  lastLocationSentAt: 0,
+
+  layer: null,
+  startCircle: null,
+  startMarker: null,
+  teammateMarkers: new Map(),
+  objectiveLayers: new Map(),
+  cacheMarkers: new Map(),
+
+  routeLine: null,
+  routeHalo: null,
+  routeLoading: false,
+  routeRequestId: 0,
+  routeKey: "",
+  lastRouteStartPoint: null,
+  lastRouteAt: 0,
+
+  countdownTimer: null,
+  resultTimer: null,
+  resultShownFor: ""
+};
+
+function rd86CacheConquestElements() {
+  [
+    "conquestSetupBox",
+    "startConquestBtn",
+    "conquestPreparationText",
+    "conquestGameBox",
+    "conquestTeamBadge",
+    "conquestPhaseBadge",
+    "conquestTimerValue",
+    "conquestRedScore",
+    "conquestBlueScore",
+    "conquestGameStatus",
+    "conquestPlayersList",
+    "leaveConquestBtn",
+    "conquestMapHud",
+    "conquestMapTeam",
+    "conquestMapPhase",
+    "conquestMapTimer",
+    "conquestMapRedScore",
+    "conquestMapBlueScore",
+    "conquestFocusStrip",
+    "conquestResultOverlay",
+    "conquestResultEyebrow",
+    "conquestResultTitle",
+    "conquestResultScore"
+  ].forEach((id) => {
+    els[id] = $(id);
+  });
+}
+
+function hasActiveConquestRound() {
+  return Boolean(
+    state.conquest.roundId &&
+    [
+      "deployment",
+      "countdown",
+      "active",
+      "overtime"
+    ].includes(state.conquest.phase)
+  );
+}
+
+function rd86HasConquestRound() {
+  return Boolean(state.conquest.roundId);
+}
+
+function rd86TeamColour(team) {
+  return team === "red"
+    ? RD86_CONQUEST_RED
+    : team === "blue"
+      ? RD86_CONQUEST_BLUE
+      : RD86_CONQUEST_NEUTRAL;
+}
+
+function rd86TeamLabel(team) {
+  if (team === "red") return "Red Team";
+  if (team === "blue") return "Blue Team";
+  return "Team";
+}
+
+function rd86EnsureConquestLayer() {
+  if (
+    state.map &&
+    !state.conquest.layer
+  ) {
+    state.conquest.layer =
+      L.layerGroup().addTo(state.map);
+  }
+}
+
+function rd86ClearLayerItem(item) {
+  if (
+    item &&
+    state.conquest.layer
+  ) {
+    state.conquest.layer.removeLayer(item);
+  }
+}
+
+function rd86ClearConquestRoute(options = {}) {
+  const keepRequest =
+    options.keepRequest === true;
+
+  if (!keepRequest) {
+    state.conquest.routeRequestId += 1;
+    state.conquest.routeLoading = false;
+  }
+
+  rd86ClearLayerItem(
+    state.conquest.routeHalo
+  );
+
+  rd86ClearLayerItem(
+    state.conquest.routeLine
+  );
+
+  state.conquest.routeHalo = null;
+  state.conquest.routeLine = null;
+  state.conquest.routeKey = "";
+  state.conquest.lastRouteStartPoint = null;
+  state.conquest.lastRouteAt = 0;
+}
+
+function rd86ClearConquestVisuals() {
+  rd86ClearConquestRoute();
+
+  rd86ClearLayerItem(
+    state.conquest.startCircle
+  );
+
+  rd86ClearLayerItem(
+    state.conquest.startMarker
+  );
+
+  state.conquest.startCircle = null;
+  state.conquest.startMarker = null;
+
+  for (
+    const marker of
+    state.conquest.teammateMarkers.values()
+  ) {
+    rd86ClearLayerItem(marker);
+  }
+
+  state.conquest.teammateMarkers.clear();
+
+  for (
+    const layers of
+    state.conquest.objectiveLayers.values()
+  ) {
+    rd86ClearLayerItem(layers.circle);
+    rd86ClearLayerItem(layers.marker);
+  }
+
+  state.conquest.objectiveLayers.clear();
+
+  for (
+    const marker of
+    state.conquest.cacheMarkers.values()
+  ) {
+    rd86ClearLayerItem(marker);
+  }
+
+  state.conquest.cacheMarkers.clear();
+}
+
+function rd86StopConquestCountdown() {
+  if (
+    state.conquest.countdownTimer !== null
+  ) {
+    window.clearInterval(
+      state.conquest.countdownTimer
+    );
+
+    state.conquest.countdownTimer = null;
+  }
+}
+
+function rd86StartConquestCountdown() {
+  rd86StopConquestCountdown();
+
+  if (!rd86HasConquestRound()) return;
+
+  state.conquest.countdownTimer =
+    window.setInterval(() => {
+      rd86RenderConquestState();
+    }, 1000);
+}
+
+function rd86ResetConquestState(options = {}) {
+  const clearRound =
+    options.clearRound !== false;
+
+  const render =
+    options.render !== false;
+
+  rd86StopConquestCountdown();
+  rd86ClearConquestVisuals();
+
+  if (state.conquest.resultTimer !== null) {
+    window.clearTimeout(
+      state.conquest.resultTimer
+    );
+
+    state.conquest.resultTimer = null;
+  }
+
+  els.conquestResultOverlay
+    ?.classList.add("hidden");
+
+  state.conquest.starting = false;
+  state.conquest.polling = false;
+  state.conquest.updatingLocation = false;
+  state.conquest.leaving = false;
+  state.conquest.preparationText = "";
+  state.conquest.unavailableMessage = "";
+  state.conquest.lastLocationSentAt = 0;
+
+  if (clearRound) {
+    state.conquest.roundId = null;
+    state.conquest.phase = "";
+    state.conquest.viewerTeam = "";
+    state.conquest.viewerCheckedIn = false;
+    state.conquest.winner = null;
+
+    state.conquest.deploymentEndsAt = null;
+    state.conquest.graceEndsAt = null;
+    state.conquest.countdownEndsAt = null;
+    state.conquest.matchStartsAt = null;
+    state.conquest.matchEndsAt = null;
+    state.conquest.overtimeEndsAt = null;
+    state.conquest.serverOffsetMs = 0;
+
+    state.conquest.startPoint = null;
+    state.conquest.startRadiusM = 150;
+    state.conquest.objectiveRadiusM = 100;
+    state.conquest.cacheCollectRadiusM = 40;
+
+    state.conquest.redScore = 0;
+    state.conquest.blueScore = 0;
+    state.conquest.redReadyCount = 0;
+    state.conquest.blueReadyCount = 0;
+    state.conquest.redTotal = 0;
+    state.conquest.blueTotal = 0;
+
+    state.conquest.players = [];
+    state.conquest.objectives = [];
+    state.conquest.caches = [];
+    state.conquest.resultShownFor = "";
+  }
+
+  document.body.classList.remove(
+    "conquest-game-active",
+    "conquest-red-team",
+    "conquest-blue-team"
+  );
+
+  hs47StyleHeadingMarker?.();
+
+  if (render) {
+    renderMultiplayerState();
+  }
+}
+
+function rd86NormaliseJsonArray(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+
+      return Array.isArray(parsed)
+        ? parsed
+        : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function rd86ConquestServerNow() {
+  return (
+    Date.now() +
+    state.conquest.serverOffsetMs
+  );
+}
+
+function rd86DeadlineForPhase() {
+  const serverNow =
+    rd86ConquestServerNow();
+
+  if (
+    state.conquest.phase === "deployment"
+  ) {
+    const deploymentMs = Date.parse(
+      state.conquest.deploymentEndsAt || ""
+    );
+
+    if (
+      Number.isFinite(deploymentMs) &&
+      serverNow < deploymentMs
+    ) {
+      return deploymentMs;
+    }
+
+    return Date.parse(
+      state.conquest.graceEndsAt || ""
+    );
+  }
+
+  if (
+    state.conquest.phase === "countdown"
+  ) {
+    return Date.parse(
+      state.conquest.countdownEndsAt || ""
+    );
+  }
+
+  if (state.conquest.phase === "active") {
+    return Date.parse(
+      state.conquest.matchEndsAt || ""
+    );
+  }
+
+  if (
+    state.conquest.phase === "overtime"
+  ) {
+    return Date.parse(
+      state.conquest.overtimeEndsAt || ""
+    );
+  }
+
+  return NaN;
+}
+
+function rd86FormatConquestCountdown() {
+  const deadline =
+    rd86DeadlineForPhase();
+
+  if (!Number.isFinite(deadline)) {
+    return "00:00";
+  }
+
+  const seconds = Math.max(
+    0,
+    Math.ceil(
+      (
+        deadline -
+        rd86ConquestServerNow()
+      ) / 1000
+    )
+  );
+
+  const minutes =
+    Math.floor(seconds / 60);
+
+  return (
+    `${String(minutes).padStart(2, "0")}:` +
+    `${String(seconds % 60).padStart(2, "0")}`
+  );
+}
+
+function rd86ConquestPhaseLabel() {
+  if (
+    state.conquest.phase === "deployment"
+  ) {
+    const deploymentMs = Date.parse(
+      state.conquest.deploymentEndsAt || ""
+    );
+
+    return (
+      Number.isFinite(deploymentMs) &&
+      rd86ConquestServerNow() >= deploymentMs
+    )
+      ? "Team grace"
+      : "Deployment";
+  }
+
+  if (
+    state.conquest.phase === "countdown"
+  ) {
+    return "Starting";
+  }
+
+  if (state.conquest.phase === "active") {
+    return "Conquest";
+  }
+
+  if (
+    state.conquest.phase === "overtime"
+  ) {
+    return "Overtime";
+  }
+
+  if (
+    state.conquest.phase === "finished"
+  ) {
+    return "Finished";
+  }
+
+  if (
+    state.conquest.phase === "cancelled"
+  ) {
+    return "Cancelled";
+  }
+
+  return "Waiting";
+}
+
+function rd86ConquestStatusText() {
+  if (
+    state.conquest.phase === "deployment"
+  ) {
+    if (state.conquest.viewerCheckedIn) {
+      return (
+        "Checked in. Waiting for both teams to reach " +
+        "their private starting areas."
+      );
+    }
+
+    return (
+      `Reach the ${rd86TeamLabel(
+        state.conquest.viewerTeam
+      )} starting area to check in.`
+    );
+  }
+
+  if (
+    state.conquest.phase === "countdown"
+  ) {
+    return (
+      "A, B and C will appear when the countdown " +
+      "reaches zero."
+    );
+  }
+
+  if (state.conquest.phase === "active") {
+    return (
+      "Capture A, B and C. Owned objectives score " +
+      "every three seconds. Collect Road Caches for bonuses."
+    );
+  }
+
+  if (
+    state.conquest.phase === "overtime"
+  ) {
+    return (
+      "Sudden victory: the next completed objective " +
+      "capture or Road Cache wins."
+    );
+  }
+
+  if (
+    state.conquest.phase === "finished"
+  ) {
+    if (state.conquest.winner === "draw") {
+      return "The match finished as a draw.";
+    }
+
+    return (
+      `${rd86TeamLabel(
+        state.conquest.winner
+      )} won the match.`
+    );
+  }
+
+  if (
+    state.conquest.phase === "cancelled"
+  ) {
+    return (
+      "The match was cancelled because both teams " +
+      "could not remain active."
+    );
+  }
+
+  return "Waiting for Road Conquest.";
+}
+
+function rd86RenderConquestPlayers() {
+  if (!els.conquestPlayersList) return;
+
+  const players = Array.isArray(
+    state.conquest.players
+  )
+    ? state.conquest.players
+    : [];
+
+  if (players.length === 0) {
+    els.conquestPlayersList.innerHTML = `
+      <div class="empty-state">
+        Teams appear when Conquest starts.
+      </div>
+    `;
+
+    return;
+  }
+
+  els.conquestPlayersList.innerHTML =
+    players
+      .map((player) => {
+        const team =
+          player?.team === "red"
+            ? "red"
+            : "blue";
+
+        const active =
+          player?.player_status === "active";
+
+        const checkedIn =
+          Boolean(player?.checked_in);
+
+        const status = !active
+          ? "Left"
+          : checkedIn
+            ? "Ready"
+            : "Travelling";
+
+        return `
+          <div class="conquest-player-row ${team}">
+            <span
+              class="conquest-player-dot ${team}"
+              aria-hidden="true"
+            ></span>
+
+            <div class="conquest-player-main">
+              <strong>
+                ${escapeHtml(
+                  player?.display_name ||
+                  "Rider"
+                )}${player?.is_me ? " • You" : ""}
+              </strong>
+
+              <span>
+                ${rd86TeamLabel(team)}
+              </span>
+            </div>
+
+            <span class="conquest-player-state">
+              ${escapeHtml(status)}
+            </span>
+          </div>
+        `;
+      })
+      .join("");
+}
+
+function rd86ObjectiveFocusHtml(objective) {
+  const code = String(
+    objective?.code || "?"
+  );
+
+  const owner =
+    objective?.owner_team === "red"
+      ? "red"
+      : objective?.owner_team === "blue"
+        ? "blue"
+        : "neutral";
+
+  const pressure = String(
+    objective?.pressure_state || "empty"
+  );
+
+  return `
+    <button
+      class="conquest-focus-btn objective ${owner}"
+      type="button"
+      data-conquest-kind="objective"
+      data-conquest-id="${escapeHtml(code)}"
+      aria-label="Focus objective ${escapeHtml(code)}"
+    >
+      <span
+        class="conquest-focus-arrow"
+        aria-hidden="true"
+      >
+        ↑
+      </span>
+
+      <strong>${escapeHtml(code)}</strong>
+
+      <small>
+        ${pressure === "contested" ? "Fight" : owner}
+      </small>
+    </button>
+  `;
+}
+
+function rd86CacheFocusHtml(cache) {
+  const id = String(cache?.id || "");
+
+  const tier = String(
+    cache?.tier || "bronze"
+  );
+
+  return `
+    <button
+      class="conquest-focus-btn cache ${escapeHtml(tier)}"
+      type="button"
+      data-conquest-kind="cache"
+      data-conquest-id="${escapeHtml(id)}"
+      aria-label="Focus ${escapeHtml(tier)} Road Cache"
+    >
+      <span
+        class="conquest-focus-arrow"
+        aria-hidden="true"
+      >
+        ↑
+      </span>
+
+      <strong>
+        +${Number(cache?.reward) || 0}
+      </strong>
+
+      <small>${escapeHtml(tier)}</small>
+    </button>
+  `;
+}
+
+function rd86RenderFocusStrip() {
+  if (!els.conquestFocusStrip) return;
+
+  if (
+    ![
+      "active",
+      "overtime",
+      "finished"
+    ].includes(state.conquest.phase)
+  ) {
+    els.conquestFocusStrip.innerHTML = "";
+
+    els.conquestFocusStrip.classList.add(
+      "hidden"
+    );
+
+    return;
+  }
+
+  const objectiveHtml =
+    state.conquest.objectives
+      .map(rd86ObjectiveFocusHtml)
+      .join("");
+
+  const cacheHtml =
+    state.conquest.caches
+      .filter(
+        (cache) =>
+          String(cache?.status || "") ===
+          "available"
+      )
+      .map(rd86CacheFocusHtml)
+      .join("");
+
+  els.conquestFocusStrip.innerHTML =
+    objectiveHtml + cacheHtml;
+
+  els.conquestFocusStrip.classList.toggle(
+    "hidden",
+    !objectiveHtml && !cacheHtml
+  );
+
+  window.requestAnimationFrame(
+    rd86UpdateFocusDirections
+  );
+}
+
+function rd86RenderConquestState() {
+  rd86CacheConquestElements();
+
+  const roomActive =
+    hasActiveMultiplayerRoom();
+
+  const activeRound =
+    hasActiveConquestRound();
+
+  const hasRound =
+    rd86HasConquestRound();
+
+  const hideSeekBusy = Boolean(
+    state.hideSeek.starting ||
+    hasActiveHideSeekRound()
+  );
+
+  const memberCount =
+    state.multiplayer.members.length;
+
+  els.conquestSetupBox?.classList.toggle(
+    "hidden",
+    !roomActive ||
+    activeRound ||
+    hideSeekBusy
+  );
+
+  els.conquestGameBox?.classList.toggle(
+    "hidden",
+    !roomActive || !hasRound
+  );
+
+  if (els.startConquestBtn) {
+    els.startConquestBtn.disabled =
+      !roomActive ||
+      memberCount <
+        RD86_CONQUEST_MIN_PLAYERS ||
+      memberCount >
+        RD86_CONQUEST_MAX_PLAYERS ||
+      state.conquest.starting ||
+      state.multiplayer.leaving ||
+      hideSeekBusy;
+
+    els.startConquestBtn.textContent =
+      state.conquest.starting
+        ? "Preparing Road Conquest..."
+        : hasRound
+          ? "Start another Road Conquest"
+          : "Start Road Conquest";
+  }
+
+  if (els.conquestPreparationText) {
+    els.conquestPreparationText.textContent =
+      state.conquest.preparationText ||
+      state.conquest.unavailableMessage ||
+      (
+        memberCount <
+          RD86_CONQUEST_MIN_PLAYERS
+          ? "At least 4 riders must be in the room."
+          : memberCount >
+              RD86_CONQUEST_MAX_PLAYERS
+            ? "Road Conquest supports a maximum of 8 riders."
+            : "The app will build two teams and choose road-based objectives."
+      );
+  }
+
+  if (els.conquestTeamBadge) {
+    els.conquestTeamBadge.textContent =
+      rd86TeamLabel(
+        state.conquest.viewerTeam
+      );
+
+    els.conquestTeamBadge.classList.toggle(
+      "red",
+      state.conquest.viewerTeam === "red"
+    );
+
+    els.conquestTeamBadge.classList.toggle(
+      "blue",
+      state.conquest.viewerTeam === "blue"
+    );
+  }
+
+  const phaseLabel =
+    rd86ConquestPhaseLabel();
+
+  const timerText =
+    rd86FormatConquestCountdown();
+
+  if (els.conquestPhaseBadge) {
+    els.conquestPhaseBadge.textContent =
+      phaseLabel;
+  }
+
+  if (els.conquestTimerValue) {
+    els.conquestTimerValue.textContent =
+      timerText;
+  }
+
+  if (els.conquestRedScore) {
+    els.conquestRedScore.textContent =
+      String(state.conquest.redScore);
+  }
+
+  if (els.conquestBlueScore) {
+    els.conquestBlueScore.textContent =
+      String(state.conquest.blueScore);
+  }
+
+  if (els.conquestGameStatus) {
+    els.conquestGameStatus.textContent =
+      rd86ConquestStatusText();
+  }
+
+  if (els.leaveConquestBtn) {
+    els.leaveConquestBtn.classList.toggle(
+      "hidden",
+      !hasRound
+    );
+
+    els.leaveConquestBtn.disabled =
+      state.conquest.leaving;
+
+    els.leaveConquestBtn.textContent =
+      state.conquest.leaving
+        ? "Leaving Conquest..."
+        : activeRound
+          ? "Leave Road Conquest"
+          : "Close Conquest result";
+  }
+
+  const showMapHud = Boolean(
+    roomActive && activeRound
+  );
+
+  els.conquestMapHud?.classList.toggle(
+    "hidden",
+    !showMapHud
+  );
+
+  if (els.conquestMapTeam) {
+    els.conquestMapTeam.textContent =
+      rd86TeamLabel(
+        state.conquest.viewerTeam
+      );
+
+    els.conquestMapTeam.classList.toggle(
+      "red",
+      state.conquest.viewerTeam === "red"
+    );
+
+    els.conquestMapTeam.classList.toggle(
+      "blue",
+      state.conquest.viewerTeam === "blue"
+    );
+  }
+
+  if (els.conquestMapPhase) {
+    els.conquestMapPhase.textContent =
+      phaseLabel;
+  }
+
+  if (els.conquestMapTimer) {
+    els.conquestMapTimer.textContent =
+      timerText;
+  }
+
+  if (els.conquestMapRedScore) {
+    els.conquestMapRedScore.textContent =
+      String(state.conquest.redScore);
+  }
+
+  if (els.conquestMapBlueScore) {
+    els.conquestMapBlueScore.textContent =
+      String(state.conquest.blueScore);
+  }
+
+  rd86RenderConquestPlayers();
+  rd86RenderFocusStrip();
+
+  document.body.classList.toggle(
+    "conquest-game-active",
+    activeRound
+  );
+
+  document.body.classList.toggle(
+    "conquest-red-team",
+    activeRound &&
+      state.conquest.viewerTeam === "red"
+  );
+
+  document.body.classList.toggle(
+    "conquest-blue-team",
+    activeRound &&
+      state.conquest.viewerTeam === "blue"
+  );
+
+  if (
+    (
+      state.conquest.starting ||
+      hasRound
+    ) &&
+    els.hideSeekSetupBox
+  ) {
+    els.hideSeekSetupBox.classList.add(
+      "hidden"
+    );
+  }
+}
+
+function rd86StartIcon(team) {
+  const label =
+    team === "red" ? "RED" : "BLUE";
+
+  return L.divIcon({
+    className:
+      "conquest-start-marker-icon",
+
+    html: `
+      <div class="conquest-start-marker ${team}">
+        <strong>${label}</strong>
+        <span>START</span>
+      </div>
+    `,
+
+    iconSize: [64, 48],
+    iconAnchor: [32, 24]
+  });
+}
+
+function rd86DrawDeploymentStart() {
+  rd86EnsureConquestLayer();
+
+  const show = Boolean(
+    state.conquest.phase === "deployment" &&
+    state.conquest.startPoint
+  );
+
+  if (!show) {
+    rd86ClearLayerItem(
+      state.conquest.startCircle
+    );
+
+    rd86ClearLayerItem(
+      state.conquest.startMarker
+    );
+
+    state.conquest.startCircle = null;
+    state.conquest.startMarker = null;
+
+    rd86ClearConquestRoute();
+    return;
+  }
+
+  const point =
+    state.conquest.startPoint;
+
+  const latlng = [
+    point.lat,
+    point.lng
+  ];
+
+  const team =
+    state.conquest.viewerTeam;
+
+  const colour =
+    rd86TeamColour(team);
+
+  if (!state.conquest.startCircle) {
+    state.conquest.startCircle =
+      L.circle(latlng, {
+        radius:
+          state.conquest.startRadiusM,
+
+        color: colour,
+        weight: 3,
+        opacity: 0.95,
+        fillColor: colour,
+        fillOpacity: 0.13,
+        dashArray: "10 8",
+        interactive: false
+      }).addTo(state.conquest.layer);
+  } else {
+    state.conquest.startCircle
+      .setLatLng(latlng)
+      .setRadius(
+        state.conquest.startRadiusM
+      )
+      .setStyle({
+        color: colour,
+        fillColor: colour
+      });
+  }
+
+  if (!state.conquest.startMarker) {
+    state.conquest.startMarker =
+      L.marker(latlng, {
+        icon: rd86StartIcon(team),
+        pane: "multiplayerPane",
+        interactive: false
+      }).addTo(state.conquest.layer);
+  } else {
+    state.conquest.startMarker
+      .setLatLng(latlng)
+      .setIcon(
+        rd86StartIcon(team)
+      );
+  }
+
+  if (
+    !state.conquest.viewerCheckedIn
+  ) {
+    void rd86EnsureDeploymentRoute();
+  } else {
+    rd86ClearConquestRoute();
+  }
+}
+
+function rd86TeammateIcon(team) {
+  return L.divIcon({
+    className:
+      "multiplayer-dot-icon conquest-teammate-icon",
+
+    html: `
+      <div class="conquest-teammate-dot ${team}"></div>
+    `,
+
+    iconSize: [26, 26],
+    iconAnchor: [13, 13]
+  });
+}
+
+function rd86DrawTeammates() {
+  rd86EnsureConquestLayer();
+
+  const seen = new Set();
+
+  for (
+    const player of
+    state.conquest.players
+  ) {
+    const userId = String(
+      player?.user_id || ""
+    );
+
+    if (
+      !userId ||
+      player?.is_me ||
+      player?.team !==
+        state.conquest.viewerTeam ||
+      player?.player_status !== "active"
+    ) {
+      continue;
+    }
+
+    const lat =
+      Number(player?.lat);
+
+    const lng =
+      Number(player?.lng);
+
+    if (
+      player?.lat === null ||
+      player?.lng === null ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      continue;
+    }
+
+    seen.add(userId);
+
+    const tooltip =
+      `${escapeHtml(
+        player?.display_name ||
+        "Teammate"
+      )} • ${rd86TeamLabel(
+        player?.team
+      )}`;
+
+    const existing =
+      state.conquest.teammateMarkers.get(
+        userId
+      );
+
+    if (existing) {
+      existing.setLatLng([lat, lng]);
+
+      existing.setIcon(
+        rd86TeammateIcon(
+          player.team
+        )
+      );
+
+      existing.setTooltipContent(
+        tooltip
+      );
+    } else {
+      const marker = L.marker(
+        [lat, lng],
+        {
+          icon: rd86TeammateIcon(
+            player.team
+          ),
+          pane: "multiplayerPane",
+          interactive: false
+        }
+      ).addTo(state.conquest.layer);
+
+      marker.bindTooltip(
+        tooltip,
+        {
+          sticky: true
+        }
+      );
+
+      state.conquest.teammateMarkers.set(
+        userId,
+        marker
+      );
+    }
+  }
+
+  for (
+    const [userId, marker] of
+    state.conquest.teammateMarkers.entries()
+  ) {
+    if (!seen.has(userId)) {
+      rd86ClearLayerItem(marker);
+
+      state.conquest.teammateMarkers.delete(
+        userId
+      );
+    }
+  }
+}
+
+function rd86ObjectiveIcon(objective) {
+  const owner =
+    objective?.owner_team === "red"
+      ? "red"
+      : objective?.owner_team === "blue"
+        ? "blue"
+        : "neutral";
+
+  const pressure = String(
+    objective?.pressure_state ||
+    "empty"
+  );
+
+  return L.divIcon({
+    className:
+      "conquest-objective-marker-icon",
+
+    html: `
+      <div class="conquest-objective-marker ${owner} ${escapeHtml(pressure)}">
+        ${escapeHtml(
+          String(objective?.code || "?")
+        )}
+      </div>
+    `,
+
+    iconSize: [44, 44],
+    iconAnchor: [22, 22]
+  });
+}
+
+function rd86FocusPoint(point) {
+  if (
+    !state.map ||
+    !Number.isFinite(
+      Number(point?.lat)
+    ) ||
+    !Number.isFinite(
+      Number(point?.lng)
+    )
+  ) {
+    return;
+  }
+
+  state.followUser = false;
+
+  state.map.panTo(
+    [
+      Number(point.lat),
+      Number(point.lng)
+    ],
+    {
+      animate: true,
+      duration: 0.35
+    }
+  );
+}
+
+function rd86DrawObjectives() {
+  rd86EnsureConquestLayer();
+
+  const visible = [
+    "active",
+    "overtime",
+    "finished"
+  ].includes(state.conquest.phase);
+
+  const objectives = visible
+    ? state.conquest.objectives
+    : [];
+
+  const seen = new Set();
+
+  for (const objective of objectives) {
+    const code = String(
+      objective?.code || ""
+    );
+
+    const lat =
+      Number(objective?.lat);
+
+    const lng =
+      Number(objective?.lng);
+
+    if (
+      !code ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      continue;
+    }
+
+    seen.add(code);
+
+    const owner =
+      objective?.owner_team === "red"
+        ? "red"
+        : objective?.owner_team === "blue"
+          ? "blue"
+          : "neutral";
+
+    const colour =
+      rd86TeamColour(owner);
+
+    const latlng = [lat, lng];
+
+    const existing =
+      state.conquest.objectiveLayers.get(
+        code
+      );
+
+    if (existing) {
+      existing.circle
+        .setLatLng(latlng)
+        .setRadius(
+          state.conquest.objectiveRadiusM
+        )
+        .setStyle({
+          color: colour,
+          fillColor: colour
+        });
+
+      existing.marker
+        .setLatLng(latlng)
+        .setIcon(
+          rd86ObjectiveIcon(
+            objective
+          )
+        );
+    } else {
+      const circle = L.circle(
+        latlng,
+        {
+          radius:
+            state.conquest.objectiveRadiusM,
+
+          color: colour,
+          weight: 3,
+          opacity: 0.96,
+          fillColor: colour,
+          fillOpacity: 0.14,
+
+          dashArray:
+            owner === "neutral"
+              ? "8 7"
+              : null,
+
+          interactive: false
+        }
+      ).addTo(state.conquest.layer);
+
+      const marker = L.marker(
+        latlng,
+        {
+          icon:
+            rd86ObjectiveIcon(
+              objective
+            ),
+
+          interactive: true,
+          keyboard: false,
+          zIndexOffset: 20
+        }
+      ).addTo(state.conquest.layer);
+
+      marker.on("click", () => {
+        rd86FocusPoint({
+          lat,
+          lng
+        });
+      });
+
+      marker.bindTooltip(
+        `Objective ${escapeHtml(code)}`,
+        {
+          direction: "top"
+        }
+      );
+
+      state.conquest.objectiveLayers.set(
+        code,
+        {
+          circle,
+          marker
+        }
+      );
+    }
+  }
+
+  for (
+    const [code, layers] of
+    state.conquest.objectiveLayers.entries()
+  ) {
+    if (!seen.has(code)) {
+      rd86ClearLayerItem(
+        layers.circle
+      );
+
+      rd86ClearLayerItem(
+        layers.marker
+      );
+
+      state.conquest.objectiveLayers.delete(
+        code
+      );
+    }
+  }
+}
+
+function rd86CacheIcon(cache) {
+  const tier = String(
+    cache?.tier || "bronze"
+  );
+
+  return L.divIcon({
+    className:
+      "conquest-cache-marker-icon",
+
+    html: `
+      <div class="conquest-cache-marker ${escapeHtml(tier)}">
+        <span>
+          +${Number(cache?.reward) || 0}
+        </span>
+      </div>
+    `,
+
+    iconSize: [42, 42],
+    iconAnchor: [21, 21]
+  });
+}
+
+function rd86DrawCaches() {
+  rd86EnsureConquestLayer();
+
+  const visible = [
+    "active",
+    "overtime",
+    "finished"
+  ].includes(state.conquest.phase);
+
+  const caches = visible
+    ? state.conquest.caches
+    : [];
+
+  const seen = new Set();
+
+  for (const cache of caches) {
+    const id = String(
+      cache?.id || ""
+    );
+
+    const lat =
+      Number(cache?.lat);
+
+    const lng =
+      Number(cache?.lng);
+
+    if (
+      !id ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      continue;
+    }
+
+    seen.add(id);
+
+    const existing =
+      state.conquest.cacheMarkers.get(
+        id
+      );
+
+    if (existing) {
+      existing.setLatLng([lat, lng]);
+
+      existing.setIcon(
+        rd86CacheIcon(cache)
+      );
+    } else {
+      const marker = L.marker(
+        [lat, lng],
+        {
+          icon:
+            rd86CacheIcon(cache),
+
+          interactive: true,
+          keyboard: false,
+          zIndexOffset: 30
+        }
+      ).addTo(state.conquest.layer);
+
+      marker.on("click", () => {
+        rd86FocusPoint({
+          lat,
+          lng
+        });
+      });
+
+      marker.bindTooltip(
+        `${escapeHtml(
+          String(
+            cache?.tier || "Road"
+          )
+        )} Cache • +${Number(cache?.reward) || 0}`,
+        {
+          direction: "top"
+        }
+      );
+
+      state.conquest.cacheMarkers.set(
+        id,
+        marker
+      );
+    }
+  }
+
+  for (
+    const [id, marker] of
+    state.conquest.cacheMarkers.entries()
+  ) {
+    if (!seen.has(id)) {
+      rd86ClearLayerItem(marker);
+
+      state.conquest.cacheMarkers.delete(
+        id
+      );
+    }
+  }
+}
+
+function rd86DrawConquestMap() {
+  if (!rd86HasConquestRound()) {
+    rd86ClearConquestVisuals();
+    return;
+  }
+
+  rd86DrawDeploymentStart();
+  rd86DrawTeammates();
+  rd86DrawObjectives();
+  rd86DrawCaches();
+  rd86UpdateFocusDirections();
+}
+
+function rd86FocusTarget(kind, id) {
+  if (kind === "objective") {
+    return (
+      state.conquest.objectives.find(
+        (objective) =>
+          String(
+            objective?.code || ""
+          ) === String(id || "")
+      ) || null
+    );
+  }
+
+  if (kind === "cache") {
+    return (
+      state.conquest.caches.find(
+        (cache) =>
+          String(
+            cache?.id || ""
+          ) === String(id || "")
+      ) || null
+    );
+  }
+
+  return null;
+}
+
+function rd86UpdateFocusDirections() {
+  if (
+    !state.map ||
+    !els.conquestFocusStrip
+  ) {
+    return;
+  }
+
+  const size =
+    state.map.getSize();
+
+  const centre = {
+    x: size.x / 2,
+    y: size.y / 2
+  };
+
+  for (
+    const button of
+    els.conquestFocusStrip.querySelectorAll(
+      "[data-conquest-kind]"
+    )
+  ) {
+    const target =
+      rd86FocusTarget(
+        button.dataset.conquestKind,
+        button.dataset.conquestId
+      );
+
+    if (!target) continue;
+
+    const point =
+      state.map.latLngToContainerPoint([
+        Number(target.lat),
+        Number(target.lng)
+      ]);
+
+    const offscreen =
+      point.x < 24 ||
+      point.y < 24 ||
+      point.x > size.x - 24 ||
+      point.y > size.y - 24;
+
+    button.classList.toggle(
+      "offscreen",
+      offscreen
+    );
+
+    const angle =
+      Math.atan2(
+        point.x - centre.x,
+        centre.y - point.y
+      ) *
+      (180 / Math.PI);
+
+    button.style.setProperty(
+      "--conquest-pointer-angle",
+      `${angle}deg`
+    );
+  }
+}
+
+async function rd86EnsureDeploymentRoute(
+  options = {}
+) {
+  const force =
+    options.force === true;
+
+  if (
+    state.conquest.phase !==
+      "deployment" ||
+    state.conquest.viewerCheckedIn ||
+    !state.conquest.startPoint ||
+    state.conquest.routeLoading
+  ) {
+    if (
+      state.conquest.phase !==
+        "deployment" ||
+      state.conquest.viewerCheckedIn
+    ) {
+      rd86ClearConquestRoute();
+    }
+
+    return;
+  }
+
+  const destination =
+    state.conquest.startPoint;
+
+  const routeKey =
+    `${state.conquest.roundId}:` +
+    `${destination.lat.toFixed(6)},` +
+    `${destination.lng.toFixed(6)}`;
+
+  if (
+    !force &&
+    state.conquest.routeLine &&
+    state.conquest.routeKey ===
+      routeKey
+  ) {
+    return;
+  }
+
+  const start =
+    state.currentPoint ||
+    await getFreshRouteStartPoint();
+
+  if (!start) return;
+
+  const requestId =
+    ++state.conquest.routeRequestId;
+
+  state.conquest.routeLoading = true;
+
+  try {
+    const route =
+      await fetchRoadRoute(
+        start,
+        destination
+      );
+
+    if (
+      requestId !==
+        state.conquest.routeRequestId ||
+      state.conquest.phase !==
+        "deployment" ||
+      state.conquest.viewerCheckedIn
+    ) {
+      return;
+    }
+
+    rd86ClearConquestRoute({
+      keepRequest: true
+    });
+
+    if (
+      !Array.isArray(route?.coords) ||
+      route.coords.length < 2
+    ) {
+      return;
+    }
+
+    const colour =
+      rd86TeamColour(
+        state.conquest.viewerTeam
+      );
+
+    state.conquest.routeHalo =
+      L.polyline(
+        route.coords,
+        {
+          color: "#eef7ff",
+          weight: 9,
+          opacity: 0.68,
+          lineCap: "round",
+          lineJoin: "round",
+          interactive: false
+        }
+      ).addTo(
+        state.conquest.layer
+      );
+
+    state.conquest.routeLine =
+      L.polyline(
+        route.coords,
+        {
+          color: colour,
+          weight: 5,
+          opacity: 1,
+          lineCap: "round",
+          lineJoin: "round",
+          interactive: false
+        }
+      ).addTo(
+        state.conquest.layer
+      );
+
+    state.conquest.routeKey =
+      routeKey;
+
+    state.conquest.lastRouteStartPoint = {
+      lat: Number(start.lat),
+      lng: Number(start.lng)
+    };
+
+    state.conquest.lastRouteAt =
+      Date.now();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    if (
+      requestId ===
+      state.conquest.routeRequestId
+    ) {
+      state.conquest.routeLoading =
+        false;
+    }
+  }
+}
+
+function rd86MaybeUpdateDeploymentRoute(
+  point
+) {
+  if (
+    state.conquest.phase !==
+      "deployment" ||
+    state.conquest.viewerCheckedIn ||
+    !state.conquest.startPoint ||
+    !state.conquest.routeLine ||
+    !state.conquest.lastRouteStartPoint ||
+    Number(point?.accuracy) >
+      MAX_GPS_ACCURACY_M
+  ) {
+    return;
+  }
+
+  if (
+    Date.now() -
+      state.conquest.lastRouteAt <
+    RD86_CONQUEST_ROUTE_REROUTE_MS
+  ) {
+    return;
+  }
+
+  if (
+    haversine(
+      point,
+      state.conquest.lastRouteStartPoint
+    ) <
+    RD86_CONQUEST_ROUTE_REROUTE_M
+  ) {
+    return;
+  }
+
+  void rd86EnsureDeploymentRoute({
+    force: true
+  });
+}
+
+function rd86BuildConquestCandidates(startPoint) {
+  const roadPoints = state.roadSegments
+    .map((segment) =>
+      roadSegmentMidpoint(segment)
+    )
+    .filter(Boolean);
+
+  const pool = roadPoints.filter(
+    (point) => {
+      const distance = haversine(
+        startPoint,
+        point
+      );
+
+      return (
+        distance >=
+          RD86_CONQUEST_CANDIDATE_MIN_M &&
+        distance <=
+          RD86_CONQUEST_CANDIDATE_MAX_M
+      );
+    }
+  );
+
+  shuffleHideSeekArray(pool);
+
+  const selected = [];
+
+  for (const point of pool) {
+    if (
+      selected.some(
+        (candidate) =>
+          haversine(candidate, point) <
+          RD86_CONQUEST_CANDIDATE_SPACING_M
+      )
+    ) {
+      continue;
+    }
+
+    let roadCount = 0;
+
+    for (const roadPoint of roadPoints) {
+      if (
+        haversine(point, roadPoint) <=
+        RD86_CONQUEST_ROAD_DENSITY_RADIUS_M
+      ) {
+        roadCount += 1;
+      }
+    }
+
+    if (
+      roadCount <
+      RD86_CONQUEST_MIN_ROAD_COUNT
+    ) {
+      continue;
+    }
+
+    selected.push({
+      lat: Number(point.lat.toFixed(6)),
+      lng: Number(point.lng.toFixed(6)),
+      road_count: roadCount,
+      routeable: false
+    });
+
+    if (
+      selected.length >=
+      RD86_CONQUEST_MAX_CANDIDATES
+    ) {
+      break;
+    }
+  }
+
+  return selected;
+}
+
+async function rd86FilterRouteableCandidates(
+  startPoint,
+  candidates
+) {
+  const limited = candidates.slice(
+    0,
+    RD86_CONQUEST_MAX_CANDIDATES
+  );
+
+  const coords = [startPoint, ...limited]
+    .map(
+      (point) =>
+        `${point.lng},${point.lat}`
+    )
+    .join(";");
+
+  const url =
+    `https://router.project-osrm.org/table/v1/driving/${coords}` +
+    "?sources=0&annotations=duration,distance";
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(
+      `Conquest routing returned ${response.status}.`
+    );
+  }
+
+  const data = await response.json();
+
+  if (data.code !== "Ok") {
+    throw new Error(
+      data.message ||
+      "Could not check Conquest routes."
+    );
+  }
+
+  const durations =
+    data.durations?.[0] || [];
+
+  const distances =
+    data.distances?.[0] || [];
+
+  return limited
+    .map((candidate, index) => ({
+      ...candidate,
+      routeable:
+        Number.isFinite(
+          Number(durations[index + 1])
+        ) &&
+        Number.isFinite(
+          Number(distances[index + 1])
+        ) &&
+        Number(durations[index + 1]) <=
+          600 &&
+        Number(distances[index + 1]) <=
+          5000
+    }))
+    .filter(
+      (candidate) => candidate.routeable
+    );
+}
+
+function rd86ConquestErrorMessage(error) {
+  const message = String(
+    error?.message || error || ""
+  );
+
+  return message
+    ? message.replace(/^Error:\s*/i, "")
+    : "Road Conquest had a problem";
+}
+
+async function rd86StartConquestRound() {
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    state.conquest.starting ||
+    hasActiveConquestRound()
+  ) {
+    return;
+  }
+
+  if (hasActiveHideSeekRound()) {
+    showToast(
+      "Finish Hide & Seek before starting Road Conquest"
+    );
+    return;
+  }
+
+  const memberCount =
+    state.multiplayer.members.length;
+
+  if (
+    memberCount <
+    RD86_CONQUEST_MIN_PLAYERS
+  ) {
+    showToast(
+      "Road Conquest needs at least 4 riders"
+    );
+    return;
+  }
+
+  if (
+    memberCount >
+    RD86_CONQUEST_MAX_PLAYERS
+  ) {
+    showToast(
+      "Road Conquest supports a maximum of 8 riders"
+    );
+    return;
+  }
+
+  const safetyAccepted = window.confirm(
+    "Play safely. Follow all road rules. Do not speed. " +
+    "Do not stop somewhere dangerous. Set up the game " +
+    "before moving and never interact with the phone while " +
+    "riding or driving.\n\nStart Road Conquest?"
+  );
+
+  if (!safetyAccepted) return;
+
+  if (rd86HasConquestRound()) {
+    rd86ResetConquestState({
+      clearRound: true,
+      render: false
+    });
+  }
+
+  state.conquest.starting = true;
+  state.conquest.preparationText =
+    "Getting a clean GPS location...";
+  state.conquest.unavailableMessage = "";
+
+  renderMultiplayerState();
+
+  try {
+    const startPoint =
+      await getFreshRouteStartPoint();
+
+    if (
+      !startPoint ||
+      !Number.isFinite(
+        Number(startPoint.lat)
+      ) ||
+      !Number.isFinite(
+        Number(startPoint.lng)
+      ) ||
+      Number(startPoint.accuracy) >
+        MAX_GPS_ACCURACY_M
+    ) {
+      throw new Error(
+        "Need GPS accuracy of 35 metres or better before starting."
+      );
+    }
+
+    state.conquest.preparationText =
+      "Loading nearby road points...";
+    renderMultiplayerState();
+
+    const roadsReady =
+      await ensureRoadsNearPoint(
+        startPoint,
+        {
+          replaceIfFar: true,
+          quiet: false
+        }
+      );
+
+    if (
+      !roadsReady ||
+      state.roadSegments.length === 0
+    ) {
+      throw new Error(
+        "Could not load nearby roads for Road Conquest."
+      );
+    }
+
+    state.conquest.preparationText =
+      "Building balanced road objectives...";
+    renderMultiplayerState();
+
+    const candidates =
+      rd86BuildConquestCandidates(
+        startPoint
+      );
+
+    if (
+      candidates.length <
+      RD86_CONQUEST_MIN_CANDIDATES
+    ) {
+      throw new Error(
+        "Not enough suitable roads were found. Move to a road-dense area and try again."
+      );
+    }
+
+    state.conquest.preparationText =
+      "Checking that every location is reachable...";
+    renderMultiplayerState();
+
+    const routeable =
+      await rd86FilterRouteableCandidates(
+        startPoint,
+        candidates
+      );
+
+    if (
+      routeable.length <
+      RD86_CONQUEST_MIN_CANDIDATES
+    ) {
+      throw new Error(
+        "Not enough reachable Conquest locations were found. Move to another area and try again."
+      );
+    }
+
+    state.conquest.preparationText =
+      "Randomly creating Red and Blue teams...";
+    renderMultiplayerState();
+
+    const { data, error } =
+      await state.auth.client.rpc(
+        "start_conquest_round",
+        {
+          p_room_id:
+            state.multiplayer.roomId,
+          p_start_lat:
+            Number(startPoint.lat),
+          p_start_lng:
+            Number(startPoint.lng),
+          p_road_candidates:
+            routeable.map(
+              (candidate) => ({
+                lat: candidate.lat,
+                lng: candidate.lng,
+                road_count:
+                  candidate.road_count,
+                routeable: true
+              })
+            ),
+          p_safety_ack: true
+        }
+      );
+
+    if (error) throw error;
+
+    const roundId = Array.isArray(data)
+      ? data[0]
+      : data;
+
+    if (!roundId) {
+      throw new Error(
+        "Could not read the new Road Conquest match."
+      );
+    }
+
+    state.conquest.roundId =
+      String(roundId);
+
+    state.conquest.preparationText = "";
+
+    clearMultiplayerMarkers();
+
+    await rd86PollConquestState({
+      force: true
+    });
+
+    if (state.currentPoint) {
+      void rd86MaybeSendConquestLocation(
+        state.currentPoint,
+        { force: true }
+      );
+    }
+
+    showToast("Road Conquest started");
+  } catch (error) {
+    console.error(error);
+
+    const message =
+      rd86ConquestErrorMessage(error);
+
+    state.conquest.preparationText =
+      message;
+
+    showToast(message);
+  } finally {
+    state.conquest.starting = false;
+    renderMultiplayerState();
+  }
+}
+
+function rd86ApplyConquestState(row) {
+  const previousRoundId =
+    state.conquest.roundId;
+
+  const previousPhase =
+    state.conquest.phase;
+
+  const previousCheckedIn =
+    state.conquest.viewerCheckedIn;
+
+  state.conquest.roundId = String(
+    row?.round_id || ""
+  );
+
+  state.conquest.phase = String(
+    row?.phase || ""
+  );
+
+  state.conquest.viewerTeam = String(
+    row?.viewer_team || ""
+  );
+
+  state.conquest.viewerCheckedIn =
+    Boolean(row?.viewer_checked_in);
+
+  state.conquest.winner =
+    row?.winner || null;
+
+  state.conquest.deploymentEndsAt =
+    row?.deployment_ends_at || null;
+
+  state.conquest.graceEndsAt =
+    row?.grace_ends_at || null;
+
+  state.conquest.countdownEndsAt =
+    row?.countdown_ends_at || null;
+
+  state.conquest.matchStartsAt =
+    row?.match_starts_at || null;
+
+  state.conquest.matchEndsAt =
+    row?.match_ends_at || null;
+
+  state.conquest.overtimeEndsAt =
+    row?.overtime_ends_at || null;
+
+  const serverNow = Date.parse(
+    row?.server_now || ""
+  );
+
+  if (Number.isFinite(serverNow)) {
+    state.conquest.serverOffsetMs =
+      serverNow - Date.now();
+  }
+
+  const startLat = Number(
+    row?.viewer_start_lat
+  );
+
+  const startLng = Number(
+    row?.viewer_start_lng
+  );
+
+  state.conquest.startPoint =
+    Number.isFinite(startLat) &&
+    Number.isFinite(startLng)
+      ? { lat: startLat, lng: startLng }
+      : null;
+
+  state.conquest.startRadiusM =
+    Number(row?.start_radius_m) || 150;
+
+  state.conquest.objectiveRadiusM =
+    Number(row?.objective_radius_m) || 100;
+
+  state.conquest.cacheCollectRadiusM =
+    Number(row?.cache_collect_radius_m) ||
+    40;
+
+  state.conquest.redScore =
+    Number(row?.red_score) || 0;
+
+  state.conquest.blueScore =
+    Number(row?.blue_score) || 0;
+
+  state.conquest.redReadyCount =
+    Number(row?.red_ready_count) || 0;
+
+  state.conquest.blueReadyCount =
+    Number(row?.blue_ready_count) || 0;
+
+  state.conquest.redTotal =
+    Number(row?.red_total) || 0;
+
+  state.conquest.blueTotal =
+    Number(row?.blue_total) || 0;
+
+  state.conquest.players =
+    rd86NormaliseJsonArray(row?.players);
+
+  state.conquest.objectives =
+    rd86NormaliseJsonArray(
+      row?.objectives
+    );
+
+  state.conquest.caches =
+    rd86NormaliseJsonArray(row?.caches);
+
+  state.conquest.unavailableMessage = "";
+
+  rd86DrawConquestMap();
+  rd86StartConquestCountdown();
+
+  hs47StyleHeadingMarker?.();
+
+  const roundChanged =
+    previousRoundId !==
+    state.conquest.roundId;
+
+  const phaseChanged =
+    previousPhase !==
+    state.conquest.phase;
+
+  if (roundChanged) {
+    showToast(
+      `You are on ${rd86TeamLabel(
+        state.conquest.viewerTeam
+      )}`
+    );
+  }
+
+  if (
+    !previousCheckedIn &&
+    state.conquest.viewerCheckedIn
+  ) {
+    showToast("Team start reached • Checked in");
+    rd86ClearConquestRoute();
+  }
+
+  if (
+    phaseChanged &&
+    state.conquest.phase === "countdown"
+  ) {
+    showToast("Both teams ready • Match starts in 10 seconds");
+  }
+
+  if (
+    phaseChanged &&
+    state.conquest.phase === "active"
+  ) {
+    showToast("Road Conquest has begun");
+  }
+
+  if (
+    phaseChanged &&
+    state.conquest.phase === "overtime"
+  ) {
+    showToast("Overtime • Next capture or cache wins");
+  }
+
+  if (
+    state.conquest.phase === "finished"
+  ) {
+    rd86ShowConquestResult();
+  } else if (
+    phaseChanged &&
+    state.conquest.phase === "cancelled"
+  ) {
+    showToast("Road Conquest was cancelled");
+  }
+
+  rd86RenderConquestState();
+}
+
+async function rd86PollConquestState(
+  options = {}
+) {
+  const force = options.force === true;
+
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    state.conquest.polling ||
+    (!force && !navigator.onLine)
+  ) {
+    return;
+  }
+
+  state.conquest.polling = true;
+
+  const { data, error } =
+    await state.auth.client.rpc(
+      "get_conquest_state",
+      {
+        p_room_id:
+          state.multiplayer.roomId
+      }
+    );
+
+  state.conquest.polling = false;
+
+  if (error) {
+    console.error(error);
+
+    state.conquest.unavailableMessage =
+      rd86ConquestErrorMessage(error);
+
+    rd86RenderConquestState();
+    return;
+  }
+
+  const rows = Array.isArray(data)
+    ? data
+    : [];
+
+  if (rows.length === 0) {
+    if (!state.conquest.starting) {
+      rd86ResetConquestState({
+        clearRound: true,
+        render: false
+      });
+
+      rd86RenderConquestState();
+    }
+
+    return;
+  }
+
+  const row = rows[0];
+
+  if (
+    hasActiveHideSeekRound() &&
+    ["finished", "cancelled"].includes(
+      String(row?.phase || "")
+    )
+  ) {
+    rd86ResetConquestState({
+      clearRound: true,
+      render: false
+    });
+    return;
+  }
+
+  rd86ApplyConquestState(row);
+}
+
+async function rd86MaybeSendConquestLocation(
+  point,
+  options = {}
+) {
+  const force = options.force === true;
+
+  rd86MaybeUpdateDeploymentRoute(point);
+
+  if (
+    !hasActiveConquestRound() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    !navigator.onLine ||
+    !point ||
+    !Number.isFinite(Number(point.lat)) ||
+    !Number.isFinite(Number(point.lng)) ||
+    !Number.isFinite(
+      Number(point.accuracy)
+    )
+  ) {
+    return false;
+  }
+
+  const now = Date.now();
+
+  if (
+    !force &&
+    now -
+      state.conquest.lastLocationSentAt <
+      RD86_CONQUEST_LOCATION_SEND_MS
+  ) {
+    return false;
+  }
+
+  if (state.conquest.updatingLocation) {
+    return false;
+  }
+
+  state.conquest.lastLocationSentAt = now;
+  state.conquest.updatingLocation = true;
+
+  const { data, error } =
+    await state.auth.client.rpc(
+      "update_conquest_location",
+      {
+        p_round_id:
+          state.conquest.roundId,
+        p_lat: Number(point.lat),
+        p_lng: Number(point.lng),
+        p_accuracy:
+          Number(point.accuracy)
+      }
+    );
+
+  state.conquest.updatingLocation = false;
+
+  if (error) {
+    console.error(error);
+    return false;
+  }
+
+  if (data?.cache_collected) {
+    const tier = String(
+      data.cache_tier || "Road"
+    );
+
+    showToast(
+      `${tier.charAt(0).toUpperCase()}${tier.slice(1)} Cache +${Number(data.cache_reward) || 0}`
+    );
+  }
+
+  void rd86PollConquestState({
+    force: true
+  });
+
+  return Boolean(data?.accepted);
+}
+
+async function rd86LeaveConquestRound(
+  options = {}
+) {
+  const quiet = options.quiet === true;
+  const render = options.render !== false;
+
+  if (
+    !state.conquest.roundId ||
+    !state.auth.client ||
+    !state.auth.user ||
+    state.conquest.leaving
+  ) {
+    rd86ResetConquestState({
+      clearRound: true,
+      render
+    });
+    return;
+  }
+
+  state.conquest.leaving = true;
+
+  if (render) {
+    rd86RenderConquestState();
+  }
+
+  const roundId =
+    state.conquest.roundId;
+
+  const active =
+    hasActiveConquestRound();
+
+  if (active) {
+    const { error } =
+      await state.auth.client.rpc(
+        "leave_conquest_round",
+        { p_round_id: roundId }
+      );
+
+    if (error && !quiet) {
+      console.error(error);
+      showToast(
+        rd86ConquestErrorMessage(error)
+      );
+    }
+  }
+
+  rd86ResetConquestState({
+    clearRound: true,
+    render
+  });
+
+  if (!quiet) {
+    showToast(
+      active
+        ? "Left Road Conquest"
+        : "Conquest result closed"
+    );
+  }
+}
+
+function rd86ShowConquestResult() {
+  const roundId = String(
+    state.conquest.roundId || ""
+  );
+
+  if (
+    !roundId ||
+    state.conquest.resultShownFor ===
+      roundId
+  ) {
+    return;
+  }
+
+  rd86CacheConquestElements();
+
+  if (!els.conquestResultOverlay) {
+    return;
+  }
+
+  state.conquest.resultShownFor = roundId;
+
+  const winner =
+    state.conquest.winner;
+
+  const draw = winner === "draw";
+  const victory =
+    !draw &&
+    winner === state.conquest.viewerTeam;
+
+  const winningTeam = draw
+    ? "draw"
+    : winner === "red"
+      ? "red"
+      : "blue";
+
+  els.conquestResultOverlay.classList.remove(
+    "hidden",
+    "red",
+    "blue",
+    "draw",
+    "victory",
+    "defeat"
+  );
+
+  els.conquestResultOverlay.classList.add(
+    winningTeam,
+    draw
+      ? "victory"
+      : victory
+        ? "victory"
+        : "defeat"
+  );
+
+  if (els.conquestResultEyebrow) {
+    els.conquestResultEyebrow.textContent =
+      draw
+        ? "MATCH COMPLETE"
+        : victory
+          ? "VICTORY"
+          : "DEFEAT";
+  }
+
+  if (els.conquestResultTitle) {
+    els.conquestResultTitle.textContent =
+      draw
+        ? "DRAW"
+        : `${rd86TeamLabel(winner).toUpperCase()} WINS`;
+  }
+
+  if (els.conquestResultScore) {
+    els.conquestResultScore.textContent =
+      `${state.conquest.redScore} – ${state.conquest.blueScore}`;
+  }
+
+  if (state.conquest.resultTimer !== null) {
+    window.clearTimeout(
+      state.conquest.resultTimer
+    );
+  }
+
+  state.conquest.resultTimer =
+    window.setTimeout(() => {
+      els.conquestResultOverlay
+        ?.classList.add("hidden");
+
+      state.conquest.resultTimer = null;
+    }, 5000);
+}
+
+function rd86BindConquestEvents() {
+  rd86CacheConquestElements();
+
+  if (
+    els.startConquestBtn?.dataset
+      .rd86Bound === "true"
+  ) {
+    return;
+  }
+
+  if (els.startConquestBtn) {
+    els.startConquestBtn.dataset.rd86Bound =
+      "true";
+
+    els.startConquestBtn.addEventListener(
+      "click",
+      rd86StartConquestRound
+    );
+  }
+
+  els.leaveConquestBtn?.addEventListener(
+    "click",
+    () => {
+      void rd86LeaveConquestRound();
+    }
+  );
+
+  els.conquestFocusStrip?.addEventListener(
+    "click",
+    (event) => {
+      const button =
+        event.target.closest(
+          "[data-conquest-kind]"
+        );
+
+      if (!button) return;
+
+      const target = rd86FocusTarget(
+        button.dataset.conquestKind,
+        button.dataset.conquestId
+      );
+
+      if (target) {
+        rd86FocusPoint(target);
+      }
+    }
+  );
+
+  state.map?.on(
+    "move zoom rotate",
+    rd86UpdateFocusDirections
+  );
+}
+
+/* -------------------------------------------------- */
+/* Existing app lifecycle wrappers                    */
+/* -------------------------------------------------- */
+
+renderMultiplayerState = function () {
+  roadDiscoveryV86.renderMultiplayerState();
+
+  rd86RenderConquestState();
+
+  if (
+    hasActiveConquestRound() &&
+    els.multiplayerStatusText
+  ) {
+    els.multiplayerStatusText.textContent =
+      state.isRecording
+        ? "Road Conquest is active. Start Drive still paints and saves only your own orange roads."
+        : "Road Conquest is active. Team locations use the private Conquest game view.";
+  }
+};
+
+pollHideSeekState = async function (
+  options = {}
+) {
+  await roadDiscoveryV86.pollHideSeekState(
+    options
+  );
+
+  await rd86PollConquestState(options);
+};
+
+maybeSendMultiplayerLocation =
+  async function (point, options = {}) {
+    if (hasActiveConquestRound()) {
+      return rd86MaybeSendConquestLocation(
+        point,
+        options
+      );
+    }
+
+    return roadDiscoveryV86
+      .maybeSendMultiplayerLocation(
+        point,
+        options
+      );
+  };
+
+startMultiplayerMode = function (room) {
+  rd86ResetConquestState({
+    clearRound: true,
+    render: false
+  });
+
+  return roadDiscoveryV86
+    .startMultiplayerMode(room);
+};
+
+stopMultiplayerMode = function (
+  options = {}
+) {
+  rd86ResetConquestState({
+    clearRound: true,
+    render: false
+  });
+
+  return roadDiscoveryV86
+    .stopMultiplayerMode(options);
+};
+
+leaveMultiplayerRoom = async function (
+  options = {}
+) {
+  if (rd86HasConquestRound()) {
+    await rd86LeaveConquestRound({
+      quiet: true,
+      render: false
+    });
+  }
+
+  return roadDiscoveryV86
+    .leaveMultiplayerRoom(options);
+};
+
+startHideSeekRound = async function () {
+  if (hasActiveConquestRound()) {
+    showToast(
+      "Finish Road Conquest before starting another game"
+    );
+    return;
+  }
+
+  if (rd86HasConquestRound()) {
+    rd86ResetConquestState({
+      clearRound: true,
+      render: false
+    });
+  }
+
+  return roadDiscoveryV86
+    .startHideSeekRound();
+};
+
+hs50OwnMarkerColour = function () {
+  if (hasActiveConquestRound()) {
+    return rd86TeamColour(
+      state.conquest.viewerTeam
+    );
+  }
+
+  return roadDiscoveryV86.markerColour();
+};
+
+hs50OwnMarkerHaloColour = function () {
+  if (hasActiveConquestRound()) {
+    return state.conquest.viewerTeam === "red"
+      ? "rgba(255, 77, 77, 0.26)"
+      : "rgba(75, 179, 255, 0.26)";
+  }
+
+  return roadDiscoveryV86
+    .markerHaloColour();
+};
+
+function rd86InitConquest() {
+  rd86EnsureConquestLayer();
+  rd86BindConquestEvents();
+  rd86RenderConquestState();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd86InitConquest,
+    { once: true }
+  );
+} else {
+  rd86InitConquest();
+}
