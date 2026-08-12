@@ -1,19 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v80 service worker
+  Road Discovery AU v81 service worker
 
-  Hidden Discoveries country and state browser.
+  Hidden Discoveries expanded to fourteen.
 
   Expected frontend versions:
-  - app.js?v=79
+  - app.js?v=80
   - style.css?v=58
 
   Recent files are also recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v80";
+const CACHE_NAME = "road-discovery-au-v81";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,15 +24,15 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=58",
-  "./app.js?v=79",
+  "./app.js?v=80",
 
   /* Recent fallbacks used during a staged GitHub update. */
   "./style.css?v=57",
-  "./app.js?v=78",
+  "./app.js?v=79",
   "./style.css?v=56",
-  "./app.js?v=77",
+  "./app.js?v=78",
   "./style.css?v=55",
-  "./app.js?v=76"
+  "./app.js?v=77"
 ];
 
 /* -------------------------------------------------- */
@@ -52,8 +52,7 @@ self.addEventListener("install", (event) => {
               await cache.add(file);
             } catch (error) {
               console.warn(
-                `Could not pre-cache ${file}. ` +
-                  `It will be cached when available.`,
+                `Could not pre-cache ${file}. It will be cached when available.`,
                 error
               );
             }
@@ -212,6 +211,9 @@ self.addEventListener("fetch", (event) => {
         ) {
           return (
             (await caches.match(
+              "./app.js?v=80"
+            )) ||
+            (await caches.match(
               "./app.js?v=79"
             )) ||
             (await caches.match(
@@ -219,9 +221,6 @@ self.addEventListener("fetch", (event) => {
             )) ||
             (await caches.match(
               "./app.js?v=77"
-            )) ||
-            (await caches.match(
-              "./app.js?v=76"
             )) ||
             Response.error()
           );
