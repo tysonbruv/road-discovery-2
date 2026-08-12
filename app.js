@@ -22574,3 +22574,911 @@ if (document.readyState === "loading") {
 } else {
   rd84InitRiderAboutCopy();
 }
+
+/* ================================================== */
+/* Road Discovery AU v85 Wolf Pack Mode               */
+/* Append this block once to the bottom of app.js v84 */
+/* ================================================== */
+
+const RD85_CLASSIC_MODE = "classic";
+const RD85_WOLF_PACK_MODE = "wolf_pack";
+
+const roadDiscoveryV85 = {
+  startHideSeekRound,
+  resetHideSeekState,
+  renderHideSeekState,
+  applyHideSeekRows,
+  drawHideSeekMarkers,
+  hideSeekGameStatusText,
+  showHideSeekRoleReveal,
+  readyStatusText: rd58ReadyStatusText,
+  renderReadyUI: rd58RenderReadyUI,
+  pollReadyState: rd58PollReadyState
+};
+
+Object.assign(state.hideSeek, {
+  selectedGameMode: RD85_CLASSIC_MODE,
+  gameMode: ""
+});
+
+function rd85CacheWolfPackElements() {
+  [
+    "hideSeekModePicker",
+    "hideSeekClassicModeBtn",
+    "hideSeekWolfPackModeBtn",
+    "hideSeekModeDescription",
+    "hideSeekPlayerRange",
+    "hideSeekGameModeBadge"
+  ].forEach((id) => {
+    els[id] = $(id);
+  });
+}
+
+function rd85ModeDetails(modeValue) {
+  const wolfPack =
+    modeValue === RD85_WOLF_PACK_MODE;
+
+  return {
+    mode: wolfPack
+      ? RD85_WOLF_PACK_MODE
+      : RD85_CLASSIC_MODE,
+
+    name: wolfPack
+      ? "Wolf Pack"
+      : "Hide & Seek",
+
+    tagline: wolfPack
+      ? "Two wolves. One hunt."
+      : "One random wolf. Everyone else becomes sheep.",
+
+    range: wolfPack
+      ? "3–8 players"
+      : "2–8 players",
+
+    minimumPlayers: wolfPack ? 3 : 2,
+
+    rpcName: wolfPack
+      ? "start_wolf_pack_round"
+      : "start_hide_seek_round"
+  };
+}
+
+function rd85IsWolfPack() {
+  return (
+    state.hideSeek.gameMode ===
+    RD85_WOLF_PACK_MODE
+  );
+}
+
+function rd85SetSelectedGameMode(modeValue) {
+  if (
+    state.hideSeek.starting ||
+    hasActiveHideSeekRound()
+  ) {
+    return;
+  }
+
+  state.hideSeek.selectedGameMode =
+    modeValue === RD85_WOLF_PACK_MODE
+      ? RD85_WOLF_PACK_MODE
+      : RD85_CLASSIC_MODE;
+
+  state.hideSeek.gameMode = "";
+
+  renderHideSeekState();
+}
+
+function rd85BindWolfPackControls() {
+  rd85CacheWolfPackElements();
+
+  if (
+    els.hideSeekModePicker?.dataset
+      .rd85Bound === "true"
+  ) {
+    return;
+  }
+
+  if (els.hideSeekModePicker) {
+    els.hideSeekModePicker.dataset.rd85Bound =
+      "true";
+  }
+
+  els.hideSeekClassicModeBtn?.addEventListener(
+    "click",
+    () => {
+      rd85SetSelectedGameMode(
+        RD85_CLASSIC_MODE
+      );
+    }
+  );
+
+  els.hideSeekWolfPackModeBtn?.addEventListener(
+    "click",
+    () => {
+      rd85SetSelectedGameMode(
+        RD85_WOLF_PACK_MODE
+      );
+    }
+  );
+}
+
+/* -------------------------------------------------- */
+/* State lifecycle                                    */
+/* -------------------------------------------------- */
+
+resetHideSeekState = function (options = {}) {
+  const clearRound =
+    options.clearRound !== false;
+
+  const result =
+    roadDiscoveryV85.resetHideSeekState(
+      options
+    );
+
+  if (clearRound) {
+    state.hideSeek.gameMode = "";
+  }
+
+  return result;
+};
+
+applyHideSeekRows = function (rows) {
+  const incomingRows = Array.isArray(rows)
+    ? rows
+    : [];
+
+  const incomingRoundId = String(
+    incomingRows[0]?.round_id || ""
+  );
+
+  const roundChanged = Boolean(
+    incomingRoundId &&
+    incomingRoundId !==
+      state.hideSeek.roundId
+  );
+
+  const visibleWolfCount =
+    incomingRows.filter(
+      (player) => player?.role === "wolf"
+    ).length;
+
+  if (visibleWolfCount >= 2) {
+    state.hideSeek.gameMode =
+      RD85_WOLF_PACK_MODE;
+  } else if (visibleWolfCount === 1) {
+    state.hideSeek.gameMode =
+      RD85_CLASSIC_MODE;
+  } else if (
+    roundChanged &&
+    !state.hideSeek.starting
+  ) {
+    /*
+      During the secure ten-second role selection,
+      other riders receive no roles. Keep the label
+      neutral until the server reveals them.
+    */
+    state.hideSeek.gameMode = "";
+  }
+
+  roadDiscoveryV85.applyHideSeekRows(
+    incomingRows
+  );
+};
+
+/* -------------------------------------------------- */
+/* Starting either game mode                          */
+/* -------------------------------------------------- */
+
+startHideSeekRound = async function () {
+  const details = rd85ModeDetails(
+    state.hideSeek.selectedGameMode
+  );
+
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    state.hideSeek.starting ||
+    hasActiveHideSeekRound()
+  ) {
+    return;
+  }
+
+  if (
+    state.multiplayer.members.length <
+    details.minimumPlayers
+  ) {
+    showToast(
+      `${details.name} needs at least ` +
+      `${details.minimumPlayers} riders`
+    );
+
+    return;
+  }
+
+  const safetyAccepted = window.confirm(
+    "Play safely. Follow road rules. Do not speed. " +
+    "Do not stop somewhere dangerous. Leave the zone " +
+    `if needed.\n\nStart ${details.name}?`
+  );
+
+  if (!safetyAccepted) return;
+
+  state.hideSeek.starting = true;
+  state.hideSeek.gameMode = details.mode;
+
+  state.hideSeek.preparationText =
+    "Getting a clean GPS location...";
+
+  state.hideSeek.unavailableMessage = "";
+
+  renderMultiplayerState();
+
+  try {
+    const startPoint =
+      await getFreshRouteStartPoint();
+
+    if (
+      !startPoint ||
+      !Number.isFinite(
+        Number(startPoint.lat)
+      ) ||
+      !Number.isFinite(
+        Number(startPoint.lng)
+      ) ||
+      Number(startPoint.accuracy) >
+        MAX_GPS_ACCURACY_M
+    ) {
+      throw new Error(
+        "Need GPS accuracy of 35 metres or better before starting."
+      );
+    }
+
+    state.hideSeek.preparationText =
+      "Loading nearby road chunks...";
+
+    renderHideSeekState();
+
+    const roadsReady =
+      await ensureRoadsNearPoint(
+        startPoint,
+        {
+          replaceIfFar: true,
+          quiet: false
+        }
+      );
+
+    if (
+      !roadsReady ||
+      state.roadSegments.length === 0
+    ) {
+      throw new Error(
+        "Could not load nearby roads for a hiding zone."
+      );
+    }
+
+    state.hideSeek.preparationText =
+      "Checking road-based hiding zones...";
+
+    renderHideSeekState();
+
+    const localCandidates =
+      buildHideSeekZoneCandidates(
+        startPoint
+      );
+
+    if (
+      localCandidates.length <
+      HIDE_SEEK_ZONE_MIN_CANDIDATES
+    ) {
+      throw new Error(
+        "Not enough suitable roads nearby. Move to another area and try again."
+      );
+    }
+
+    const routeableCandidates =
+      await filterRouteableHideSeekCandidates(
+        startPoint,
+        localCandidates
+      );
+
+    if (
+      routeableCandidates.length <
+      HIDE_SEEK_ZONE_MIN_CANDIDATES
+    ) {
+      throw new Error(
+        "Not enough reachable hiding zones were found. Move to another area and try again."
+      );
+    }
+
+    state.hideSeek.preparationText =
+      details.mode ===
+      RD85_WOLF_PACK_MODE
+        ? "Randomly choosing two wolves and the zone..."
+        : "Randomly choosing the wolf and zone...";
+
+    renderHideSeekState();
+
+    const { data, error } =
+      await state.auth.client.rpc(
+        details.rpcName,
+        {
+          p_room_id:
+            state.multiplayer.roomId,
+
+          p_start_lat:
+            Number(startPoint.lat),
+
+          p_start_lng:
+            Number(startPoint.lng),
+
+          p_zone_candidates:
+            routeableCandidates.map(
+              (candidate) => ({
+                lat: candidate.lat,
+                lng: candidate.lng,
+                road_count:
+                  candidate.road_count,
+                routeable: true
+              })
+            ),
+
+          p_safety_ack: true
+        }
+      );
+
+    if (error) {
+      throw error;
+    }
+
+    const roundId = Array.isArray(data)
+      ? data[0]
+      : data;
+
+    if (!roundId) {
+      throw new Error(
+        `Could not read the new ${details.name} round.`
+      );
+    }
+
+    state.hideSeek.roundId =
+      String(roundId);
+
+    state.hideSeek.preparationText = "";
+
+    await pollHideSeekState({
+      force: true
+    });
+
+    if (state.currentPoint) {
+      void maybeSendHideSeekLocation(
+        state.currentPoint,
+        {
+          force: true
+        }
+      );
+    }
+
+    showToast(
+      `${details.name} started`
+    );
+  } catch (error) {
+    console.error(error);
+
+    const message =
+      hideSeekErrorMessage(error);
+
+    showToast(message);
+
+    state.hideSeek.preparationText =
+      message;
+
+    state.hideSeek.gameMode = "";
+  } finally {
+    state.hideSeek.starting = false;
+    renderMultiplayerState();
+  }
+};
+
+/* -------------------------------------------------- */
+/* Mode-aware interface                               */
+/* -------------------------------------------------- */
+
+hideSeekGameStatusText = function () {
+  if (!rd85IsWolfPack()) {
+    if (
+      state.hideSeek.phase === "starting"
+    ) {
+      return "Randomly choosing the roles...";
+    }
+
+    return roadDiscoveryV85
+      .hideSeekGameStatusText();
+  }
+
+  const me = getMyHideSeekPlayer();
+
+  if (state.hideSeek.phase === "starting") {
+    return "Randomly choosing two wolves and the sheep...";
+  }
+
+  if (state.hideSeek.phase === "finished") {
+    return state.hideSeek.winner === "wolf"
+      ? "The wolf pack found every sheep. Wolves win."
+      : "At least one sheep stayed hidden. Sheep win.";
+  }
+
+  if (state.hideSeek.phase === "cancelled") {
+    return "The Wolf Pack round ended because the Multiplayer room closed.";
+  }
+
+  if (me?.player_status === "found") {
+    return "You were found. Your last game dot is now visible to everyone.";
+  }
+
+  if (me?.player_status === "out") {
+    return "You are out. Your last game dot is now visible to everyone.";
+  }
+
+  if (state.hideSeek.phase === "escape") {
+    return state.hideSeek.viewerRole === "wolf"
+      ? "Sheep are hiding... Your wolf teammate is visible, but the sheep and hiding zone remain private."
+      : "Reach the blue hiding zone before the escape timer reaches zero.";
+  }
+
+  if (state.hideSeek.phase === "hunt") {
+    return state.hideSeek.viewerRole === "wolf"
+      ? "Hunt with your wolf teammate. Hidden sheep remain private between three-second pings."
+      : "Stay inside the hiding zone and avoid both wolves until time runs out.";
+  }
+
+  return "Waiting for the Wolf Pack round.";
+};
+
+showHideSeekRoleReveal = function (role) {
+  roadDiscoveryV85.showHideSeekRoleReveal(
+    role
+  );
+
+  if (
+    rd85IsWolfPack() &&
+    role === "wolf" &&
+    els.hideSeekRoleRevealText
+  ) {
+    els.hideSeekRoleRevealText.textContent =
+      "You are a wolf • Hunt with your pack";
+  }
+};
+
+rd58ReadyStatusText = function () {
+  const status =
+    roadDiscoveryV85.readyStatusText();
+
+  return rd85IsWolfPack()
+    ? status.replace(
+        "Wolf starts",
+        "Wolves start"
+      )
+    : status;
+};
+
+rd58PollReadyState = async function (
+  options = {}
+) {
+  if (!rd85IsWolfPack()) {
+    return roadDiscoveryV85
+      .pollReadyState(options);
+  }
+
+  const normalShowToast = showToast;
+
+  showToast = function (message) {
+    normalShowToast(
+      String(message).replace(
+        "Wolf starts",
+        "Wolves start"
+      )
+    );
+  };
+
+  try {
+    return await roadDiscoveryV85
+      .pollReadyState(options);
+  } finally {
+    showToast = normalShowToast;
+  }
+};
+
+rd58RenderReadyUI = function () {
+  roadDiscoveryV85.renderReadyUI();
+
+  if (
+    rd85IsWolfPack() &&
+    state.hideSeek.fastCountdownActive
+  ) {
+    if (els.hideSeekMapPhase) {
+      els.hideSeekMapPhase.textContent =
+        "Wolves start soon";
+    }
+
+    if (els.hideSeekGameStatus) {
+      els.hideSeekGameStatus.textContent =
+        "All sheep are ready. The wolves begin hunting when the countdown reaches zero.";
+    }
+  }
+};
+
+renderHideSeekState = function () {
+  roadDiscoveryV85.renderHideSeekState();
+  rd85CacheWolfPackElements();
+
+  const setupDetails = rd85ModeDetails(
+    state.hideSeek.selectedGameMode
+  );
+
+  const memberCount =
+    state.multiplayer.members.length;
+
+  const setupDisabled = Boolean(
+    state.hideSeek.starting ||
+    hasActiveHideSeekRound() ||
+    state.multiplayer.leaving
+  );
+
+  els.hideSeekClassicModeBtn
+    ?.classList.toggle(
+      "active",
+      setupDetails.mode ===
+        RD85_CLASSIC_MODE
+    );
+
+  els.hideSeekWolfPackModeBtn
+    ?.classList.toggle(
+      "active",
+      setupDetails.mode ===
+        RD85_WOLF_PACK_MODE
+    );
+
+  els.hideSeekClassicModeBtn?.setAttribute(
+    "aria-pressed",
+    String(
+      setupDetails.mode ===
+        RD85_CLASSIC_MODE
+    )
+  );
+
+  els.hideSeekWolfPackModeBtn?.setAttribute(
+    "aria-pressed",
+    String(
+      setupDetails.mode ===
+        RD85_WOLF_PACK_MODE
+    )
+  );
+
+  if (els.hideSeekClassicModeBtn) {
+    els.hideSeekClassicModeBtn.disabled =
+      setupDisabled;
+  }
+
+  if (els.hideSeekWolfPackModeBtn) {
+    els.hideSeekWolfPackModeBtn.disabled =
+      setupDisabled;
+  }
+
+  if (els.hideSeekModeDescription) {
+    els.hideSeekModeDescription.textContent =
+      setupDetails.tagline;
+  }
+
+  if (els.hideSeekPlayerRange) {
+    els.hideSeekPlayerRange.textContent =
+      setupDetails.range;
+  }
+
+  if (els.startHideSeekBtn) {
+    els.startHideSeekBtn.disabled =
+      !hasActiveMultiplayerRoom() ||
+      memberCount <
+        setupDetails.minimumPlayers ||
+      state.hideSeek.starting ||
+      state.multiplayer.leaving;
+
+    els.startHideSeekBtn.textContent =
+      state.hideSeek.starting
+        ? `Preparing ${setupDetails.name}...`
+        : state.hideSeek.roundId
+          ? `Start another ${setupDetails.name} round`
+          : `Start ${setupDetails.name}`;
+  }
+
+  if (
+    els.hideSeekPreparationText &&
+    !state.hideSeek.preparationText &&
+    !state.hideSeek.unavailableMessage
+  ) {
+    els.hideSeekPreparationText.textContent =
+      memberCount <
+        setupDetails.minimumPlayers
+        ? `At least ${setupDetails.minimumPlayers} riders must be in the room.`
+        : setupDetails.mode ===
+            RD85_WOLF_PACK_MODE
+          ? "The app will choose two wolves and one road-based hiding zone."
+          : "The app will choose one wolf and one road-based hiding zone.";
+  }
+
+  const activeDetails = rd85IsWolfPack()
+    ? rd85ModeDetails(
+        RD85_WOLF_PACK_MODE
+      )
+    : state.hideSeek.gameMode ===
+        RD85_CLASSIC_MODE
+      ? rd85ModeDetails(
+          RD85_CLASSIC_MODE
+        )
+      : null;
+
+  if (els.hideSeekGameModeBadge) {
+    els.hideSeekGameModeBadge.classList.toggle(
+      "hidden",
+      !activeDetails
+    );
+
+    els.hideSeekGameModeBadge.textContent =
+      activeDetails?.name || "";
+
+    els.hideSeekGameModeBadge.classList.toggle(
+      "wolf-pack",
+      rd85IsWolfPack()
+    );
+  }
+
+  if (
+    rd85IsWolfPack() &&
+    els.leaveHideSeekBtn
+  ) {
+    els.leaveHideSeekBtn.textContent =
+      state.hideSeek.leaving
+        ? "Leaving game..."
+        : "Leave Wolf Pack";
+  }
+
+  if (
+    rd85IsWolfPack() &&
+    els.hideSeekMapPhase
+  ) {
+    if (
+      state.hideSeek.phase === "starting"
+    ) {
+      els.hideSeekMapPhase.textContent =
+        "Wolf Pack • Choosing";
+    } else if (
+      state.hideSeek.phase === "escape" &&
+      state.hideSeek.fastCountdownActive
+    ) {
+      els.hideSeekMapPhase.textContent =
+        "Wolves start soon";
+    } else if (
+      state.hideSeek.phase === "escape"
+    ) {
+      els.hideSeekMapPhase.textContent =
+        "Wolf Pack • Escape";
+    } else if (
+      state.hideSeek.phase === "hunt"
+    ) {
+      els.hideSeekMapPhase.textContent =
+        "Wolf Pack • Hunt";
+    } else if (
+      state.hideSeek.phase === "finished"
+    ) {
+      els.hideSeekMapPhase.textContent =
+        state.hideSeek.winner === "wolf"
+          ? "Wolves win"
+          : "Sheep win";
+    }
+  }
+
+  rd85ApplyWolfPackMarkerLabels();
+};
+
+/* -------------------------------------------------- */
+/* Wolf teammate markers                              */
+/* -------------------------------------------------- */
+
+drawHideSeekMarkers = function (players) {
+  if (!state.hideSeek.layer || !state.map) {
+    return;
+  }
+
+  const seenIds = new Set();
+
+  for (const player of players || []) {
+    const userId = String(
+      player.user_id || ""
+    );
+
+    if (!userId || player.is_me) {
+      continue;
+    }
+
+    const lat = Number(player.lat);
+    const lng = Number(player.lng);
+
+    if (
+      player.lat === null ||
+      player.lat === undefined ||
+      player.lng === null ||
+      player.lng === undefined ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      continue;
+    }
+
+    const status = String(
+      player.player_status || "active"
+    );
+
+    const role =
+      player.role === "wolf"
+        ? "wolf"
+        : "sheep";
+
+    const wolfTeammateVisible =
+      rd85IsWolfPack() &&
+      state.hideSeek.viewerRole === "wolf" &&
+      role === "wolf" &&
+      ["escape", "hunt"].includes(
+        state.hideSeek.phase
+      );
+
+    const visibleByGameRules =
+      wolfTeammateVisible ||
+      (
+        state.hideSeek.phase === "hunt" &&
+        (
+          (
+            state.hideSeek.viewerRole ===
+              "sheep" &&
+            role === "wolf"
+          ) ||
+          (
+            role === "sheep" &&
+            ["found", "out"].includes(
+              status
+            )
+          )
+        )
+      );
+
+    if (!visibleByGameRules) {
+      continue;
+    }
+
+    const colour =
+      status === "found" ||
+      status === "out"
+        ? HIDE_SEEK_OUT_COLOUR
+        : role === "wolf"
+          ? HIDE_SEEK_WOLF_COLOUR
+          : HIDE_SEEK_SHEEP_COLOUR;
+
+    seenIds.add(userId);
+
+    const icon = L.divIcon({
+      className:
+        "multiplayer-dot-icon hide-seek-dot-icon",
+
+      html: `
+        <div
+          class="hide-seek-leaflet-dot ${role} ${escapeHtml(status)}"
+          style="--dot-colour: ${colour};"
+        ></div>
+      `,
+
+      iconSize: [26, 26],
+      iconAnchor: [13, 13]
+    });
+
+    const roleLabel =
+      wolfTeammateVisible
+        ? "Wolf teammate"
+        : role === "wolf"
+          ? "Wolf"
+          : hideSeekPlayerStatusLabel(
+              player
+            );
+
+    const tooltip =
+      `${escapeHtml(
+        player.display_name || "Player"
+      )} • ${roleLabel}`;
+
+    const existingMarker =
+      state.hideSeek.markers.get(userId);
+
+    if (existingMarker) {
+      existingMarker.setLatLng([
+        lat,
+        lng
+      ]);
+
+      existingMarker.setIcon(icon);
+
+      existingMarker.setTooltipContent(
+        tooltip
+      );
+    } else {
+      const marker = L.marker(
+        [lat, lng],
+        {
+          icon,
+          pane: "multiplayerPane",
+          interactive: false
+        }
+      ).addTo(state.hideSeek.layer);
+
+      marker.bindTooltip(tooltip, {
+        sticky: true
+      });
+
+      state.hideSeek.markers.set(
+        userId,
+        marker
+      );
+    }
+  }
+
+  for (
+    const [userId, marker] of
+    state.hideSeek.markers.entries()
+  ) {
+    if (!seenIds.has(userId)) {
+      state.hideSeek.layer.removeLayer(
+        marker
+      );
+
+      state.hideSeek.markers.delete(
+        userId
+      );
+    }
+  }
+};
+
+function rd85ApplyWolfPackMarkerLabels() {
+  if (!rd85IsWolfPack()) return;
+
+  for (const player of state.hideSeek.players) {
+    if (
+      player?.role !== "wolf" ||
+      player?.is_me
+    ) {
+      continue;
+    }
+
+    const marker =
+      state.hideSeek.markers.get(
+        String(player.user_id || "")
+      );
+
+    marker?.setTooltipContent(
+      `${escapeHtml(
+        player.display_name || "Player"
+      )} • Wolf teammate`
+    );
+  }
+}
+
+function rd85InitWolfPackMode() {
+  rd85BindWolfPackControls();
+  renderHideSeekState();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd85InitWolfPackMode,
+    { once: true }
+  );
+} else {
+  rd85InitWolfPackMode();
+}
