@@ -6303,3 +6303,64 @@ body.rd-trophy-open {
     border-radius: 14px;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU v59 discovery check button       */
+/* Append this block once to style.css v58            */
+/* ================================================== */
+
+.rd81-check-location-btn {
+  width: calc(100% - 36px);
+  min-height: 64px;
+  margin: 18px 18px 0;
+  border: 1px solid rgba(75, 179, 255, 0.62);
+  border-radius: 18px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(75, 179, 255, 1),
+      rgba(37, 137, 255, 1)
+    );
+  color: #03111d;
+  font-size: 16px;
+  font-weight: 950;
+  letter-spacing: -0.01em;
+  box-shadow:
+    0 0 0 1px rgba(75, 179, 255, 0.12),
+    0 12px 30px rgba(25, 128, 255, 0.25);
+}
+
+.rd81-check-location-btn:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.rd81-check-location-btn:disabled {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--faint);
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+.rd81-check-location-btn.hidden {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd81-check-location-btn:hover:not(:disabled) {
+    border-color: rgba(143, 209, 255, 0.9);
+    background:
+      linear-gradient(
+        135deg,
+        rgba(102, 194, 255, 1),
+        rgba(53, 150, 255, 1)
+      );
+  }
+}
+
+@media (max-width: 480px) {
+  .rd81-check-location-btn {
+    min-height: 60px;
+    font-size: 15px;
+  }
+}
