@@ -22233,3 +22233,254 @@ if (document.readyState === "loading") {
 } else {
   rd82InitHiddenBackButton();
 }
+
+/* ================================================== */
+/* Road Discovery AU v83 Daylight map                 */
+/* Append this block once to the bottom of app.js v82 */
+/* ================================================== */
+
+const RD83_DAYLIGHT_MAP_KEY =
+  "roadDiscoveryAU.daylightMap.v1";
+
+const RD83_DARK_TILE_URL =
+  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+
+const RD83_LIGHT_TILE_URL =
+  "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+
+const roadDiscoveryV83 = {
+  initMap
+};
+
+state.daylightMap = rd83LoadDaylightMap();
+state.rd83BaseTileLayer = null;
+
+function rd83LoadDaylightMap() {
+  try {
+    return (
+      localStorage.getItem(
+        RD83_DAYLIGHT_MAP_KEY
+      ) === "true"
+    );
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
+
+function rd83SaveDaylightMap() {
+  try {
+    localStorage.setItem(
+      RD83_DAYLIGHT_MAP_KEY,
+      String(Boolean(state.daylightMap))
+    );
+  } catch (error) {
+    console.error(error);
+    showToast(
+      "Could not save map appearance"
+    );
+  }
+}
+
+function rd83IsRoadDiscoveryBaseTile(layer) {
+  const url = String(layer?._url || "");
+
+  return (
+    url.includes(
+      "basemaps.cartocdn.com/dark_all"
+    ) ||
+    url.includes(
+      "basemaps.cartocdn.com/light_all"
+    )
+  );
+}
+
+function rd83ApplyDaylightMap() {
+  const enabled = Boolean(
+    state.daylightMap
+  );
+
+  document.body.classList.toggle(
+    "rd83-daylight-map",
+    enabled
+  );
+
+  const toggle = $(
+    "rd83DaylightMapToggle"
+  );
+
+  if (toggle) {
+    toggle.checked = enabled;
+  }
+
+  if (!state.map || !window.L) {
+    return;
+  }
+
+  const currentUrl = enabled
+    ? RD83_LIGHT_TILE_URL
+    : RD83_DARK_TILE_URL;
+
+  const layersToRemove = [];
+  let matchingLayer = null;
+
+  state.map.eachLayer((layer) => {
+    if (
+      layer instanceof L.TileLayer &&
+      rd83IsRoadDiscoveryBaseTile(layer)
+    ) {
+      if (
+        !matchingLayer &&
+        String(layer._url || "") ===
+          currentUrl
+      ) {
+        matchingLayer = layer;
+      } else {
+        layersToRemove.push(layer);
+      }
+    }
+  });
+
+  for (const layer of layersToRemove) {
+    state.map.removeLayer(layer);
+  }
+
+  state.rd83BaseTileLayer =
+    matchingLayer ||
+    L.tileLayer(
+      currentUrl,
+      {
+        maxZoom: 20,
+        crossOrigin: true,
+        attribution:
+          "&copy; OpenStreetMap contributors &copy; CARTO"
+      }
+    ).addTo(state.map);
+
+  state.rd83BaseTileLayer
+    .bringToBack?.();
+
+  state.map
+    .getContainer?.()
+    ?.classList.toggle(
+      "rd83-daylight-map-active",
+      enabled
+    );
+
+  window.setTimeout(() => {
+    state.map?.invalidateSize?.(false);
+  }, 0);
+}
+
+function rd83InsertDaylightMapSetting() {
+  if ($("rd83DaylightMapToggle")) {
+    return;
+  }
+
+  const mapSection = $(
+    "locationMarkerToggle"
+  )?.closest(".panel-section");
+
+  if (!mapSection) return;
+
+  const setting =
+    document.createElement("label");
+
+  setting.id =
+    "rd83DaylightMapSetting";
+
+  setting.className =
+    "toggle-row rd83-daylight-map-setting";
+
+  setting.setAttribute(
+    "for",
+    "rd83DaylightMapToggle"
+  );
+
+  setting.innerHTML = `
+    <div class="toggle-text">
+      <strong>Daylight map</strong>
+
+      <span>
+        Uses a brighter map with dark roads and labels
+        for easier viewing outdoors. Your interface,
+        GPS and discovered-road progress stay unchanged.
+      </span>
+    </div>
+
+    <input
+      id="rd83DaylightMapToggle"
+      class="toggle-input"
+      type="checkbox"
+    />
+
+    <span
+      class="toggle-switch"
+      aria-hidden="true"
+    >
+      <span class="toggle-knob"></span>
+    </span>
+  `;
+
+  const trailColourSetting = $(
+    "trailColourSetting"
+  );
+
+  if (
+    trailColourSetting &&
+    trailColourSetting.parentElement ===
+      mapSection
+  ) {
+    mapSection.insertBefore(
+      setting,
+      trailColourSetting
+    );
+  } else {
+    mapSection.appendChild(setting);
+  }
+
+  $("rd83DaylightMapToggle")
+    ?.addEventListener(
+      "change",
+      (event) => {
+        state.daylightMap = Boolean(
+          event.currentTarget.checked
+        );
+
+        rd83SaveDaylightMap();
+        rd83ApplyDaylightMap();
+
+        showToast(
+          state.daylightMap
+            ? "Daylight map on"
+            : "Dark map on"
+        );
+      }
+    );
+}
+
+/* Apply the saved preference during map setup. */
+
+initMap = function () {
+  const result =
+    roadDiscoveryV83.initMap();
+
+  rd83ApplyDaylightMap();
+
+  return result;
+};
+
+function rd83InitDaylightMap() {
+  rd83InsertDaylightMapSetting();
+  rd83ApplyDaylightMap();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd83InitDaylightMap,
+    { once: true }
+  );
+} else {
+  rd83InitDaylightMap();
+}
