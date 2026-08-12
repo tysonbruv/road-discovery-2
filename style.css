@@ -6364,3 +6364,48 @@ body.rd-trophy-open {
     font-size: 15px;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU v60 discovery back arrow         */
+/* Append this block once to style.css v59            */
+/* ================================================== */
+
+.rd-hidden-header > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rd82-hidden-back-btn {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(75, 179, 255, 0.28);
+  border-radius: 14px;
+  background: rgba(75, 179, 255, 0.08);
+  color: #8fd1ff;
+  font-size: 23px;
+  font-weight: 900;
+  line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.rd82-hidden-back-btn:active {
+  transform: scale(0.96);
+  background: rgba(75, 179, 255, 0.15);
+}
+
+.rd82-hidden-back-btn.hidden,
+.rd82-bottom-back-hidden {
+  display: none !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd82-hidden-back-btn:hover {
+    border-color: rgba(75, 179, 255, 0.52);
+    background: rgba(75, 179, 255, 0.14);
+  }
+}
