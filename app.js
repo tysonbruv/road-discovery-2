@@ -21554,3 +21554,534 @@ if (document.readyState === "loading") {
 } else {
   rd80InitNewHiddenDiscoveries();
 }
+
+/* ================================================== */
+/* Road Discovery AU v81 manual discovery checking    */
+/* Append this block once to the bottom of app.js v80 */
+/* ================================================== */
+
+const RD81_CHECK_RADIUS_M = Object.freeze({
+  echo_point_three_sisters: 140,
+  lithgow_blast_furnace: 140,
+  mount_piper_power_station: 450,
+  bathurst_big_gold_panner: 120,
+  mount_panorama_wahluu_circuit: 120,
+  hawkesbury_lookout: 120,
+  galston_gorge_lookout: 150,
+  north_head_scenic_drive_view_point: 150,
+  sublime_point_lookout: 150,
+  bald_hill_lookout: 150,
+  picton_mushroom_tunnel: 150,
+  solomon_jane_wiseman_grave: 120,
+  miss_porters_house: 100,
+  sir_edmund_barton_monument: 100
+});
+
+const roadDiscoveryV81 = {
+  rd72CheckDiscoveryPoint,
+  rd72RenderHiddenDiscoveries,
+  rd79RenderCurrentView
+};
+
+state.rd81CheckingHiddenLocation = false;
+
+/* -------------------------------------------------- */
+/* Disable automatic Drive Mode discovery checks      */
+/* -------------------------------------------------- */
+
+rd72CheckDiscoveryPoint = function () {
+  /*
+    Hidden Discoveries are now checked only when the
+    user deliberately presses I Think I Found It.
+    Normal GPS handling and road painting are unchanged.
+  */
+};
+
+/* -------------------------------------------------- */
+/* Manual verification zones                         */
+/* -------------------------------------------------- */
+
+function rd81VerificationZones(discovery) {
+  const configuredRadius = Number(
+    RD81_CHECK_RADIUS_M[discovery?.id]
+  );
+
+  const radiusM =
+    Number.isFinite(configuredRadius) &&
+    configuredRadius > 0
+      ? configuredRadius
+      : 150;
+
+  if (Array.isArray(discovery?.zones)) {
+    return discovery.zones
+      .filter(
+        (zone) =>
+          Number.isFinite(zone?.lat) &&
+          Number.isFinite(zone?.lng)
+      )
+      .map((zone) => ({
+        lat: zone.lat,
+        lng: zone.lng,
+        radiusM
+      }));
+  }
+
+  if (Array.isArray(discovery?.checkpoints)) {
+    return discovery.checkpoints
+      .filter(
+        (checkpoint) =>
+          Number.isFinite(checkpoint?.lat) &&
+          Number.isFinite(checkpoint?.lng)
+      )
+      .map((checkpoint) => ({
+        lat: checkpoint.lat,
+        lng: checkpoint.lng,
+        radiusM
+      }));
+  }
+
+  return [];
+}
+
+/* -------------------------------------------------- */
+/* Fresh GPS reading                                  */
+/* -------------------------------------------------- */
+
+function rd81FreshGpsPoint() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject({ code: 0 });
+      return;
+    }
+
+    let watchId = null;
+    let timeoutId = null;
+    let bestPoint = null;
+    let settled = false;
+
+    const finish = (callback, value) => {
+      if (settled) return;
+
+      settled = true;
+
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(
+          watchId
+        );
+      }
+
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+
+      callback(value);
+    };
+
+    watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const point = {
+          lat: Number(
+            position.coords.latitude
+          ),
+          lng: Number(
+            position.coords.longitude
+          ),
+          accuracy: Number(
+            position.coords.accuracy
+          ),
+          speed:
+            position.coords.speed === null
+              ? null
+              : Number(position.coords.speed),
+          timestamp:
+            Number(position.timestamp) ||
+            Date.now()
+        };
+
+        if (
+          !Number.isFinite(point.lat) ||
+          !Number.isFinite(point.lng) ||
+          !Number.isFinite(point.accuracy)
+        ) {
+          return;
+        }
+
+        if (
+          !bestPoint ||
+          point.accuracy < bestPoint.accuracy
+        ) {
+          bestPoint = point;
+        }
+
+        if (
+          point.accuracy <=
+          MAX_GPS_ACCURACY_M
+        ) {
+          finish(resolve, point);
+        }
+      },
+      (error) => {
+        if (error?.code === 1) {
+          finish(reject, error);
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 15000
+      }
+    );
+
+    timeoutId = window.setTimeout(() => {
+      if (bestPoint) {
+        finish(resolve, bestPoint);
+      } else {
+        finish(reject, { code: 3 });
+      }
+    }, 15000);
+  });
+}
+
+/* -------------------------------------------------- */
+/* Check against locked discoveries in this region    */
+/* -------------------------------------------------- */
+
+function rd81CurrentRegionDiscoveries() {
+  const browser =
+    state.rd79HiddenDiscoveryBrowser;
+
+  return rd79DiscoveriesFor(
+    browser.countryCode,
+    browser.regionCode
+  );
+}
+
+function rd81FindDiscoveryAtPoint(
+  point,
+  discoveries
+) {
+  let nearestMatch = null;
+  let nearestDistance = Infinity;
+
+  for (const discovery of discoveries) {
+    if (
+      state.hiddenDiscoveries.completed[
+        discovery.id
+      ]
+    ) {
+      continue;
+    }
+
+    for (
+      const zone of
+      rd81VerificationZones(discovery)
+    ) {
+      const distance = haversine(
+        point,
+        zone
+      );
+
+      if (
+        distance <= zone.radiusM &&
+        distance < nearestDistance
+      ) {
+        nearestMatch = discovery;
+        nearestDistance = distance;
+      }
+    }
+  }
+
+  return nearestMatch;
+}
+
+function rd81GpsFailureMessage(error) {
+  if (error?.code === 1) {
+    return (
+      "Location permission is required to " +
+      "check a Hidden Discovery"
+    );
+  }
+
+  if (error?.code === 3) {
+    return (
+      "Could not get a fresh GPS reading. " +
+      "Move into an open area and try again"
+    );
+  }
+
+  return "Current location is unavailable";
+}
+
+async function rd81CheckMyLocation() {
+  if (state.rd81CheckingHiddenLocation) {
+    return;
+  }
+
+  if (!state.auth.user || !state.auth.profile) {
+    showToast(
+      "Sign in to complete Hidden Discoveries"
+    );
+    return;
+  }
+
+  if (hasActiveHideSeekRound()) {
+    showToast(
+      "Finish Hide & Seek before checking"
+    );
+    return;
+  }
+
+  const discoveries =
+    rd81CurrentRegionDiscoveries();
+
+  const lockedDiscoveries =
+    discoveries.filter(
+      (discovery) =>
+        !state.hiddenDiscoveries.completed[
+          discovery.id
+        ]
+    );
+
+  if (lockedDiscoveries.length === 0) {
+    showToast(
+      "Every discovery here is complete"
+    );
+    return;
+  }
+
+  state.rd81CheckingHiddenLocation = true;
+  rd81UpdateCheckButton();
+
+  try {
+    const point = await rd81FreshGpsPoint();
+
+    if (
+      point.accuracy >
+      MAX_GPS_ACCURACY_M
+    ) {
+      showToast(
+        `GPS accuracy ${Math.round(
+          point.accuracy
+        )} m — move into an open area and try again`
+      );
+
+      return;
+    }
+
+    if (
+      Number.isFinite(point.speed) &&
+      point.speed > 2.5
+    ) {
+      showToast(
+        "Stop somewhere safe before checking"
+      );
+
+      return;
+    }
+
+    const discovery =
+      rd81FindDiscoveryAtPoint(
+        point,
+        lockedDiscoveries
+      );
+
+    if (!discovery) {
+      showToast(
+        "Not quite. Keep exploring."
+      );
+
+      return;
+    }
+
+    const recordingWasActive = Boolean(
+      state.isRecording
+    );
+
+    rd72CompleteDriveDiscoveries([
+      discovery.id
+    ]);
+
+    /*
+      The existing completion function normally waits
+      for Finish Drive when a drive is active. Manual
+      discovery checking reveals it immediately.
+    */
+    if (recordingWasActive) {
+      window.setTimeout(() => {
+        rd72OpenCompletion([
+          discovery.id
+        ]);
+      }, 320);
+    }
+  } catch (error) {
+    showToast(
+      rd81GpsFailureMessage(error)
+    );
+  } finally {
+    state.rd81CheckingHiddenLocation = false;
+    rd81UpdateCheckButton();
+  }
+}
+
+/* -------------------------------------------------- */
+/* Create the large check-location button             */
+/* -------------------------------------------------- */
+
+function rd81CreateCheckButton() {
+  if ($("rd81CheckHiddenLocationBtn")) {
+    return;
+  }
+
+  const doneButton = $(
+    "rd72HiddenDiscoveryDoneBtn"
+  );
+
+  if (!doneButton) return;
+
+  const button =
+    document.createElement("button");
+
+  button.id =
+    "rd81CheckHiddenLocationBtn";
+
+  button.className =
+    "wide-btn rd81-check-location-btn hidden";
+
+  button.type = "button";
+
+  button.addEventListener(
+    "click",
+    rd81CheckMyLocation
+  );
+
+  doneButton.insertAdjacentElement(
+    "beforebegin",
+    button
+  );
+}
+
+/* -------------------------------------------------- */
+/* Replace the old Start Drive instructions           */
+/* -------------------------------------------------- */
+
+function rd81UpdateSafetyMessage() {
+  const safetyNote = document.querySelector(
+    "#rd72HiddenDiscoveryOverlay " +
+      ".rd-hidden-safety-note"
+  );
+
+  if (!safetyNote) return;
+
+  safetyNote.innerHTML = `
+    <strong>
+      Stop somewhere safe before checking.
+    </strong>
+
+    Solve the riddle and explore safely. When you think
+    you have found a Hidden Discovery, press
+    <strong>I Think I Found It</strong>. You never need
+    to enter private or restricted property. Do not use
+    your phone while moving.
+  `;
+}
+
+/* -------------------------------------------------- */
+/* Show the button only on a state's riddle screen    */
+/* -------------------------------------------------- */
+
+function rd81UpdateCheckButton() {
+  const button = $(
+    "rd81CheckHiddenLocationBtn"
+  );
+
+  if (!button) return;
+
+  const browser =
+    state.rd79HiddenDiscoveryBrowser;
+
+  const showButton =
+    browser.view === "discoveries";
+
+  button.classList.toggle(
+    "hidden",
+    !showButton
+  );
+
+  if (!showButton) return;
+
+  const discoveries =
+    rd81CurrentRegionDiscoveries();
+
+  const allCompleted =
+    discoveries.length > 0 &&
+    discoveries.every(
+      (discovery) =>
+        Boolean(
+          state.hiddenDiscoveries.completed[
+            discovery.id
+          ]
+        )
+    );
+
+  button.disabled =
+    state.rd81CheckingHiddenLocation ||
+    allCompleted;
+
+  if (state.rd81CheckingHiddenLocation) {
+    button.textContent = "Checking GPS…";
+    return;
+  }
+
+  button.textContent = allCompleted
+    ? "All Discoveries Found"
+    : "I Think I Found It";
+}
+
+/* Keep the button aligned with the selected screen. */
+
+rd79RenderCurrentView = function () {
+  const result =
+    roadDiscoveryV81
+      .rd79RenderCurrentView();
+
+  rd81UpdateCheckButton();
+
+  return result;
+};
+
+rd72RenderHiddenDiscoveries = function () {
+  const result =
+    roadDiscoveryV81
+      .rd72RenderHiddenDiscoveries();
+
+  rd81UpdateCheckButton();
+
+  return result;
+};
+
+/* -------------------------------------------------- */
+/* Initialise                                         */
+/* -------------------------------------------------- */
+
+function rd81InitManualDiscoveryCheck() {
+  /*
+    Remove any locations automatically detected earlier
+    in this browser session. Nothing already completed
+    or synced is removed.
+  */
+  state.hiddenDiscoveries.pending.clear();
+
+  rd81CreateCheckButton();
+  rd81UpdateSafetyMessage();
+  rd81UpdateCheckButton();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd81InitManualDiscoveryCheck,
+    { once: true }
+  );
+} else {
+  rd81InitManualDiscoveryCheck();
+}
