@@ -58,7 +58,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=61"
+    href="style.css?v=62"
   />
 </head>
 
@@ -650,65 +650,113 @@
           ></div>
 
           <div
-            id="hideSeekSetupBox"
-            class="hide-seek-setup-box"
-          >
-            <div class="hide-seek-heading-row">
-              <div>
-                <div class="friends-block-title">
-                  Hide &amp; Seek
-                </div>
+  id="hideSeekSetupBox"
+  class="hide-seek-setup-box"
+>
+  <div class="hide-seek-heading-row">
+    <div>
+      <div class="friends-block-title">
+        Hide &amp; Seek Games
+      </div>
 
-                <p class="small-note">
-                  One random wolf. Everyone else becomes sheep.
-                </p>
-              </div>
+      <p
+        id="hideSeekModeDescription"
+        class="small-note"
+      >
+        One random wolf. Everyone else becomes sheep.
+      </p>
+    </div>
 
-              <span class="hide-seek-version-pill">
-                2–8 players
-              </span>
-            </div>
+    <span
+      id="hideSeekPlayerRange"
+      class="hide-seek-version-pill"
+    >
+      2–8 players
+    </span>
+  </div>
 
-            <div class="hide-seek-safety-note">
-              Play safely. Follow road rules. Do not speed. Do not stop
-              somewhere dangerous. Leave the zone if needed.
-            </div>
+  <div
+    id="hideSeekModePicker"
+    class="hide-seek-mode-picker"
+    aria-label="Choose a Hide and Seek game mode"
+  >
+    <button
+      id="hideSeekClassicModeBtn"
+      class="hide-seek-mode-btn active"
+      type="button"
+      aria-pressed="true"
+    >
+      <strong>
+        Hide &amp; Seek
+      </strong>
 
-            <button
-              id="startHideSeekBtn"
-              class="wide-btn hide-seek-start-btn"
-              type="button"
-            >
-              Start Hide &amp; Seek
-            </button>
+      <span>
+        1 wolf • 2–8 riders
+      </span>
+    </button>
 
-            <div
-              id="hideSeekPreparationText"
-              class="small-note hide-seek-preparation-text"
-            >
-              The app will choose one wolf and a road-based hiding zone.
-            </div>
-          </div>
+    <button
+      id="hideSeekWolfPackModeBtn"
+      class="hide-seek-mode-btn wolf-pack"
+      type="button"
+      aria-pressed="false"
+    >
+      <strong>
+        Wolf Pack
+      </strong>
 
+      <span>
+        2 wolves • 3–8 riders
+      </span>
+    </button>
+  </div>
+
+  <div class="hide-seek-safety-note">
+    Play safely. Follow road rules. Do not speed.
+    Do not stop somewhere dangerous. Leave the
+    zone if needed.
+  </div>
+
+  <button
+    id="startHideSeekBtn"
+    class="wide-btn hide-seek-start-btn"
+    type="button"
+  >
+    Start Hide &amp; Seek
+  </button>
+
+  <div
+    id="hideSeekPreparationText"
+    class="small-note hide-seek-preparation-text"
+  >
+    The app will choose one wolf and one
+    road-based hiding zone.
+  </div>
+</div>
           <div
             id="hideSeekGameBox"
             class="hide-seek-game-box hidden"
           >
             <div class="hide-seek-game-header">
-              <span
-                id="hideSeekRoleBadge"
-                class="hide-seek-role-badge sheep"
-              >
-                Sheep
-              </span>
+  <span
+    id="hideSeekRoleBadge"
+    class="hide-seek-role-badge sheep"
+  >
+    Sheep
+  </span>
 
-              <span
-                id="hideSeekPhaseBadge"
-                class="hide-seek-phase-badge"
-              >
-                Escape
-              </span>
-            </div>
+  <span
+    id="hideSeekGameModeBadge"
+    class="hide-seek-game-mode-badge hidden"
+  ></span>
+
+  <span
+    id="hideSeekPhaseBadge"
+    class="hide-seek-phase-badge"
+  >
+    Escape
+  </span>
+</div>
 
             <div
               id="hideSeekTimerValue"
@@ -1549,7 +1597,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=84"></script>
+  <script src="app.js?v=85"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
