@@ -58,7 +58,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=62"
+    href="style.css?v=63"
   />
 </head>
 
@@ -221,6 +221,65 @@
       ></div>
     </section>
 
+        <!-- Road Conquest information shown over the map -->
+    <section
+      id="conquestMapHud"
+      class="conquest-map-hud hidden"
+      aria-live="polite"
+    >
+      <div class="conquest-map-hud-top">
+        <span
+          id="conquestMapTeam"
+          class="conquest-map-team"
+        >
+          Team
+        </span>
+
+        <span
+          id="conquestMapPhase"
+          class="conquest-map-phase"
+        >
+          Deployment
+        </span>
+      </div>
+
+      <div
+        id="conquestMapTimer"
+        class="conquest-map-timer"
+      >
+        05:00
+      </div>
+
+      <div class="conquest-map-score">
+        <span class="red">
+          RED
+          <strong id="conquestMapRedScore">
+            0
+          </strong>
+        </span>
+
+        <span
+          class="divider"
+          aria-hidden="true"
+        >
+          •
+        </span>
+
+        <span class="blue">
+          BLUE
+          <strong id="conquestMapBlueScore">
+            0
+          </strong>
+        </span>
+      </div>
+    </section>
+
+    <div
+      id="conquestFocusStrip"
+      class="conquest-focus-strip hidden"
+      aria-label="Road Conquest objectives"
+    ></div>
+
     <!-- Large role reveal -->
     <section
       id="hideSeekRoleRevealOverlay"
@@ -241,7 +300,38 @@
         </div>
       </div>
     </section>
+    <!-- Road Conquest match result -->
+    <section
+      id="conquestResultOverlay"
+      class="conquest-result-overlay hidden"
+      aria-live="assertive"
+      aria-hidden="true"
+    >
+      <div class="conquest-result-card">
+        <div
+          id="conquestResultEyebrow"
+          class="conquest-result-eyebrow"
+        >
+          Victory
+        </div>
 
+        <div
+          id="conquestResultTitle"
+          class="conquest-result-title"
+        >
+          Red Team Wins
+        </div>
+
+        <div
+          id="conquestResultScore"
+          class="conquest-result-score"
+        >
+          0 – 0
+        </div>
+      </div>
+    </section>
+    
+    
     <nav
       class="tool-stack"
       aria-label="Map tools"
@@ -833,6 +923,165 @@
               type="button"
             >
               Leave Hide &amp; Seek
+            </button>
+          </div>
+
+                    <div id="conquestSetupBox">
+            <div
+              class="conquest-divider"
+              aria-hidden="true"
+            ></div>
+
+            <div class="conquest-setup-box">
+              <div class="conquest-heading-row">
+                <div>
+                  <div class="friends-block-title">
+                    Road Conquest
+                  </div>
+
+                  <p class="small-note">
+                    Capture roads. Control the map.
+                  </p>
+                </div>
+
+                <span class="conquest-version-pill">
+                  4–8 riders
+                </span>
+              </div>
+
+              <div class="conquest-safety-note">
+                Play safely. Follow all road rules. Do not speed.
+                Do not stop somewhere dangerous. Set up the game
+                before moving and never interact with the phone
+                while riding or driving.
+              </div>
+
+              <div class="conquest-rule-grid">
+                <div class="conquest-rule">
+                  <strong>A, B and C</strong>
+
+                  <span>
+                    Capture and hold road objectives.
+                  </span>
+                </div>
+
+                <div class="conquest-rule">
+                  <strong>Score every 3 seconds</strong>
+
+                  <span>
+                    Each owned objective earns one point.
+                  </span>
+                </div>
+
+                <div class="conquest-rule">
+                  <strong>Road Caches</strong>
+
+                  <span>
+                    Collect bonus points around the map.
+                  </span>
+                </div>
+
+                <div class="conquest-rule">
+                  <strong>28-minute match</strong>
+
+                  <span>
+                    Highest team score wins.
+                  </span>
+                </div>
+              </div>
+
+              <button
+                id="startConquestBtn"
+                class="conquest-start-btn"
+                type="button"
+              >
+                Start Road Conquest
+              </button>
+
+              <div
+                id="conquestPreparationText"
+                class="conquest-preparation-text"
+                aria-live="polite"
+              >
+                At least 4 riders must be in the room.
+              </div>
+            </div>
+          </div>
+
+          <div
+            id="conquestGameBox"
+            class="conquest-game-box hidden"
+          >
+            <div class="conquest-game-header">
+              <div class="conquest-game-top">
+                <span
+                  id="conquestTeamBadge"
+                  class="conquest-team-badge"
+                >
+                  Team
+                </span>
+
+                <span
+                  id="conquestPhaseBadge"
+                  class="conquest-phase-badge"
+                >
+                  Deployment
+                </span>
+              </div>
+            </div>
+
+            <div
+              id="conquestTimerValue"
+              class="conquest-panel-timer"
+              aria-live="polite"
+            >
+              05:00
+            </div>
+
+            <div class="conquest-scoreboard">
+              <div class="conquest-score-card red">
+                <span>Red Team</span>
+
+                <strong id="conquestRedScore">
+                  0
+                </strong>
+              </div>
+
+              <div class="conquest-score-card blue">
+                <span>Blue Team</span>
+
+                <strong id="conquestBlueScore">
+                  0
+                </strong>
+              </div>
+            </div>
+
+            <div
+              id="conquestGameStatus"
+              class="conquest-game-status"
+            >
+              Waiting for Road Conquest.
+            </div>
+
+            <div class="conquest-players-title">
+              Teams
+            </div>
+
+            <div
+              id="conquestPlayersList"
+              class="conquest-players-list"
+            >
+              <div class="empty-state">
+                Teams appear when Conquest starts.
+              </div>
+            </div>
+
+            <button
+              id="leaveConquestBtn"
+              class="conquest-leave-btn hidden"
+              type="button"
+            >
+              Leave Road Conquest
             </button>
           </div>
 
@@ -1597,7 +1846,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=85"></script>
+  <script src="app.js?v=86"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
