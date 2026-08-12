@@ -26297,3 +26297,2023 @@ if (document.readyState === "loading") {
 } else {
   rd86InitConquest();
 }
+
+/* ================================================== */
+/* Road Discovery AU v87 Custom Conquest Bots         */
+/* Append this block once to the bottom of app.js v86 */
+/* ================================================== */
+
+const RD87_CUSTOM_MATCH_MAX_TEAM = 4;
+const RD87_BOT_ROUTE_CONCURRENCY = 2;
+const RD87_BOT_ROUTE_RETRY_MS = 15000;
+const RD87_BOT_ROUTE_CACHE_MS = 10 * 60 * 1000;
+
+const roadDiscoveryV87 = {
+  applyConquestState: rd86ApplyConquestState,
+  renderConquestState: rd86RenderConquestState,
+  renderConquestPlayers: rd86RenderConquestPlayers,
+  drawConquestTeammates: rd86DrawTeammates,
+  conquestStatusText: rd86ConquestStatusText,
+  maybeSendConquestLocation:
+    rd86MaybeSendConquestLocation,
+  resetConquestState: rd86ResetConquestState,
+  leaveConquestRound: rd86LeaveConquestRound,
+  showConquestResult: rd86ShowConquestResult,
+  teamLabel: rd86TeamLabel,
+  markerColour: hs50OwnMarkerColour,
+  markerHaloColour: hs50OwnMarkerHaloColour
+};
+
+state.customConquest = {
+  assignments: new Map(),
+  redBots: 3,
+  blueBots: 4,
+  rosterSignature: "",
+  selectedPreset: "play_4v4",
+  starting: false,
+  preparationText: "",
+
+  routeRequests: [],
+  routeActive: new Set(),
+  routeRetryAt: new Map(),
+  routeCache: new Map(),
+
+  animationFrame: null,
+  lastAnimationAt: 0,
+  followBotId: null
+};
+
+state.conquest.matchType = "multiplayer";
+state.conquest.viewerIsSpectator = false;
+state.conquest.isMatchCreator = false;
+
+function rd87CacheCustomConquestElements() {
+  [
+    "customConquestBox",
+    "customConquestHostNote",
+    "customConquestPresetWatchBtn",
+    "customConquestPresetPlayBtn",
+    "customConquestPresetChallengeBtn",
+    "customConquestHumanList",
+    "customConquestRedBots",
+    "customConquestBlueBots",
+    "customConquestSummary",
+    "customConquestPreparationText",
+    "startCustomConquestBtn",
+    "endCustomConquestBtn",
+    "conquestSpectatorHint"
+  ].forEach((id) => {
+    els[id] = $(id);
+  });
+}
+
+function rd87IsRoomCreator() {
+  return Boolean(
+    state.auth.user?.id &&
+    state.multiplayer.createdBy &&
+    String(state.auth.user.id) ===
+      String(state.multiplayer.createdBy)
+  );
+}
+
+function rd87IsCustomConquest() {
+  return (
+    state.conquest.matchType === "custom"
+  );
+}
+
+function rd87RoomMembers() {
+  return Array.isArray(
+    state.multiplayer.members
+  )
+    ? state.multiplayer.members.filter(
+        (member) => member?.user_id
+      )
+    : [];
+}
+
+function rd87EnsureCustomAssignments() {
+  const members = rd87RoomMembers();
+  const activeIds = new Set(
+    members.map((member) =>
+      String(member.user_id)
+    )
+  );
+
+  for (
+    const userId of
+    state.customConquest.assignments.keys()
+  ) {
+    if (!activeIds.has(userId)) {
+      state.customConquest.assignments.delete(
+        userId
+      );
+    }
+  }
+
+  for (const member of members) {
+    const userId = String(member.user_id);
+
+    if (
+      !state.customConquest.assignments.has(
+        userId
+      )
+    ) {
+      const isMe =
+        userId ===
+        String(state.auth.user?.id || "");
+
+      state.customConquest.assignments.set(
+        userId,
+        isMe ? "red" : "spectator"
+      );
+    }
+  }
+}
+
+function rd87ResetHumansToSpectators() {
+  rd87EnsureCustomAssignments();
+
+  for (
+    const userId of
+    state.customConquest.assignments.keys()
+  ) {
+    state.customConquest.assignments.set(
+      userId,
+      "spectator"
+    );
+  }
+}
+
+function rd87ApplyCustomPreset(preset) {
+  rd87ResetHumansToSpectators();
+
+  const myUserId = String(
+    state.auth.user?.id || ""
+  );
+
+  if (preset === "watch_4v4") {
+    state.customConquest.redBots = 4;
+    state.customConquest.blueBots = 4;
+
+  } else if (preset === "four_vs_me") {
+    state.customConquest.redBots = 4;
+    state.customConquest.blueBots = 0;
+
+    if (myUserId) {
+      state.customConquest.assignments.set(
+        myUserId,
+        "blue"
+      );
+    }
+
+  } else {
+    state.customConquest.redBots = 3;
+    state.customConquest.blueBots = 4;
+
+    if (myUserId) {
+      state.customConquest.assignments.set(
+        myUserId,
+        "red"
+      );
+    }
+
+    preset = "play_4v4";
+  }
+
+  state.customConquest.selectedPreset = preset;
+
+  rd87RenderCustomConquestLobby();
+}
+
+function rd87CustomRoster() {
+  rd87EnsureCustomAssignments();
+
+  const humans = [];
+  let redHumans = 0;
+  let blueHumans = 0;
+
+  for (const member of rd87RoomMembers()) {
+    const userId = String(member.user_id);
+
+    const team =
+      state.customConquest.assignments.get(
+        userId
+      ) || "spectator";
+
+    if (team === "red" || team === "blue") {
+      humans.push({
+        user_id: userId,
+        team
+      });
+
+      if (team === "red") {
+        redHumans += 1;
+      } else {
+        blueHumans += 1;
+      }
+    }
+  }
+
+  const redBots = Number(
+    state.customConquest.redBots
+  );
+
+  const blueBots = Number(
+    state.customConquest.blueBots
+  );
+
+  const redTotal = redHumans + redBots;
+  const blueTotal = blueHumans + blueBots;
+
+  const errors = [];
+
+  if (redTotal < 1 || blueTotal < 1) {
+    errors.push(
+      "Both teams need at least one participant."
+    );
+  }
+
+  if (
+    redTotal > RD87_CUSTOM_MATCH_MAX_TEAM ||
+    blueTotal > RD87_CUSTOM_MATCH_MAX_TEAM
+  ) {
+    errors.push(
+      "Each team can have a maximum of four humans and bots combined."
+    );
+  }
+
+  return {
+    humans,
+    redHumans,
+    blueHumans,
+    redBots,
+    blueBots,
+    redTotal,
+    blueTotal,
+    errors,
+    valid: errors.length === 0
+  };
+}
+
+function rd87HumanAssignmentHtml(member) {
+  const userId = String(member.user_id);
+
+  const isMe =
+    userId ===
+    String(state.auth.user?.id || "");
+
+  const team =
+    state.customConquest.assignments.get(
+      userId
+    ) || "spectator";
+
+  const name = escapeHtml(
+    member.display_name || "Road rider"
+  );
+
+  return `
+    <label class="custom-conquest-human-row">
+      <span class="custom-conquest-human-name">
+        ${name}${isMe ? " • You" : ""}
+      </span>
+
+      <select
+        class="custom-conquest-team-select ${escapeHtml(team)}"
+        data-custom-conquest-user="${escapeHtml(userId)}"
+        aria-label="Choose team for ${name}"
+      >
+        <option
+          value="spectator"
+          ${team === "spectator" ? "selected" : ""}
+        >
+          Watch
+        </option>
+
+        <option
+          value="red"
+          ${team === "red" ? "selected" : ""}
+        >
+          Red
+        </option>
+
+        <option
+          value="blue"
+          ${team === "blue" ? "selected" : ""}
+        >
+          Blue
+        </option>
+      </select>
+    </label>
+  `;
+}
+
+function rd87RenderCustomConquestLobby() {
+  rd87CacheCustomConquestElements();
+  rd87EnsureCustomAssignments();
+
+  if (!els.customConquestBox) return;
+
+  const roomActive =
+    hasActiveMultiplayerRoom();
+
+  const activeGameBusy = Boolean(
+    hasActiveHideSeekRound() ||
+    hasActiveConquestRound() ||
+    state.hideSeek.starting
+  );
+
+  const anotherConquestStarting = Boolean(
+    state.conquest.starting &&
+    !state.customConquest.starting
+  );
+
+  const isHost = rd87IsRoomCreator();
+  const roster = rd87CustomRoster();
+
+  els.customConquestBox.classList.toggle(
+    "hidden",
+    !roomActive ||
+      activeGameBusy ||
+      anotherConquestStarting
+  );
+
+  if (els.customConquestHostNote) {
+    els.customConquestHostNote.textContent =
+      isHost
+        ? "Choose who plays, who watches and how many road-following bots are on each team."
+        : "The room creator controls the Custom Conquest team setup.";
+  }
+
+  if (els.customConquestHumanList) {
+    const members = rd87RoomMembers();
+
+    els.customConquestHumanList.innerHTML =
+      members.length > 0
+        ? members
+            .map(rd87HumanAssignmentHtml)
+            .join("")
+        : `
+            <div class="empty-state">
+              Room members appear here.
+            </div>
+          `;
+
+    for (
+      const select of
+      els.customConquestHumanList.querySelectorAll(
+        "[data-custom-conquest-user]"
+      )
+    ) {
+      select.disabled = !isHost;
+    }
+  }
+
+  if (els.customConquestRedBots) {
+    els.customConquestRedBots.value =
+      String(roster.redBots);
+
+    els.customConquestRedBots.disabled =
+      !isHost;
+  }
+
+  if (els.customConquestBlueBots) {
+    els.customConquestBlueBots.value =
+      String(roster.blueBots);
+
+    els.customConquestBlueBots.disabled =
+      !isHost;
+  }
+
+  const presetButtons = [
+    [
+      els.customConquestPresetWatchBtn,
+      "watch_4v4"
+    ],
+    [
+      els.customConquestPresetPlayBtn,
+      "play_4v4"
+    ],
+    [
+      els.customConquestPresetChallengeBtn,
+      "four_vs_me"
+    ]
+  ];
+
+  for (const [button, preset] of presetButtons) {
+    if (!button) continue;
+
+    button.disabled = !isHost;
+
+    button.classList.toggle(
+      "active",
+      state.customConquest.selectedPreset ===
+        preset
+    );
+  }
+
+  if (els.customConquestSummary) {
+    const summary =
+      `RED ${roster.redTotal} vs BLUE ${roster.blueTotal}`;
+
+    const humanCount =
+      roster.redHumans + roster.blueHumans;
+
+    const botCount =
+      roster.redBots + roster.blueBots;
+
+    const detail =
+      roster.errors[0] ||
+      `${humanCount} human${humanCount === 1 ? "" : "s"} • ` +
+      `${botCount} bot${botCount === 1 ? "" : "s"}`;
+
+    els.customConquestSummary.innerHTML = `
+      <strong>${escapeHtml(summary)}</strong>
+      <span>${escapeHtml(detail)}</span>
+    `;
+
+    els.customConquestSummary.classList.toggle(
+      "invalid",
+      !roster.valid
+    );
+  }
+
+  if (els.customConquestPreparationText) {
+    els.customConquestPreparationText.textContent =
+      state.customConquest.preparationText ||
+      (
+        isHost
+          ? "Bots follow real road routes and never paint or unlock roads."
+          : "Waiting for the room creator."
+      );
+  }
+
+  if (els.startCustomConquestBtn) {
+    els.startCustomConquestBtn.disabled =
+      !roomActive ||
+      !isHost ||
+      !roster.valid ||
+      activeGameBusy ||
+      anotherConquestStarting ||
+      state.customConquest.starting;
+
+    els.startCustomConquestBtn.textContent =
+      state.customConquest.starting
+        ? "Preparing Custom Conquest..."
+        : "Start Custom Conquest";
+  }
+}
+
+function rd87SetCustomBots(team, value) {
+  const safeValue = Math.max(
+    0,
+    Math.min(4, Number(value) || 0)
+  );
+
+  if (team === "red") {
+    state.customConquest.redBots = safeValue;
+  } else {
+    state.customConquest.blueBots = safeValue;
+  }
+
+  state.customConquest.selectedPreset = "custom";
+
+  rd87RenderCustomConquestLobby();
+}
+
+function rd87CustomStartPoint(roster) {
+  return getFreshRouteStartPoint()
+    .then((point) => {
+      if (
+        point &&
+        Number.isFinite(Number(point.lat)) &&
+        Number.isFinite(Number(point.lng)) &&
+        Number(point.accuracy) <=
+          MAX_GPS_ACCURACY_M
+      ) {
+        return point;
+      }
+
+      if (roster.humans.length === 0) {
+        const centre = state.map?.getCenter();
+
+        if (centre) {
+          return {
+            lat: Number(centre.lat),
+            lng: Number(centre.lng),
+            accuracy: 0,
+            timestamp: Date.now()
+          };
+        }
+      }
+
+      return null;
+    })
+    .catch(() => {
+      if (roster.humans.length === 0) {
+        const centre = state.map?.getCenter();
+
+        if (centre) {
+          return {
+            lat: Number(centre.lat),
+            lng: Number(centre.lng),
+            accuracy: 0,
+            timestamp: Date.now()
+          };
+        }
+      }
+
+      return null;
+    });
+}
+
+async function rd87StartCustomConquest() {
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    !rd87IsRoomCreator() ||
+    state.customConquest.starting ||
+    hasActiveConquestRound()
+  ) {
+    return;
+  }
+
+  if (hasActiveHideSeekRound()) {
+    showToast(
+      "Finish Hide & Seek before starting Custom Conquest"
+    );
+
+    return;
+  }
+
+  const roster = rd87CustomRoster();
+
+  if (!roster.valid) {
+    showToast(
+      roster.errors[0] ||
+      "Choose a valid Red and Blue roster"
+    );
+
+    return;
+  }
+
+  const safetyAccepted = window.confirm(
+    "Play safely. Follow all road rules. Do not speed. " +
+    "Do not stop somewhere dangerous. Set up the game " +
+    "before moving and never interact with the phone while " +
+    "riding or driving.\n\nStart Custom Conquest?"
+  );
+
+  if (!safetyAccepted) return;
+
+  if (rd86HasConquestRound()) {
+    rd86ResetConquestState({
+      clearRound: true,
+      render: false
+    });
+  }
+
+  state.customConquest.starting = true;
+  state.conquest.starting = true;
+
+  state.customConquest.preparationText =
+    "Choosing the game centre...";
+
+  renderMultiplayerState();
+
+  try {
+    const startPoint =
+      await rd87CustomStartPoint(roster);
+
+    if (!startPoint) {
+      throw new Error(
+        "A playing human needs GPS accuracy of 35 metres or better before starting."
+      );
+    }
+
+    state.customConquest.preparationText =
+      "Loading nearby road points...";
+
+    renderMultiplayerState();
+
+    const roadsReady =
+      await ensureRoadsNearPoint(
+        startPoint,
+        {
+          replaceIfFar: true,
+          quiet: false
+        }
+      );
+
+    if (
+      !roadsReady ||
+      state.roadSegments.length === 0
+    ) {
+      throw new Error(
+        "Could not load nearby roads for Custom Conquest."
+      );
+    }
+
+    state.customConquest.preparationText =
+      "Building the Custom Conquest arena...";
+
+    renderMultiplayerState();
+
+    const candidates =
+      rd86BuildConquestCandidates(
+        startPoint
+      );
+
+    if (
+      candidates.length <
+      RD86_CONQUEST_MIN_CANDIDATES
+    ) {
+      throw new Error(
+        "Not enough suitable roads were found. Move to a road-dense area or move the map and try again."
+      );
+    }
+
+    state.customConquest.preparationText =
+      "Checking that game locations are reachable...";
+
+    renderMultiplayerState();
+
+    const routeable =
+      await rd86FilterRouteableCandidates(
+        startPoint,
+        candidates
+      );
+
+    if (
+      routeable.length <
+      RD86_CONQUEST_MIN_CANDIDATES
+    ) {
+      throw new Error(
+        "Not enough reachable locations were found. Try another area."
+      );
+    }
+
+    state.customConquest.preparationText =
+      "Creating humans, bots and private teams...";
+
+    renderMultiplayerState();
+
+    const { data, error } =
+      await state.auth.client.rpc(
+        "start_custom_conquest_round",
+        {
+          p_room_id:
+            state.multiplayer.roomId,
+
+          p_start_lat:
+            Number(startPoint.lat),
+
+          p_start_lng:
+            Number(startPoint.lng),
+
+          p_road_candidates:
+            routeable.map(
+              (candidate) => ({
+                lat: candidate.lat,
+                lng: candidate.lng,
+                road_count:
+                  candidate.road_count,
+                routeable: true
+              })
+            ),
+
+          p_human_teams:
+            roster.humans,
+
+          p_red_bots:
+            roster.redBots,
+
+          p_blue_bots:
+            roster.blueBots,
+
+          p_safety_ack: true
+        }
+      );
+
+    if (error) throw error;
+
+    const roundId = Array.isArray(data)
+      ? data[0]
+      : data;
+
+    if (!roundId) {
+      throw new Error(
+        "Could not read the new Custom Conquest match."
+      );
+    }
+
+    state.conquest.roundId =
+      String(roundId);
+
+    state.customConquest.preparationText = "";
+
+    clearMultiplayerMarkers();
+
+    await rd86PollConquestState({
+      force: true
+    });
+
+    showToast(
+      roster.humans.length === 0
+        ? "4v4 bot match started • Spectator view"
+        : `Custom Conquest started • Red ${roster.redTotal} vs Blue ${roster.blueTotal}`
+    );
+
+  } catch (error) {
+    console.error(error);
+
+    const message =
+      rd86ConquestErrorMessage(error);
+
+    state.customConquest.preparationText =
+      message;
+
+    showToast(message);
+
+  } finally {
+    state.customConquest.starting = false;
+    state.conquest.starting = false;
+
+    renderMultiplayerState();
+  }
+}
+
+
+/* -------------------------------------------------- */
+/* Bot road routing                                   */
+/* -------------------------------------------------- */
+
+function rd87BotRouteCacheKey(request) {
+  return [
+    Number(request.start_lat).toFixed(4),
+    Number(request.start_lng).toFixed(4),
+    Number(request.target_lat).toFixed(4),
+    Number(request.target_lng).toFixed(4)
+  ].join(":");
+}
+
+function rd87DecimateRouteCoordinates(coords) {
+  if (coords.length <= 220) {
+    return coords;
+  }
+
+  const result = [coords[0]];
+
+  const step =
+    (coords.length - 1) / 218;
+
+  for (
+    let index = 1;
+    index < 219;
+    index += 1
+  ) {
+    result.push(
+      coords[
+        Math.min(
+          coords.length - 2,
+          Math.round(index * step)
+        )
+      ]
+    );
+  }
+
+  result.push(
+    coords[coords.length - 1]
+  );
+
+  return result;
+}
+
+function rd87RoutePayload(route) {
+  const coords =
+    rd87DecimateRouteCoordinates(
+      Array.isArray(route?.coords)
+        ? route.coords
+        : []
+    );
+
+  if (coords.length < 2) return [];
+
+  const distances = [0];
+  let total = 0;
+
+  for (
+    let index = 1;
+    index < coords.length;
+    index += 1
+  ) {
+    total += haversine(
+      {
+        lat:
+          Number(coords[index - 1][0]),
+        lng:
+          Number(coords[index - 1][1])
+      },
+      {
+        lat:
+          Number(coords[index][0]),
+        lng:
+          Number(coords[index][1])
+      }
+    );
+
+    distances.push(total);
+  }
+
+  if (
+    !Number.isFinite(total) ||
+    total <= 0
+  ) {
+    return [];
+  }
+
+  return coords.map(
+    (coord, index) => ({
+      lat:
+        Number(
+          Number(coord[0]).toFixed(6)
+        ),
+
+      lng:
+        Number(
+          Number(coord[1]).toFixed(6)
+        ),
+
+      progress:
+        Number(
+          (
+            distances[index] / total
+          ).toFixed(6)
+        )
+    })
+  );
+}
+
+async function rd87FetchBotRoadRoute(
+  request
+) {
+  const key =
+    rd87BotRouteCacheKey(request);
+
+  const cached =
+    state.customConquest.routeCache.get(
+      key
+    );
+
+  if (
+    cached &&
+    Date.now() - cached.savedAt <
+      RD87_BOT_ROUTE_CACHE_MS
+  ) {
+    return cached.route;
+  }
+
+  const route = await fetchRoadRoute(
+    {
+      lat: Number(request.start_lat),
+      lng: Number(request.start_lng)
+    },
+    {
+      lat: Number(request.target_lat),
+      lng: Number(request.target_lng)
+    }
+  );
+
+  state.customConquest.routeCache.set(
+    key,
+    {
+      savedAt: Date.now(),
+      route
+    }
+  );
+
+  return route;
+}
+
+async function rd87SupplyOneBotRoute(
+  request
+) {
+  const requestKey =
+    `${request.bot_id}:${request.target_version}`;
+
+  state.customConquest.routeActive.add(
+    requestKey
+  );
+
+  try {
+    const route =
+      await rd87FetchBotRoadRoute(
+        request
+      );
+
+    const routePoints =
+      rd87RoutePayload(route);
+
+    if (routePoints.length < 2) {
+      throw new Error(
+        "Road route contained too few points"
+      );
+    }
+
+    const { data, error } =
+      await state.auth.client.rpc(
+        "set_conquest_bot_route",
+        {
+          p_round_id:
+            state.conquest.roundId,
+
+          p_bot_id:
+            request.bot_id,
+
+          p_target_version:
+            Number(
+              request.target_version
+            ),
+
+          p_route_points:
+            routePoints,
+
+          p_duration_seconds:
+            Math.max(
+              1,
+              Number(route.durationS)
+            ),
+
+          p_distance_m:
+            Math.max(
+              25,
+              Number(route.distanceM)
+            )
+        }
+      );
+
+    if (error) throw error;
+
+    if (data === false) {
+      return;
+    }
+
+    state.customConquest.routeRetryAt.delete(
+      requestKey
+    );
+
+  } catch (error) {
+    console.error(
+      `Could not route ${
+        request.display_name ||
+        "Road Bot"
+      }`,
+      error
+    );
+
+    state.customConquest.routeRetryAt.set(
+      requestKey,
+      Date.now() +
+        RD87_BOT_ROUTE_RETRY_MS
+    );
+
+  } finally {
+    state.customConquest.routeActive.delete(
+      requestKey
+    );
+
+    window.setTimeout(() => {
+      if (rd87IsCustomConquest()) {
+        void rd86PollConquestState({
+          force: true
+        });
+      }
+    }, 250);
+  }
+}
+
+function rd87ProcessBotRouteRequests() {
+  if (
+    !rd87IsCustomConquest() ||
+    !hasActiveConquestRound() ||
+    !state.auth.client ||
+    !navigator.onLine
+  ) {
+    return;
+  }
+
+  const requests = Array.isArray(
+    state.customConquest.routeRequests
+  )
+    ? state.customConquest.routeRequests
+    : [];
+
+  let availableSlots =
+    RD87_BOT_ROUTE_CONCURRENCY -
+    state.customConquest.routeActive.size;
+
+  if (availableSlots <= 0) return;
+
+  for (const request of requests) {
+    if (availableSlots <= 0) break;
+
+    const requestKey =
+      `${request.bot_id}:${request.target_version}`;
+
+    if (
+      state.customConquest.routeActive.has(
+        requestKey
+      ) ||
+      Number(
+        state.customConquest.routeRetryAt.get(
+          requestKey
+        ) || 0
+      ) > Date.now()
+    ) {
+      continue;
+    }
+
+    availableSlots -= 1;
+
+    void rd87SupplyOneBotRoute(
+      request
+    );
+  }
+}
+
+
+/* -------------------------------------------------- */
+/* Smooth visible bot movement                        */
+/* -------------------------------------------------- */
+
+function rd87NormaliseRoutePoints(value) {
+  return rd86NormaliseJsonArray(value)
+    .map((point) => ({
+      lat: Number(point?.lat),
+      lng: Number(point?.lng),
+      progress: Number(point?.progress)
+    }))
+    .filter(
+      (point) =>
+        Number.isFinite(point.lat) &&
+        Number.isFinite(point.lng) &&
+        Number.isFinite(point.progress)
+    );
+}
+
+function rd87VisibleBotPosition(player) {
+  const fallback = {
+    lat: Number(player?.lat),
+    lng: Number(player?.lng)
+  };
+
+  const routePoints =
+    rd87NormaliseRoutePoints(
+      player?.route_points
+    );
+
+  const startedAt = Date.parse(
+    player?.route_started_at || ""
+  );
+
+  const durationMs =
+    Number(
+      player?.route_duration_seconds
+    ) * 1000;
+
+  if (
+    routePoints.length < 2 ||
+    !Number.isFinite(startedAt) ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  ) {
+    return fallback;
+  }
+
+  const fraction = Math.max(
+    0,
+    Math.min(
+      1,
+      (
+        rd86ConquestServerNow() -
+        startedAt
+      ) / durationMs
+    )
+  );
+
+  let before = routePoints[0];
+
+  let after =
+    routePoints[
+      routePoints.length - 1
+    ];
+
+  for (
+    let index = 1;
+    index < routePoints.length;
+    index += 1
+  ) {
+    if (
+      routePoints[index].progress >=
+        fraction
+    ) {
+      after = routePoints[index];
+      before = routePoints[index - 1];
+      break;
+    }
+  }
+
+  const span =
+    after.progress - before.progress;
+
+  const localFraction =
+    span > 0
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            (
+              fraction -
+              before.progress
+            ) / span
+          )
+        )
+      : 0;
+
+  return {
+    lat:
+      before.lat +
+      (
+        after.lat - before.lat
+      ) * localFraction,
+
+    lng:
+      before.lng +
+      (
+        after.lng - before.lng
+      ) * localFraction
+  };
+}
+
+function rd87ConquestParticipantIcon(
+  team,
+  isBot
+) {
+  return L.divIcon({
+    className:
+      "multiplayer-dot-icon conquest-teammate-icon",
+
+    html: isBot
+      ? `
+          <div class="conquest-bot-dot ${team}">
+            <span>BOT</span>
+          </div>
+        `
+      : `
+          <div class="conquest-teammate-dot ${team}"></div>
+        `,
+
+    iconSize:
+      isBot ? [32, 32] : [26, 26],
+
+    iconAnchor:
+      isBot ? [16, 16] : [13, 13]
+  });
+}
+
+rd86DrawTeammates = function () {
+  rd86EnsureConquestLayer();
+
+  const seen = new Set();
+
+  for (
+    const player of
+    state.conquest.players
+  ) {
+    const participantId = String(
+      player?.user_id || ""
+    );
+
+    const isBot =
+      Boolean(player?.is_bot);
+
+    const sameTeam =
+      player?.team ===
+      state.conquest.viewerTeam;
+
+    const visibleParticipant =
+      state.conquest.viewerIsSpectator
+        ? isBot
+        : sameTeam && !player?.is_me;
+
+    if (
+      !participantId ||
+      !visibleParticipant ||
+      player?.player_status !== "active"
+    ) {
+      continue;
+    }
+
+    const position = isBot
+      ? rd87VisibleBotPosition(player)
+      : {
+          lat: Number(player?.lat),
+          lng: Number(player?.lng)
+        };
+
+    if (
+      !Number.isFinite(position.lat) ||
+      !Number.isFinite(position.lng)
+    ) {
+      continue;
+    }
+
+    seen.add(participantId);
+
+    const team =
+      player?.team === "red"
+        ? "red"
+        : "blue";
+
+    const targetText =
+      isBot && player?.target_label
+        ? ` • ${player.target_label}`
+        : "";
+
+    const tooltip =
+      `${escapeHtml(
+        player?.display_name ||
+        (
+          isBot
+            ? "Road Bot"
+            : "Teammate"
+        )
+      )} • ${rd86TeamLabel(team)}${escapeHtml(targetText)}`;
+
+    const existing =
+      state.conquest.teammateMarkers.get(
+        participantId
+      );
+
+    if (existing) {
+      existing.setLatLng([
+        position.lat,
+        position.lng
+      ]);
+
+      existing.setIcon(
+        rd87ConquestParticipantIcon(
+          team,
+          isBot
+        )
+      );
+
+      existing.setTooltipContent(
+        tooltip
+      );
+
+    } else {
+      const marker = L.marker(
+        [
+          position.lat,
+          position.lng
+        ],
+        {
+          icon:
+            rd87ConquestParticipantIcon(
+              team,
+              isBot
+            ),
+
+          pane: "multiplayerPane",
+          interactive: isBot,
+          keyboard: false
+        }
+      ).addTo(
+        state.conquest.layer
+      );
+
+      marker.bindTooltip(
+        tooltip,
+        {
+          sticky: true
+        }
+      );
+
+      if (isBot) {
+        marker.on("click", () => {
+          state.customConquest.followBotId =
+            participantId;
+
+          state.followUser = false;
+
+          rd86FocusPoint(position);
+
+          showToast(
+            `Following ${
+              player.display_name ||
+              "Road Bot"
+            } • tap My Location to return`
+          );
+        });
+      }
+
+      marker.rd87Player = player;
+
+      state.conquest.teammateMarkers.set(
+        participantId,
+        marker
+      );
+    }
+
+    const marker =
+      state.conquest.teammateMarkers.get(
+        participantId
+      );
+
+    if (marker) {
+      marker.rd87Player = player;
+    }
+  }
+
+  for (
+    const [participantId, marker] of
+    state.conquest.teammateMarkers.entries()
+  ) {
+    if (!seen.has(participantId)) {
+      rd86ClearLayerItem(marker);
+
+      state.conquest.teammateMarkers.delete(
+        participantId
+      );
+    }
+  }
+
+  rd87EnsureBotAnimation();
+};
+
+function rd87AnimateVisibleBots(timestamp) {
+  state.customConquest.animationFrame = null;
+
+  if (
+    !rd87IsCustomConquest() ||
+    !rd86HasConquestRound()
+  ) {
+    return;
+  }
+
+  if (
+    timestamp -
+      state.customConquest.lastAnimationAt >=
+    100
+  ) {
+    state.customConquest.lastAnimationAt =
+      timestamp;
+
+    for (
+      const [participantId, marker] of
+      state.conquest.teammateMarkers.entries()
+    ) {
+      const player =
+        marker.rd87Player;
+
+      if (!player?.is_bot) continue;
+
+      const position =
+        rd87VisibleBotPosition(player);
+
+      if (
+        Number.isFinite(position.lat) &&
+        Number.isFinite(position.lng)
+      ) {
+        marker.setLatLng([
+          position.lat,
+          position.lng
+        ]);
+
+        if (
+          state.customConquest.followBotId ===
+            participantId &&
+          state.map
+        ) {
+          state.map.panTo(
+            [
+              position.lat,
+              position.lng
+            ],
+            {
+              animate: false
+            }
+          );
+        }
+      }
+    }
+  }
+
+  state.customConquest.animationFrame =
+    window.requestAnimationFrame(
+      rd87AnimateVisibleBots
+    );
+}
+
+function rd87EnsureBotAnimation() {
+  if (
+    state.customConquest.animationFrame ===
+      null &&
+    rd87IsCustomConquest() &&
+    rd86HasConquestRound()
+  ) {
+    state.customConquest.animationFrame =
+      window.requestAnimationFrame(
+        rd87AnimateVisibleBots
+      );
+  }
+}
+
+function rd87StopBotAnimation() {
+  if (
+    state.customConquest.animationFrame !==
+      null
+  ) {
+    window.cancelAnimationFrame(
+      state.customConquest.animationFrame
+    );
+
+    state.customConquest.animationFrame =
+      null;
+  }
+
+  state.customConquest.followBotId = null;
+}
+
+
+/* -------------------------------------------------- */
+/* Existing Conquest integration                      */
+/* -------------------------------------------------- */
+
+rd86TeamLabel = function (team) {
+  if (team === "spectator") {
+    return "Spectator";
+  }
+
+  return roadDiscoveryV87.teamLabel(
+    team
+  );
+};
+
+rd86ConquestStatusText = function () {
+  if (
+    rd87IsCustomConquest() &&
+    state.conquest.viewerIsSpectator
+  ) {
+    if (
+      state.conquest.phase ===
+      "deployment"
+    ) {
+      return (
+        "Spectator view • Bots are following roads to their private team starts."
+      );
+    }
+
+    if (
+      state.conquest.phase ===
+      "countdown"
+    ) {
+      return (
+        "All active participants are ready. The bot match begins at zero."
+      );
+    }
+
+    if (
+      state.conquest.phase === "active"
+    ) {
+      return (
+        "Spectator view • Tap a bot to follow it or tap A, B, C and caches to focus them."
+      );
+    }
+
+    if (
+      state.conquest.phase ===
+      "overtime"
+    ) {
+      return (
+        "Spectator view • The next capture or Road Cache wins."
+      );
+    }
+  }
+
+  return roadDiscoveryV87
+    .conquestStatusText();
+};
+
+rd86ApplyConquestState = function (row) {
+  state.conquest.matchType = String(
+    row?.match_type || "multiplayer"
+  );
+
+  state.conquest.viewerIsSpectator =
+    Boolean(
+      row?.viewer_is_spectator
+    );
+
+  state.conquest.isMatchCreator =
+    Boolean(
+      row?.is_match_creator
+    );
+
+  state.customConquest.routeRequests =
+    rd86NormaliseJsonArray(
+      row?.bot_route_requests
+    );
+
+  const compatibleRow =
+    state.conquest.viewerIsSpectator
+      ? {
+          ...row,
+          viewer_team: "spectator",
+          viewer_checked_in: true
+        }
+      : row;
+
+  roadDiscoveryV87.applyConquestState(
+    compatibleRow
+  );
+
+  rd87RenderCustomConquestLobby();
+  rd87ProcessBotRouteRequests();
+  rd87EnsureBotAnimation();
+};
+
+rd86RenderConquestPlayers = function () {
+  roadDiscoveryV87
+    .renderConquestPlayers();
+
+  if (!els.conquestPlayersList) return;
+
+  for (
+    const row of
+    els.conquestPlayersList.querySelectorAll(
+      ".conquest-player-row"
+    )
+  ) {
+    const name =
+      row.querySelector(
+        ".conquest-player-main strong"
+      );
+
+    if (
+      name &&
+      /Road Bot/i.test(
+        name.textContent || ""
+      )
+    ) {
+      row.classList.add("bot");
+    }
+  }
+};
+
+rd86RenderConquestState = function () {
+  roadDiscoveryV87
+    .renderConquestState();
+
+  rd87CacheCustomConquestElements();
+  rd87RenderCustomConquestLobby();
+
+  const spectator = Boolean(
+    rd87IsCustomConquest() &&
+    state.conquest.viewerIsSpectator &&
+    rd86HasConquestRound()
+  );
+
+  document.body.classList.toggle(
+    "conquest-spectator",
+    spectator
+  );
+
+  if (spectator) {
+    if (els.conquestTeamBadge) {
+      els.conquestTeamBadge.textContent =
+        "Spectator";
+
+      els.conquestTeamBadge.classList.remove(
+        "red",
+        "blue"
+      );
+    }
+
+    if (els.conquestMapTeam) {
+      els.conquestMapTeam.textContent =
+        "Spectator";
+
+      els.conquestMapTeam.classList.remove(
+        "red",
+        "blue"
+      );
+    }
+  }
+
+  if (els.conquestSpectatorHint) {
+    els.conquestSpectatorHint.classList.toggle(
+      "hidden",
+      !spectator
+    );
+  }
+
+  if (els.endCustomConquestBtn) {
+    const showEndButton = Boolean(
+      rd87IsCustomConquest() &&
+      state.conquest.isMatchCreator &&
+      hasActiveConquestRound()
+    );
+
+    els.endCustomConquestBtn.classList.toggle(
+      "hidden",
+      !showEndButton
+    );
+  }
+};
+
+rd86MaybeSendConquestLocation =
+  async function (
+    point,
+    options = {}
+  ) {
+    if (
+      rd87IsCustomConquest() &&
+      state.conquest.viewerIsSpectator
+    ) {
+      return false;
+    }
+
+    return roadDiscoveryV87
+      .maybeSendConquestLocation(
+        point,
+        options
+      );
+  };
+
+rd86ResetConquestState = function (
+  options = {}
+) {
+  rd87StopBotAnimation();
+
+  state.customConquest.routeRequests = [];
+
+  state.customConquest.routeActive.clear();
+
+  state.customConquest.routeRetryAt.clear();
+
+  state.conquest.matchType =
+    "multiplayer";
+
+  state.conquest.viewerIsSpectator =
+    false;
+
+  state.conquest.isMatchCreator =
+    false;
+
+  document.body.classList.remove(
+    "conquest-spectator"
+  );
+
+  return roadDiscoveryV87
+    .resetConquestState(options);
+};
+
+async function rd87EndCustomConquest() {
+  if (
+    !rd87IsCustomConquest() ||
+    !state.conquest.isMatchCreator ||
+    !state.conquest.roundId ||
+    !state.auth.client
+  ) {
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "End this Custom Conquest match for everyone?"
+  );
+
+  if (!confirmed) return;
+
+  const { error } =
+    await state.auth.client.rpc(
+      "stop_custom_conquest_round",
+      {
+        p_round_id:
+          state.conquest.roundId
+      }
+    );
+
+  if (error) {
+    console.error(error);
+
+    showToast(
+      rd86ConquestErrorMessage(error)
+    );
+
+    return;
+  }
+
+  rd86ResetConquestState({
+    clearRound: true,
+    render: true
+  });
+
+  showToast(
+    "Custom Conquest ended"
+  );
+}
+
+rd86LeaveConquestRound =
+  async function (options = {}) {
+    if (
+      rd87IsCustomConquest() &&
+      state.conquest.viewerIsSpectator &&
+      state.conquest.isMatchCreator &&
+      hasActiveConquestRound()
+    ) {
+      await rd87EndCustomConquest();
+      return;
+    }
+
+    return roadDiscoveryV87
+      .leaveConquestRound(options);
+  };
+
+rd86ShowConquestResult = function () {
+  if (
+    !(
+      rd87IsCustomConquest() &&
+      state.conquest.viewerIsSpectator
+    )
+  ) {
+    return roadDiscoveryV87
+      .showConquestResult();
+  }
+
+  const roundId = String(
+    state.conquest.roundId || ""
+  );
+
+  if (
+    !roundId ||
+    state.conquest.resultShownFor ===
+      roundId
+  ) {
+    return;
+  }
+
+  rd86CacheConquestElements();
+
+  if (!els.conquestResultOverlay) return;
+
+  state.conquest.resultShownFor =
+    roundId;
+
+  const winner =
+    state.conquest.winner;
+
+  const draw =
+    winner === "draw";
+
+  els.conquestResultOverlay.classList.remove(
+    "hidden",
+    "red",
+    "blue",
+    "draw",
+    "victory",
+    "defeat"
+  );
+
+  els.conquestResultOverlay.classList.add(
+    draw ? "draw" : winner,
+    "victory"
+  );
+
+  if (els.conquestResultEyebrow) {
+    els.conquestResultEyebrow.textContent =
+      "MATCH COMPLETE";
+  }
+
+  if (els.conquestResultTitle) {
+    els.conquestResultTitle.textContent =
+      draw
+        ? "DRAW"
+        : `${rd86TeamLabel(
+            winner
+          ).toUpperCase()} WINS`;
+  }
+
+  if (els.conquestResultScore) {
+    els.conquestResultScore.textContent =
+      `${state.conquest.redScore} – ${state.conquest.blueScore}`;
+  }
+
+  if (
+    state.conquest.resultTimer !== null
+  ) {
+    window.clearTimeout(
+      state.conquest.resultTimer
+    );
+  }
+
+  state.conquest.resultTimer =
+    window.setTimeout(() => {
+      els.conquestResultOverlay
+        ?.classList.add("hidden");
+
+      state.conquest.resultTimer = null;
+    }, 5000);
+};
+
+hs50OwnMarkerColour = function () {
+  if (
+    rd87IsCustomConquest() &&
+    state.conquest.viewerIsSpectator
+  ) {
+    return "#eef7ff";
+  }
+
+  return roadDiscoveryV87
+    .markerColour();
+};
+
+hs50OwnMarkerHaloColour = function () {
+  if (
+    rd87IsCustomConquest() &&
+    state.conquest.viewerIsSpectator
+  ) {
+    return "rgba(238, 247, 255, 0.2)";
+  }
+
+  return roadDiscoveryV87
+    .markerHaloColour();
+};
+
+
+/* -------------------------------------------------- */
+/* Events and initialisation                          */
+/* -------------------------------------------------- */
+
+function rd87BindCustomConquestEvents() {
+  rd87CacheCustomConquestElements();
+
+  if (
+    els.startCustomConquestBtn
+      ?.dataset.rd87Bound === "true"
+  ) {
+    return;
+  }
+
+  if (els.startCustomConquestBtn) {
+    els.startCustomConquestBtn
+      .dataset.rd87Bound = "true";
+
+    els.startCustomConquestBtn
+      .addEventListener(
+        "click",
+        rd87StartCustomConquest
+      );
+  }
+
+  els.customConquestPresetWatchBtn
+    ?.addEventListener(
+      "click",
+      () => {
+        rd87ApplyCustomPreset(
+          "watch_4v4"
+        );
+      }
+    );
+
+  els.customConquestPresetPlayBtn
+    ?.addEventListener(
+      "click",
+      () => {
+        rd87ApplyCustomPreset(
+          "play_4v4"
+        );
+      }
+    );
+
+  els.customConquestPresetChallengeBtn
+    ?.addEventListener(
+      "click",
+      () => {
+        rd87ApplyCustomPreset(
+          "four_vs_me"
+        );
+      }
+    );
+
+  els.customConquestRedBots
+    ?.addEventListener(
+      "change",
+      (event) => {
+        rd87SetCustomBots(
+          "red",
+          event.target.value
+        );
+      }
+    );
+
+  els.customConquestBlueBots
+    ?.addEventListener(
+      "change",
+      (event) => {
+        rd87SetCustomBots(
+          "blue",
+          event.target.value
+        );
+      }
+    );
+
+  els.customConquestHumanList
+    ?.addEventListener(
+      "change",
+      (event) => {
+        const select =
+          event.target.closest(
+            "[data-custom-conquest-user]"
+          );
+
+        if (
+          !select ||
+          !rd87IsRoomCreator()
+        ) {
+          return;
+        }
+
+        const team = [
+          "red",
+          "blue",
+          "spectator"
+        ].includes(select.value)
+          ? select.value
+          : "spectator";
+
+        state.customConquest
+          .assignments.set(
+            String(
+              select.dataset
+                .customConquestUser
+            ),
+            team
+          );
+
+        state.customConquest
+          .selectedPreset = "custom";
+
+        rd87RenderCustomConquestLobby();
+      }
+    );
+
+  els.endCustomConquestBtn
+    ?.addEventListener(
+      "click",
+      rd87EndCustomConquest
+    );
+
+  els.locateBtn
+    ?.addEventListener(
+      "click",
+      () => {
+        state.customConquest
+          .followBotId = null;
+      }
+    );
+
+  state.map?.on(
+    "dragstart",
+    () => {
+      state.customConquest
+        .followBotId = null;
+    }
+  );
+}
+
+function rd87InitCustomConquest() {
+  rd87BindCustomConquestEvents();
+
+  rd87ApplyCustomPreset(
+    "play_4v4"
+  );
+
+  rd87RenderCustomConquestLobby();
+}
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd87InitCustomConquest,
+    {
+      once: true
+    }
+  );
+} else {
+  rd87InitCustomConquest();
+}
