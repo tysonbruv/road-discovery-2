@@ -6409,3 +6409,37 @@ body.rd-trophy-open {
     background: rgba(75, 179, 255, 0.14);
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU v61 Daylight map                 */
+/* Append this block once to style.css v60            */
+/* ================================================== */
+
+.rd83-daylight-map-setting {
+  margin-top: 12px;
+}
+
+#map,
+#map .leaflet-tile-pane {
+  transition:
+    background-color 0.18s ease;
+}
+
+body.rd83-daylight-map #map,
+body.rd83-daylight-map #map.leaflet-container,
+body.rd83-daylight-map
+  #map
+  .leaflet-tile-pane {
+  background-color: #e8edf1;
+}
+
+body.rd83-daylight-map
+  .rd83-daylight-map-setting {
+  border-color: rgba(75, 179, 255, 0.34);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(75, 179, 255, 0.11),
+      rgba(255, 255, 255, 0.035)
+    );
+}
