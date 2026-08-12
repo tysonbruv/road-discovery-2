@@ -7557,3 +7557,485 @@ body.conquest-game-active .brand-row {
     transition: none;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU v64 Custom Conquest Bots         */
+/* Append this block once to the bottom of style.css  */
+/* ================================================== */
+
+.custom-conquest-box {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.custom-conquest-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.custom-conquest-heading h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.custom-conquest-heading p {
+  margin: 4px 0 0;
+}
+
+.custom-conquest-bot-pill {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border:
+    1px solid
+    rgba(157, 109, 255, 0.48);
+  border-radius: 999px;
+  background:
+    rgba(157, 109, 255, 0.13);
+  color:
+    rgba(237, 228, 255, 0.98);
+  font-size: 8px;
+  font-weight: 950;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.custom-conquest-host-note {
+  margin: 11px 1px 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.custom-conquest-presets {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.custom-conquest-preset-btn {
+  min-width: 0;
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px;
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background:
+    rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  text-align: left;
+}
+
+.custom-conquest-preset-btn strong,
+.custom-conquest-preset-btn span {
+  display: block;
+  overflow: hidden;
+  max-width: 100%;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.custom-conquest-preset-btn strong {
+  font-size: 9px;
+  font-weight: 950;
+}
+
+.custom-conquest-preset-btn span {
+  color: var(--faint);
+  font-size: 7px;
+  font-weight: 800;
+}
+
+.custom-conquest-preset-btn.active {
+  border-color:
+    rgba(157, 109, 255, 0.56);
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 77, 77, 0.1),
+      rgba(157, 109, 255, 0.16),
+      rgba(75, 179, 255, 0.1)
+    );
+
+  box-shadow:
+    0 0 0 1px
+      rgba(157, 109, 255, 0.08),
+    0 8px 22px
+      rgba(70, 37, 150, 0.12);
+}
+
+.custom-conquest-preset-btn:active:not(
+  :disabled
+) {
+  transform: scale(0.97);
+}
+
+.custom-conquest-section-title {
+  margin: 14px 1px 7px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.custom-conquest-human-list {
+  display: grid;
+  gap: 6px;
+}
+
+.custom-conquest-human-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background:
+    rgba(255, 255, 255, 0.028);
+}
+
+.custom-conquest-human-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 850;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.custom-conquest-team-select,
+.custom-conquest-bot-select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 26px 0 9px;
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.13);
+  border-radius: 10px;
+  background:
+    rgba(5, 7, 10, 0.82);
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 900;
+  appearance: auto;
+}
+
+.custom-conquest-team-select.red {
+  border-color:
+    rgba(255, 77, 77, 0.44);
+  color: #ffc5c5;
+}
+
+.custom-conquest-team-select.blue {
+  border-color:
+    rgba(75, 179, 255, 0.44);
+  color: #c5e8ff;
+}
+
+.custom-conquest-team-select.spectator {
+  color: var(--muted);
+}
+
+.custom-conquest-bot-selects {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.custom-conquest-bot-control {
+  padding: 9px;
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background:
+    rgba(255, 255, 255, 0.03);
+}
+
+.custom-conquest-bot-control.red {
+  border-color:
+    rgba(255, 77, 77, 0.25);
+}
+
+.custom-conquest-bot-control.blue {
+  border-color:
+    rgba(75, 179, 255, 0.25);
+}
+
+.custom-conquest-bot-control label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.custom-conquest-bot-control.red label {
+  color: #ffbaba;
+}
+
+.custom-conquest-bot-control.blue label {
+  color: #b9e2ff;
+}
+
+.custom-conquest-summary {
+  margin-top: 11px;
+  padding: 11px;
+  border:
+    1px solid
+    rgba(157, 109, 255, 0.28);
+  border-radius: 13px;
+
+  background:
+    linear-gradient(
+      115deg,
+      rgba(255, 77, 77, 0.07),
+      rgba(157, 109, 255, 0.09),
+      rgba(75, 179, 255, 0.07)
+    );
+
+  text-align: center;
+}
+
+.custom-conquest-summary strong,
+.custom-conquest-summary span {
+  display: block;
+}
+
+.custom-conquest-summary strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.custom-conquest-summary span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.custom-conquest-summary.invalid {
+  border-color:
+    rgba(255, 77, 77, 0.4);
+  background:
+    rgba(255, 77, 77, 0.08);
+}
+
+.custom-conquest-start-btn {
+  width: 100%;
+  min-height: 47px;
+  margin-top: 11px;
+  border:
+    1px solid
+    rgba(157, 109, 255, 0.5);
+  border-radius: 14px;
+
+  background:
+    linear-gradient(
+      115deg,
+      rgba(255, 77, 77, 0.2),
+      rgba(157, 109, 255, 0.27),
+      rgba(75, 179, 255, 0.2)
+    );
+
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 950;
+
+  box-shadow:
+    0 10px 26px
+      rgba(73, 41, 155, 0.16);
+}
+
+.custom-conquest-start-btn:active:not(
+  :disabled
+) {
+  transform: scale(0.98);
+}
+
+.custom-conquest-preparation-text {
+  min-height: 28px;
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.conquest-spectator-hint {
+  margin: 9px 2px 0;
+  color:
+    rgba(235, 226, 255, 0.88);
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.end-custom-conquest-btn {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 8px;
+  border:
+    1px solid
+    rgba(255, 176, 74, 0.38);
+  border-radius: 13px;
+  background:
+    rgba(96, 53, 7, 0.36);
+  color:
+    rgba(255, 230, 199, 0.98);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+
+/* -------------------------------------------------- */
+/* Bot map markers                                    */
+/* -------------------------------------------------- */
+
+.conquest-bot-dot {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border:
+    3px solid
+    rgba(238, 247, 255, 0.98);
+  border-radius: 999px;
+  background:
+    var(--conquest-blue);
+  color: #ffffff;
+
+  box-shadow:
+    0 0 0 4px
+      rgba(75, 179, 255, 0.18),
+    0 0 20px
+      rgba(75, 179, 255, 0.72);
+}
+
+.conquest-bot-dot.red {
+  background:
+    var(--conquest-red);
+
+  box-shadow:
+    0 0 0 4px
+      rgba(255, 77, 77, 0.18),
+    0 0 20px
+      rgba(255, 77, 77, 0.72);
+}
+
+.conquest-bot-dot span {
+  font-size: 6px;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0.035em;
+}
+
+.conquest-player-row.bot {
+  background:
+    linear-gradient(
+      110deg,
+      rgba(157, 109, 255, 0.055),
+      rgba(255, 255, 255, 0.025)
+    );
+}
+
+.conquest-player-row.bot
+.conquest-player-main strong::after {
+  content: "BOT";
+  display: inline-flex;
+  margin-left: 5px;
+  padding: 2px 4px;
+  border:
+    1px solid
+    rgba(157, 109, 255, 0.4);
+  border-radius: 999px;
+  background:
+    rgba(157, 109, 255, 0.11);
+  color:
+    rgba(235, 226, 255, 0.96);
+  font-size: 6px;
+  line-height: 1;
+  vertical-align: 1px;
+}
+
+body.conquest-spectator
+.conquest-map-hud {
+  border-color:
+    rgba(238, 247, 255, 0.34);
+
+  box-shadow:
+    var(--shadow-soft),
+    0 0 28px
+      rgba(238, 247, 255, 0.1);
+}
+
+body.conquest-spectator
+.conquest-map-team {
+  border-color:
+    rgba(238, 247, 255, 0.32);
+  background:
+    rgba(238, 247, 255, 0.08);
+  color:
+    rgba(238, 247, 255, 0.94);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .custom-conquest-preset-btn:hover:not(
+    :disabled
+  ),
+  .custom-conquest-start-btn:hover:not(
+    :disabled
+  ) {
+    border-color:
+      rgba(157, 109, 255, 0.65);
+
+    filter: brightness(1.08);
+  }
+}
+
+@media (max-width: 360px) {
+  .custom-conquest-presets {
+    grid-template-columns: 1fr;
+  }
+
+  .custom-conquest-preset-btn {
+    min-height: 45px;
+  }
+
+  .custom-conquest-human-row {
+    grid-template-columns:
+      minmax(0, 1fr) 88px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .custom-conquest-preset-btn,
+  .custom-conquest-start-btn {
+    transition: none;
+  }
+}
