@@ -1,19 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v84 service worker
+  Road Discovery AU v85 service worker
 
-  Device-local Daylight map setting.
+  Motorcycle-first About Road Discovery wording.
 
   Expected frontend versions:
-  - app.js?v=83
+  - app.js?v=84
   - style.css?v=61
 
   Recent files are also recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v84";
+const CACHE_NAME = "road-discovery-au-v85";
 
 const CORE_APP_SHELL = [
   "./",
@@ -24,15 +24,15 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=61",
-  "./app.js?v=83",
+  "./app.js?v=84",
 
   /* Recent fallbacks used during a staged GitHub update. */
+  "./app.js?v=83",
   "./style.css?v=60",
   "./app.js?v=82",
   "./style.css?v=59",
   "./app.js?v=81",
-  "./style.css?v=58",
-  "./app.js?v=80"
+  "./style.css?v=58"
 ];
 
 /* -------------------------------------------------- */
@@ -211,6 +211,9 @@ self.addEventListener("fetch", (event) => {
         ) {
           return (
             (await caches.match(
+              "./app.js?v=84"
+            )) ||
+            (await caches.match(
               "./app.js?v=83"
             )) ||
             (await caches.match(
@@ -218,9 +221,6 @@ self.addEventListener("fetch", (event) => {
             )) ||
             (await caches.match(
               "./app.js?v=81"
-            )) ||
-            (await caches.match(
-              "./app.js?v=80"
             )) ||
             Response.error()
           );
