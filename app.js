@@ -23991,14 +23991,14 @@ function rd86ConquestStatusText() {
     state.conquest.phase === "countdown"
   ) {
     return (
-      "A, B and C will appear when the countdown " +
+      "A, B, C, D and E will appear when the countdown " +
       "reaches zero."
     );
   }
 
   if (state.conquest.phase === "active") {
     return (
-      "Capture A, B and C. Owned objectives score " +
+      "Capture A, B, C, D and E. Owned objectives score " +
       "every three seconds. Collect Road Caches for bonuses."
     );
   }
@@ -27789,7 +27789,7 @@ rd86ConquestStatusText = function () {
       state.conquest.phase === "active"
     ) {
       return (
-        "Spectator view • Tap a bot to follow it or tap A, B, C and caches to focus them."
+        "Spectator view • Tap a bot to follow it or tap A, B, C, D, E and caches to focus them."
       );
     }
 
