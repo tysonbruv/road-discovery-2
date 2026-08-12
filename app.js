@@ -22484,3 +22484,93 @@ if (document.readyState === "loading") {
 } else {
   rd83InitDaylightMap();
 }
+
+/* ================================================== */
+/* Road Discovery AU v84 motorcycle-first About copy  */
+/* Append this block once to the bottom of app.js v83 */
+/* ================================================== */
+
+function rd84ApplyRiderAboutCopy() {
+  const overlay = $(
+    "roadDiscoveryAboutOverlay"
+  );
+
+  if (!overlay) return;
+
+  const title = $(
+    "roadDiscoveryAboutTitle"
+  );
+
+  const intro = overlay.querySelector(
+    ".road-discovery-about-intro"
+  );
+
+  const message = overlay.querySelector(
+    ".road-discovery-about-message"
+  );
+
+  const ride = overlay.querySelector(
+    ".road-discovery-about-ride"
+  );
+
+  const safety = overlay.querySelector(
+    ".road-discovery-about-safety"
+  );
+
+  if (title) {
+    title.textContent = "Built for the ride";
+  }
+
+  if (intro) {
+    intro.textContent =
+      "Road Discovery was created with motorbike riders in mind—the people who take the long way home simply to see where a road leads.";
+  }
+
+  if (ride) {
+    ride.textContent =
+      "Car drivers and anyone who loves exploring can enjoy it too, but the heart of the experience is the freedom of riding, choosing your own road and watching the map fill with colour behind you.";
+
+    /*
+      Place the rider explanation before the main
+      Road Discovery message.
+    */
+    if (
+      message &&
+      ride.nextElementSibling !== message
+    ) {
+      message.parentElement?.insertBefore(
+        ride,
+        message
+      );
+    }
+  }
+
+  if (message) {
+    message.textContent =
+      "This is not a navigation app. Maps tell you where to go. Road Discovery shows you where you’ve been.";
+  }
+
+  if (safety) {
+    safety.innerHTML = `
+      <strong>Play safely.</strong>
+
+      Set everything up before moving, follow all road
+      rules and never interact with your phone while
+      riding or driving.
+    `;
+  }
+}
+
+function rd84InitRiderAboutCopy() {
+  rd84ApplyRiderAboutCopy();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd84InitRiderAboutCopy,
+    { once: true }
+  );
+} else {
+  rd84InitRiderAboutCopy();
+}
