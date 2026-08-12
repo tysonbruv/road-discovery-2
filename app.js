@@ -21165,3 +21165,392 @@ if (document.readyState === "loading") {
 } else {
   rd79InitDiscoveryBrowser();
 }
+
+/* ================================================== */
+/* Road Discovery AU v80 Hidden Discoveries 7–14      */
+/* Append this block once to the bottom of app.js v79 */
+/* ================================================== */
+
+const RD80_NEW_HIDDEN_DISCOVERIES = Object.freeze([
+  {
+    id: "galston_gorge_lookout",
+    countryCode: "AU",
+    regionCode: "NSW",
+    region: "Northern Sydney, NSW",
+    answer: "Galston Gorge Lookout",
+    completionMessage:
+      "Galston Gorge Lookout riddle complete.",
+    riddle:
+      "Where sandstone walls hold a winding road, " +
+      "the valley bends beneath the trees. " +
+      "Find the lookout watching over the gorge.",
+    zones: [
+      {
+        lat: -33.6616298,
+        lng: 151.0873912,
+        radiusM: 300
+      }
+    ]
+  },
+  {
+    id: "north_head_scenic_drive_view_point",
+    countryCode: "AU",
+    regionCode: "NSW",
+    region: "Sydney Harbour, NSW",
+    answer: "North Head Scenic Drive View Point",
+    completionMessage:
+      "North Head riddle complete.",
+    riddle:
+      "Seek the sanctuary that guards the north head, " +
+      "where sheltered waters surrender to the open sea. " +
+      "Follow the headland road to its final view.",
+    zones: [
+      {
+        lat: -33.8232065,
+        lng: 151.2984181,
+        radiusM: 350
+      }
+    ],
+    note:
+      "North Head has controlled opening hours. Obey gates, closures, signs and all National Park directions."
+  },
+  {
+    id: "sublime_point_lookout",
+    countryCode: "AU",
+    regionCode: "NSW",
+    region: "Illawarra, NSW",
+    answer: "Sublime Point Lookout",
+    completionMessage:
+      "Sublime Point riddle complete.",
+    riddle:
+      "High above seventeen beaches, " +
+      "where the escarpment watches over the sea, " +
+      "find the point with a view beyond words.",
+    zones: [
+      {
+        lat: -34.2961251,
+        lng: 150.9247813,
+        radiusM: 300
+      }
+    ]
+  },
+  {
+    id: "bald_hill_lookout",
+    countryCode: "AU",
+    regionCode: "NSW",
+    region: "Illawarra, NSW",
+    answer: "Bald Hill Lookout",
+    completionMessage:
+      "Bald Hill riddle complete.",
+    riddle:
+      "Find the hill with no hair, " +
+      "where people borrow wings above the coast. " +
+      "Look south for a bridge clinging to the sea.",
+    zones: [
+      {
+        lat: -34.2231263,
+        lng: 150.9981465,
+        radiusM: 300
+      }
+    ]
+  },
+  {
+    id: "picton_mushroom_tunnel",
+    countryCode: "AU",
+    regionCode: "NSW",
+    region: "Wollondilly region, NSW",
+    answer: "Picton Mushroom Tunnel",
+    completionMessage:
+      "Picton Mushroom Tunnel riddle complete.",
+    riddle:
+      "Where iron horses thundered unseen, " +
+      "the rails claimed a life in nineteen-sixteen. " +
+      "Pale life later grew, a ghost in white, " +
+      "a haunting view.",
+    zones: [
+      {
+        lat: -34.1720399,
+        lng: 150.6054248,
+        radiusM: 350
+      }
+    ],
+    note:
+      "The tunnel may be closed or unsafe. This discovery can be completed from the nearby public road. Never enter a closed tunnel or restricted area."
+  },
+  {
+    id: "solomon_jane_wiseman_grave",
+    countryCode: "AU",
+    regionCode: "NSW",
+    region: "Hawkesbury River region, NSW",
+    answer: "Solomon and Jane Wiseman’s Grave",
+    completionMessage:
+      "Solomon and Jane Wiseman riddle complete.",
+    riddle:
+      "Condemned by the Crown, then pardoned and free, " +
+      "he gave his name to the crossing you see. " +
+      "Beside him, his wife is said to haunt an old stair, " +
+      "though the walls rose years later, some swear she is there. " +
+      "Three times laid down before finding their rest, " +
+      "seek the wise man and wife at the end of your quest.",
+    zones: [
+      {
+        lat: -33.4034051,
+        lng: 151.0077256,
+        radiusM: 350
+      }
+    ],
+    note:
+      "This discovery can be completed from the nearby public road. Please treat the cemetery and those resting there with respect."
+  },
+  {
+    id: "miss_porters_house",
+    countryCode: "AU",
+    regionCode: "NSW",
+    region: "Newcastle region, NSW",
+    answer: "Miss Porter’s House",
+    completionMessage:
+      "Miss Porter’s House riddle complete.",
+    riddle:
+      "A father raised the home, a mother kept it warm, " +
+      "two sisters kept its memories through sorrow and storm. " +
+      "The coal city shook, yet every room held fast—" +
+      "seek a Miss’s house where their century still lasts.",
+    zones: [
+      {
+        lat: -32.9277541,
+        lng: 151.7648008,
+        radiusM: 250
+      }
+    ]
+  },
+  {
+    id: "sir_edmund_barton_monument",
+    countryCode: "AU",
+    regionCode: "NSW",
+    region: "Mid North Coast, NSW",
+    answer: "Sir Edmund Barton Monument",
+    completionMessage:
+      "Sir Edmund Barton Monument riddle complete.",
+    riddle:
+      "Six colonies stood apart, then gathered into one, " +
+      "he first steered the Commonwealth when Federation had begun. " +
+      "The Hastings knew him earlier, before the nation’s call—" +
+      "find the bronze beside the river who stood first in nineteen-oh-one.",
+    zones: [
+      {
+        lat: -31.4280237,
+        lng: 152.9081574,
+        radiusM: 300
+      }
+    ]
+  }
+]);
+
+const roadDiscoveryV80 = {
+  rd79AllDiscoveries,
+  rd72DiscoveryById,
+  rd72ResetDriveDiscoveryState,
+  rd72CheckDiscoveryPoint,
+  rd72RenderHiddenDiscoveries,
+  rd73RenderGeneralMenuProgress
+};
+
+state.hiddenDiscoveries.rd80LastCheckAt = 0;
+
+/* -------------------------------------------------- */
+/* Combined discovery list                            */
+/* -------------------------------------------------- */
+
+function rd80AllHiddenDiscoveries() {
+  return [
+    ...roadDiscoveryV80.rd79AllDiscoveries(),
+    ...RD80_NEW_HIDDEN_DISCOVERIES
+  ];
+}
+
+rd79AllDiscoveries = function () {
+  return rd80AllHiddenDiscoveries();
+};
+
+/* -------------------------------------------------- */
+/* Allow local and server progress to recognise IDs   */
+/* -------------------------------------------------- */
+
+rd72DiscoveryById = function (discoveryId) {
+  const existing =
+    roadDiscoveryV80.rd72DiscoveryById(
+      discoveryId
+    );
+
+  if (existing) {
+    return existing;
+  }
+
+  return (
+    RD80_NEW_HIDDEN_DISCOVERIES.find(
+      (discovery) =>
+        discovery.id === discoveryId
+    ) || null
+  );
+};
+
+/* -------------------------------------------------- */
+/* Check the eight new discovery zones                */
+/* -------------------------------------------------- */
+
+function rd80CheckNewDiscoveryPoint(point) {
+  const hidden = state.hiddenDiscoveries;
+
+  const userId = String(
+    state.auth.user?.id || ""
+  );
+
+  if (
+    !state.isRecording ||
+    !userId ||
+    hidden.activeUserId !== userId ||
+    !Number.isFinite(point?.lat) ||
+    !Number.isFinite(point?.lng) ||
+    !Number.isFinite(point?.accuracy) ||
+    point.accuracy > MAX_GPS_ACCURACY_M
+  ) {
+    return;
+  }
+
+  const checkedAt =
+    Number(point.timestamp) || Date.now();
+
+  if (
+    checkedAt - hidden.rd80LastCheckAt <
+    RD72_DISCOVERY_CHECK_MIN_MS
+  ) {
+    return;
+  }
+
+  hidden.rd80LastCheckAt = checkedAt;
+
+  for (
+    const discovery of
+    RD80_NEW_HIDDEN_DISCOVERIES
+  ) {
+    if (
+      hidden.completed[discovery.id] ||
+      hidden.pending.has(discovery.id)
+    ) {
+      continue;
+    }
+
+    const entered =
+      Array.isArray(discovery.zones) &&
+      discovery.zones.some((zone) =>
+        rd72PointInside(point, zone)
+      );
+
+    if (entered) {
+      hidden.pending.add(discovery.id);
+    }
+  }
+}
+
+rd72ResetDriveDiscoveryState = function () {
+  const result =
+    roadDiscoveryV80
+      .rd72ResetDriveDiscoveryState();
+
+  state.hiddenDiscoveries.rd80LastCheckAt = 0;
+
+  return result;
+};
+
+rd72CheckDiscoveryPoint = function (point) {
+  const result =
+    roadDiscoveryV80
+      .rd72CheckDiscoveryPoint(point);
+
+  rd80CheckNewDiscoveryPoint(point);
+
+  return result;
+};
+
+/* -------------------------------------------------- */
+/* Update progress totals from 6 to 14                */
+/* -------------------------------------------------- */
+
+function rd80RenderFourteenDiscoveryProgress() {
+  const discoveries =
+    rd80AllHiddenDiscoveries();
+
+  const completed =
+    discoveries.filter(
+      (discovery) =>
+        Boolean(
+          state.hiddenDiscoveries.completed[
+            discovery.id
+          ]
+        )
+    ).length;
+
+  const total = discoveries.length;
+
+  const progressText =
+    `${completed} of ${total} discovered`;
+
+  const settingsProgress = $(
+    "rd72HiddenSettingsProgress"
+  );
+
+  const generalProgress = $(
+    "rd73HiddenDiscoveryProgress"
+  );
+
+  if (settingsProgress) {
+    settingsProgress.textContent =
+      state.auth.user
+        ? progressText
+        : `${progressText} • Sign in to save progress`;
+  }
+
+  if (generalProgress) {
+    generalProgress.textContent =
+      `${completed} / ${total} discovered`;
+  }
+}
+
+rd72RenderHiddenDiscoveries = function () {
+  const result =
+    roadDiscoveryV80
+      .rd72RenderHiddenDiscoveries();
+
+  rd80RenderFourteenDiscoveryProgress();
+
+  return result;
+};
+
+rd73RenderGeneralMenuProgress = function () {
+  const result =
+    roadDiscoveryV80
+      .rd73RenderGeneralMenuProgress();
+
+  rd80RenderFourteenDiscoveryProgress();
+
+  return result;
+};
+
+/* -------------------------------------------------- */
+/* Initialise                                         */
+/* -------------------------------------------------- */
+
+function rd80InitNewHiddenDiscoveries() {
+  rd72RenderHiddenDiscoveries();
+  rd80RenderFourteenDiscoveryProgress();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd80InitNewHiddenDiscoveries,
+    { once: true }
+  );
+} else {
+  rd80InitNewHiddenDiscoveries();
+}
