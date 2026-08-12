@@ -1,20 +1,20 @@
 "use strict";
 
 /*
-  Road Discovery AU v88 service worker
+  Road Discovery AU v89 service worker
 
-  Custom Conquest bots and spectator matches.
+  Road Conquest five-zone update:
+  A, B, C, D and E.
 
   Expected frontend versions:
-  - app.js?v=87
+  - app.js?v=88
   - style.css?v=64
 
-  Recent files are also recognised during the update so the site can
-  upgrade safely while GitHub files are replaced one at a time.
+  Recent files are also recognised during staged updates.
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v88";
+  "road-discovery-au-v89";
 
 const CORE_APP_SHELL = [
   "./",
@@ -25,18 +25,14 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=64",
-  "./app.js?v=87",
+  "./app.js?v=88",
 
-  /*
-    Recent fallbacks used during a staged
-    GitHub update.
-  */
+  /* Recent staged-update fallbacks. */
+  "./app.js?v=87",
   "./style.css?v=63",
   "./app.js?v=86",
   "./style.css?v=62",
-  "./app.js?v=85",
-  "./style.css?v=61",
-  "./app.js?v=84"
+  "./app.js?v=85"
 ];
 
 
@@ -131,8 +127,7 @@ self.addEventListener(
     /*
       External requests are not intercepted.
       This includes Leaflet, Supabase, map
-      tiles, Overpass road data and OSRM
-      routes.
+      tiles, Overpass and OSRM routes.
     */
     if (
       url.origin !==
@@ -230,9 +225,7 @@ self.addEventListener(
           if (
             exactCachedResponse
           ) {
-            return (
-              exactCachedResponse
-            );
+            return exactCachedResponse;
           }
 
           if (
@@ -256,11 +249,6 @@ self.addEventListener(
                   "./style.css?v=62"
                 )
               ) ||
-              (
-                await caches.match(
-                  "./style.css?v=61"
-                )
-              ) ||
               Response.error()
             );
           }
@@ -271,6 +259,11 @@ self.addEventListener(
             )
           ) {
             return (
+              (
+                await caches.match(
+                  "./app.js?v=88"
+                )
+              ) ||
               (
                 await caches.match(
                   "./app.js?v=87"
@@ -284,11 +277,6 @@ self.addEventListener(
               (
                 await caches.match(
                   "./app.js?v=85"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=84"
                 )
               ) ||
               Response.error()
