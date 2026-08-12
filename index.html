@@ -58,7 +58,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=63"
+    href="style.css?v=64"
   />
 </head>
 
@@ -1008,6 +1008,148 @@
             </div>
           </div>
 
+                    <!-- Custom humans + bots Conquest lobby -->
+          <div
+            id="customConquestBox"
+            class="custom-conquest-box"
+          >
+            <div class="custom-conquest-heading">
+              <div>
+                <h4>Custom Conquest</h4>
+
+                <p class="small-note">
+                  Humans, road-following bots or a bot-only match.
+                </p>
+              </div>
+
+              <span class="custom-conquest-bot-pill">
+                Up to 4v4
+              </span>
+            </div>
+
+            <div
+              id="customConquestHostNote"
+              class="custom-conquest-host-note"
+            >
+              The room creator controls the team setup.
+            </div>
+
+            <div class="custom-conquest-presets">
+              <button
+                id="customConquestPresetWatchBtn"
+                class="custom-conquest-preset-btn"
+                type="button"
+              >
+                <strong>Watch 4v4</strong>
+                <span>8 bots</span>
+              </button>
+
+              <button
+                id="customConquestPresetPlayBtn"
+                class="custom-conquest-preset-btn active"
+                type="button"
+              >
+                <strong>Play 4v4</strong>
+                <span>You + 7 bots</span>
+              </button>
+
+              <button
+                id="customConquestPresetChallengeBtn"
+                class="custom-conquest-preset-btn"
+                type="button"
+              >
+                <strong>4 vs You</strong>
+                <span>Hard challenge</span>
+              </button>
+            </div>
+
+            <div class="custom-conquest-section-title">
+              Humans
+            </div>
+
+            <div
+              id="customConquestHumanList"
+              class="custom-conquest-human-list"
+            >
+              <div class="empty-state">
+                Room members appear here.
+              </div>
+            </div>
+
+            <div class="custom-conquest-section-title">
+              Bots
+            </div>
+
+            <div class="custom-conquest-bot-selects">
+              <div
+                class="custom-conquest-bot-control red"
+              >
+                <label for="customConquestRedBots">
+                  Red bots
+                </label>
+
+                <select
+                  id="customConquestRedBots"
+                  class="custom-conquest-bot-select"
+                >
+                  <option value="0">0</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3" selected>
+                    3
+                  </option>
+                  <option value="4">4</option>
+                </select>
+              </div>
+
+              <div
+                class="custom-conquest-bot-control blue"
+              >
+                <label for="customConquestBlueBots">
+                  Blue bots
+                </label>
+
+                <select
+                  id="customConquestBlueBots"
+                  class="custom-conquest-bot-select"
+                >
+                  <option value="0">0</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4" selected>
+                    4
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <div
+              id="customConquestSummary"
+              class="custom-conquest-summary"
+              aria-live="polite"
+            >
+              <strong>RED 4 vs BLUE 4</strong>
+              <span>1 human • 7 bots</span>
+            </div>
+
+            <button
+              id="startCustomConquestBtn"
+              class="custom-conquest-start-btn"
+              type="button"
+            >
+              Start Custom Conquest
+            </button>
+
+            <div
+              id="customConquestPreparationText"
+              class="custom-conquest-preparation-text"
+              aria-live="polite"
+            >
+              Bots follow real road routes and never paint roads.
+            </div>
+          </div>
+
           <div
             id="conquestGameBox"
             class="conquest-game-box hidden"
@@ -1075,6 +1217,21 @@
                 Teams appear when Conquest starts.
               </div>
             </div>
+
+                        <div
+              id="conquestSpectatorHint"
+              class="conquest-spectator-hint hidden"
+            >
+              Tap a bot to follow it. Tap My Location to return.
+            </div>
+
+            <button
+              id="endCustomConquestBtn"
+              class="end-custom-conquest-btn hidden"
+              type="button"
+            >
+              End Custom Conquest
+            </button>
 
             <button
               id="leaveConquestBtn"
@@ -1846,7 +2003,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=86"></script>
+  <script src="app.js?v=87"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
