@@ -22085,3 +22085,151 @@ if (document.readyState === "loading") {
 } else {
   rd81InitManualDiscoveryCheck();
 }
+
+/* ================================================== */
+/* Road Discovery AU v82 Hidden Discovery back arrow  */
+/* Append this block once to the bottom of app.js v81 */
+/* ================================================== */
+
+const roadDiscoveryV82 = {
+  rd72RenderHiddenDiscoveries,
+  rd79RenderCurrentView
+};
+
+function rd82CreateHiddenBackButton() {
+  if ($("rd82HiddenBackBtn")) {
+    return;
+  }
+
+  const header = document.querySelector(
+    "#rd72HiddenDiscoveryOverlay " +
+      ".rd-hidden-header"
+  );
+
+  if (!header) return;
+
+  const button =
+    document.createElement("button");
+
+  button.id = "rd82HiddenBackBtn";
+
+  button.className =
+    "rd82-hidden-back-btn hidden";
+
+  button.type = "button";
+
+  button.setAttribute(
+    "aria-label",
+    "Go back"
+  );
+
+  button.textContent = "←";
+
+  button.addEventListener(
+    "click",
+    rd82GoBackOneDiscoveryPage
+  );
+
+  header.insertBefore(
+    button,
+    header.firstElementChild
+  );
+}
+
+function rd82GoBackOneDiscoveryPage() {
+  const browser =
+    state.rd79HiddenDiscoveryBrowser;
+
+  if (browser.view === "discoveries") {
+    browser.view = "regions";
+    browser.regionCode = "";
+
+    rd79RenderCurrentView();
+    return;
+  }
+
+  if (browser.view === "regions") {
+    browser.view = "countries";
+    browser.countryCode = "";
+    browser.regionCode = "";
+
+    rd79RenderCurrentView();
+  }
+}
+
+function rd82UpdateHiddenBackNavigation() {
+  const browser =
+    state.rd79HiddenDiscoveryBrowser;
+
+  const backButton = $(
+    "rd82HiddenBackBtn"
+  );
+
+  const bottomBackButton = $(
+    "rd72HiddenDiscoveryDoneBtn"
+  );
+
+  const nestedPage =
+    browser.view === "regions" ||
+    browser.view === "discoveries";
+
+  if (backButton) {
+    backButton.classList.toggle(
+      "hidden",
+      !nestedPage
+    );
+
+    backButton.setAttribute(
+      "aria-label",
+      browser.view === "discoveries"
+        ? "Back to Australia"
+        : "Back to countries"
+    );
+  }
+
+  /*
+    The root country screen keeps Back to Map.
+    Nested screens use the new top-left arrow.
+  */
+  if (bottomBackButton) {
+    bottomBackButton.classList.toggle(
+      "rd82-bottom-back-hidden",
+      nestedPage
+    );
+  }
+}
+
+rd79RenderCurrentView = function () {
+  const result =
+    roadDiscoveryV82
+      .rd79RenderCurrentView();
+
+  rd82UpdateHiddenBackNavigation();
+
+  return result;
+};
+
+rd72RenderHiddenDiscoveries = function () {
+  const result =
+    roadDiscoveryV82
+      .rd72RenderHiddenDiscoveries();
+
+  rd82UpdateHiddenBackNavigation();
+
+  return result;
+};
+
+function rd82InitHiddenBackButton() {
+  rd82CreateHiddenBackButton();
+  rd82UpdateHiddenBackNavigation();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd82InitHiddenBackButton,
+    { once: true }
+  );
+} else {
+  rd82InitHiddenBackButton();
+}
