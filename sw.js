@@ -1,19 +1,19 @@
 "use strict";
 
 /*
-  Road Discovery AU v82 service worker
+  Road Discovery AU v83 service worker
 
-  Manual Hidden Discovery location checking.
+  Hidden Discovery top-level back navigation.
 
   Expected frontend versions:
-  - app.js?v=81
-  - style.css?v=59
+  - app.js?v=82
+  - style.css?v=60
 
   Recent files are also recognised during the update so the site can
   upgrade safely while GitHub files are replaced one at a time.
 */
 
-const CACHE_NAME = "road-discovery-au-v82";
+const CACHE_NAME = "road-discovery-au-v83";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,16 +23,16 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
-  "./style.css?v=59",
-  "./app.js?v=81",
+  "./style.css?v=60",
+  "./app.js?v=82",
 
   /* Recent fallbacks used during a staged GitHub update. */
+  "./style.css?v=59",
+  "./app.js?v=81",
   "./style.css?v=58",
   "./app.js?v=80",
   "./style.css?v=57",
-  "./app.js?v=79",
-  "./style.css?v=56",
-  "./app.js?v=78"
+  "./app.js?v=79"
 ];
 
 /* -------------------------------------------------- */
@@ -189,6 +189,9 @@ self.addEventListener("fetch", (event) => {
         ) {
           return (
             (await caches.match(
+              "./style.css?v=60"
+            )) ||
+            (await caches.match(
               "./style.css?v=59"
             )) ||
             (await caches.match(
@@ -196,9 +199,6 @@ self.addEventListener("fetch", (event) => {
             )) ||
             (await caches.match(
               "./style.css?v=57"
-            )) ||
-            (await caches.match(
-              "./style.css?v=56"
             )) ||
             Response.error()
           );
@@ -211,6 +211,9 @@ self.addEventListener("fetch", (event) => {
         ) {
           return (
             (await caches.match(
+              "./app.js?v=82"
+            )) ||
+            (await caches.match(
               "./app.js?v=81"
             )) ||
             (await caches.match(
@@ -218,9 +221,6 @@ self.addEventListener("fetch", (event) => {
             )) ||
             (await caches.match(
               "./app.js?v=79"
-            )) ||
-            (await caches.match(
-              "./app.js?v=78"
             )) ||
             Response.error()
           );
