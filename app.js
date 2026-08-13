@@ -29561,3 +29561,95 @@ rd86BuildConquestCandidates = function (startPoint) {
 
   return selectedCandidates;
 };
+
+/* ================================================== */
+/* Road Discovery AU v92                              */
+/* Compact Conquest Candidate Fix                     */
+/* ================================================== */
+
+const RD92_CONQUEST_CANDIDATE_MIN_M = 600;
+const RD92_CONQUEST_CANDIDATE_MAX_M = 900;
+const RD92_CONQUEST_CANDIDATE_SPACING_M = 100;
+
+rd86BuildConquestCandidates = function (
+  startPoint
+) {
+  const roadPoints = state.roadSegments
+    .map((segment) =>
+      roadSegmentMidpoint(segment)
+    )
+    .filter(Boolean);
+
+  /*
+    Supabase accepts Conquest candidates from 600 metres
+    onward. This matching range prevents valid points
+    from being discarded during round creation.
+  */
+  const candidatePool = roadPoints.filter(
+    (point) => {
+      const distanceFromCentre = haversine(
+        startPoint,
+        point
+      );
+
+      return (
+        distanceFromCentre >=
+          RD92_CONQUEST_CANDIDATE_MIN_M &&
+        distanceFromCentre <=
+          RD92_CONQUEST_CANDIDATE_MAX_M
+      );
+    }
+  );
+
+  shuffleHideSeekArray(candidatePool);
+
+  const selectedCandidates = [];
+
+  for (const point of candidatePool) {
+    const tooCloseToExistingCandidate =
+      selectedCandidates.some((candidate) => {
+        return (
+          haversine(candidate, point) <
+          RD92_CONQUEST_CANDIDATE_SPACING_M
+        );
+      });
+
+    if (tooCloseToExistingCandidate) {
+      continue;
+    }
+
+    let nearbyRoadCount = 0;
+
+    for (const roadPoint of roadPoints) {
+      if (
+        haversine(point, roadPoint) <=
+        RD86_CONQUEST_ROAD_DENSITY_RADIUS_M
+      ) {
+        nearbyRoadCount += 1;
+      }
+    }
+
+    if (
+      nearbyRoadCount <
+      RD86_CONQUEST_MIN_ROAD_COUNT
+    ) {
+      continue;
+    }
+
+    selectedCandidates.push({
+      lat: Number(point.lat.toFixed(6)),
+      lng: Number(point.lng.toFixed(6)),
+      road_count: nearbyRoadCount,
+      routeable: false
+    });
+
+    if (
+      selectedCandidates.length >=
+      RD86_CONQUEST_MAX_CANDIDATES
+    ) {
+      break;
+    }
+  }
+
+  return selectedCandidates;
+};
