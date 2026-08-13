@@ -1,18 +1,18 @@
 "use strict";
 
 /*
-  Road Discovery AU v93 service worker
+  Road Discovery AU v94 service worker
 
-  Compact Conquest candidate fix.
+  Larger balanced Conquest arenas.
 
   Expected frontend versions:
-  - app.js?v=92
+  - app.js?v=93
   - style.css?v=65
 
   Recent files are also recognised during staged GitHub updates.
 */
 
-const CACHE_NAME = "road-discovery-au-v93";
+const CACHE_NAME = "road-discovery-au-v94";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,13 +23,13 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
-  "./app.js?v=92",
+  "./app.js?v=93",
 
   /* Recent fallbacks used during a staged GitHub update. */
+  "./app.js?v=92",
   "./app.js?v=91",
   "./app.js?v=90",
   "./style.css?v=64",
-  "./app.js?v=89",
   "./style.css?v=63"
 ];
 
@@ -113,7 +113,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
-          if (networkResponse && networkResponse.ok) {
+          if (
+            networkResponse &&
+            networkResponse.ok
+          ) {
             const responseCopy =
               networkResponse.clone();
 
@@ -193,6 +196,9 @@ self.addEventListener("fetch", (event) => {
         ) {
           return (
             (await caches.match(
+              "./app.js?v=93"
+            )) ||
+            (await caches.match(
               "./app.js?v=92"
             )) ||
             (await caches.match(
@@ -200,9 +206,6 @@ self.addEventListener("fetch", (event) => {
             )) ||
             (await caches.match(
               "./app.js?v=90"
-            )) ||
-            (await caches.match(
-              "./app.js?v=89"
             )) ||
             Response.error()
           );
