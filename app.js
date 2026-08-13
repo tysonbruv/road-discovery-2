@@ -28317,3 +28317,1056 @@ if (
 } else {
   rd87InitCustomConquest();
 }
+
+/* ================================================== */
+/* Road Discovery AU v89 Conquest Rally               */
+/* Append this block once to the bottom of app.js v88 */
+/* ================================================== */
+
+const RD89_RALLY_PHASES = [
+  "rally",
+  "rally_grace",
+  "rally_countdown"
+];
+
+const RD89_RALLY_COLOUR = "#aab3c2";
+
+const roadDiscoveryV89 = {
+  deadlineForPhase: rd86DeadlineForPhase,
+  phaseLabel: rd86ConquestPhaseLabel,
+  statusText: rd86ConquestStatusText,
+  renderState: rd86RenderConquestState,
+  renderPlayers: rd86RenderConquestPlayers,
+  applyState: rd86ApplyConquestState,
+  drawDeploymentStart: rd86DrawDeploymentStart,
+  drawTeammates: rd86DrawTeammates,
+  resetState: rd86ResetConquestState,
+  markerColour: hs50OwnMarkerColour,
+  markerHaloColour: hs50OwnMarkerHaloColour
+};
+
+state.conquest.rallyPoint = null;
+state.conquest.rallyRadiusM = 100;
+state.conquest.rallyEndsAt = null;
+state.conquest.rallyGraceEndsAt = null;
+state.conquest.rallyCountdownEndsAt = null;
+state.conquest.rallyReadyCount = 0;
+state.conquest.rallyTotal = 0;
+
+function rd89IsRallyPhase(
+  phase = state.conquest.phase
+) {
+  return RD89_RALLY_PHASES.includes(
+    String(phase || "")
+  );
+}
+
+hasActiveConquestRound = function () {
+  return Boolean(
+    state.conquest.roundId &&
+    [
+      ...RD89_RALLY_PHASES,
+      "deployment",
+      "countdown",
+      "active",
+      "overtime"
+    ].includes(state.conquest.phase)
+  );
+};
+
+/* -------------------------------------------------- */
+/* Rally timer and phase wording                      */
+/* -------------------------------------------------- */
+
+rd86DeadlineForPhase = function () {
+  if (
+    state.conquest.phase === "rally"
+  ) {
+    return Date.parse(
+      state.conquest.rallyEndsAt || ""
+    );
+  }
+
+  if (
+    state.conquest.phase === "rally_grace"
+  ) {
+    return Date.parse(
+      state.conquest.rallyGraceEndsAt || ""
+    );
+  }
+
+  if (
+    state.conquest.phase ===
+      "rally_countdown"
+  ) {
+    return Date.parse(
+      state.conquest.rallyCountdownEndsAt ||
+        ""
+    );
+  }
+
+  return roadDiscoveryV89.deadlineForPhase();
+};
+
+rd86ConquestPhaseLabel = function () {
+  if (
+    state.conquest.phase === "rally"
+  ) {
+    return "Rally";
+  }
+
+  if (
+    state.conquest.phase === "rally_grace"
+  ) {
+    return "Rally grace";
+  }
+
+  if (
+    state.conquest.phase ===
+      "rally_countdown"
+  ) {
+    return "Teams next";
+  }
+
+  return roadDiscoveryV89.phaseLabel();
+};
+
+rd86ConquestStatusText = function () {
+  const ready =
+    Number(
+      state.conquest.rallyReadyCount
+    ) || 0;
+
+  const total =
+    Number(
+      state.conquest.rallyTotal
+    ) || 0;
+
+  if (
+    rd89IsRallyPhase() &&
+    state.conquest.viewerIsSpectator
+  ) {
+    if (
+      state.conquest.phase ===
+        "rally_countdown"
+    ) {
+      return (
+        "Rally complete • Teams deploy " +
+        "in 10 seconds."
+      );
+    }
+
+    return (
+      `Spectator view • ${ready} of ${total} ` +
+      "participants assembled at Rally."
+    );
+  }
+
+  if (
+    state.conquest.phase === "rally"
+  ) {
+    return state.conquest.viewerCheckedIn
+      ? (
+          `${ready} of ${total} assembled • ` +
+          "Waiting at Rally."
+        )
+      : (
+          `${ready} of ${total} assembled • ` +
+          "Reach the grey Rally area."
+        );
+  }
+
+  if (
+    state.conquest.phase === "rally_grace"
+  ) {
+    return state.conquest.viewerCheckedIn
+      ? (
+          `${ready} of ${total} assembled • ` +
+          "Final Rally grace."
+        )
+      : (
+          "Final Rally grace • Reach the " +
+          "grey area now."
+        );
+  }
+
+  if (
+    state.conquest.phase ===
+      "rally_countdown"
+  ) {
+    return (
+      "Rally complete • Red and Blue " +
+      "starting areas appear when the " +
+      "countdown reaches zero."
+    );
+  }
+
+  if (
+    state.conquest.phase === "deployment"
+  ) {
+    if (
+      state.conquest.viewerIsSpectator
+    ) {
+      return (
+        "Spectator view • One Red and one " +
+        "Blue rider must reach their team starts."
+      );
+    }
+
+    return state.conquest.viewerCheckedIn
+      ? (
+          "Your team start is reached • " +
+          "Waiting for the other team."
+        )
+      : (
+          `Reach the ${rd86TeamLabel(
+            state.conquest.viewerTeam
+          )} start • One rider from each ` +
+          "team is enough."
+        );
+  }
+
+  if (
+    state.conquest.phase === "countdown"
+  ) {
+    return (
+      "Objectives A, B, C, D and E " +
+      "appear at zero."
+    );
+  }
+
+  if (
+    state.conquest.phase === "active"
+  ) {
+    return state.conquest.viewerIsSpectator
+      ? (
+          "Spectator view • Tap a bot, A–E, " +
+          "or a Road Cache to follow the action."
+        )
+      : (
+          "Capture A–E. Owned objectives score " +
+          "every three seconds. Collect Road " +
+          "Caches for bonuses."
+        );
+  }
+
+  return roadDiscoveryV89.statusText();
+};
+
+/* -------------------------------------------------- */
+/* Neutral Rally marker and area                      */
+/* -------------------------------------------------- */
+
+function rd89RallyIcon() {
+  return L.divIcon({
+    className:
+      "conquest-rally-marker-icon",
+
+    html: `
+      <div class="conquest-rally-marker">
+        <strong>RALLY</strong>
+        <span>MEET HERE</span>
+      </div>
+    `,
+
+    iconSize: [72, 50],
+    iconAnchor: [36, 25]
+  });
+}
+
+rd86DrawDeploymentStart = function () {
+  if (!rd89IsRallyPhase()) {
+    roadDiscoveryV89
+      .drawDeploymentStart();
+
+    return;
+  }
+
+  rd86EnsureConquestLayer();
+  rd86ClearConquestRoute();
+
+  const point =
+    state.conquest.rallyPoint;
+
+  if (!point) {
+    rd86ClearLayerItem(
+      state.conquest.startCircle
+    );
+
+    rd86ClearLayerItem(
+      state.conquest.startMarker
+    );
+
+    state.conquest.startCircle = null;
+    state.conquest.startMarker = null;
+
+    return;
+  }
+
+  const latlng = [
+    point.lat,
+    point.lng
+  ];
+
+  if (!state.conquest.startCircle) {
+    state.conquest.startCircle =
+      L.circle(latlng, {
+        radius:
+          state.conquest.rallyRadiusM,
+
+        color: RD89_RALLY_COLOUR,
+        weight: 3,
+        opacity: 0.95,
+
+        fillColor: RD89_RALLY_COLOUR,
+        fillOpacity: 0.14,
+
+        dashArray: "10 8",
+        interactive: false
+      }).addTo(state.conquest.layer);
+  } else {
+    state.conquest.startCircle
+      .setLatLng(latlng)
+      .setRadius(
+        state.conquest.rallyRadiusM
+      )
+      .setStyle({
+        color: RD89_RALLY_COLOUR,
+        fillColor: RD89_RALLY_COLOUR
+      });
+  }
+
+  if (!state.conquest.startMarker) {
+    state.conquest.startMarker =
+      L.marker(latlng, {
+        icon: rd89RallyIcon(),
+        pane: "multiplayerPane",
+        interactive: false
+      }).addTo(state.conquest.layer);
+  } else {
+    state.conquest.startMarker
+      .setLatLng(latlng)
+      .setIcon(rd89RallyIcon());
+  }
+};
+
+/* -------------------------------------------------- */
+/* Rally participant list                             */
+/* -------------------------------------------------- */
+
+rd86RenderConquestPlayers = function () {
+  if (!rd89IsRallyPhase()) {
+    roadDiscoveryV89.renderPlayers();
+    return;
+  }
+
+  if (!els.conquestPlayersList) {
+    return;
+  }
+
+  const players =
+    Array.isArray(
+      state.conquest.players
+    )
+      ? state.conquest.players
+      : [];
+
+  if (players.length === 0) {
+    els.conquestPlayersList.innerHTML = `
+      <div class="empty-state">
+        Waiting for Rally participants.
+      </div>
+    `;
+
+    return;
+  }
+
+  els.conquestPlayersList.innerHTML =
+    players
+      .map((player) => {
+        const active =
+          player?.player_status ===
+          "active";
+
+        const status = !active
+          ? "Left"
+          : player?.checked_in
+            ? "Assembled"
+            : "Travelling";
+
+        const botClass =
+          player?.is_bot
+            ? " bot"
+            : "";
+
+        const fallbackName =
+          player?.is_bot
+            ? "Road Bot"
+            : "Rider";
+
+        return `
+          <div class="conquest-player-row neutral${botClass}">
+            <span
+              class="conquest-player-dot neutral"
+              aria-hidden="true"
+            ></span>
+
+            <div class="conquest-player-main">
+              <strong>
+                ${escapeHtml(
+                  player?.display_name ||
+                  fallbackName
+                )}${player?.is_me ? " • You" : ""}
+              </strong>
+
+              <span>
+                Rally participant
+              </span>
+            </div>
+
+            <span class="conquest-player-state">
+              ${escapeHtml(status)}
+            </span>
+          </div>
+        `;
+      })
+      .join("");
+};
+
+/* -------------------------------------------------- */
+/* Neutral participant dots during Rally              */
+/* -------------------------------------------------- */
+
+function rd89RallyParticipantIcon(
+  isBot
+) {
+  return L.divIcon({
+    className:
+      "multiplayer-dot-icon " +
+      "conquest-teammate-icon",
+
+    html: isBot
+      ? `
+          <div class="conquest-rally-bot-dot">
+            <span>BOT</span>
+          </div>
+        `
+      : `
+          <div class="conquest-rally-player-dot"></div>
+        `,
+
+    iconSize:
+      isBot
+        ? [32, 32]
+        : [26, 26],
+
+    iconAnchor:
+      isBot
+        ? [16, 16]
+        : [13, 13]
+  });
+}
+
+rd86DrawTeammates = function () {
+  if (!rd89IsRallyPhase()) {
+    roadDiscoveryV89.drawTeammates();
+    return;
+  }
+
+  rd86EnsureConquestLayer();
+
+  const seen = new Set();
+
+  for (
+    const player of
+    state.conquest.players
+  ) {
+    const participantId =
+      String(
+        player?.user_id || ""
+      );
+
+    const isBot =
+      Boolean(player?.is_bot);
+
+    if (
+      !participantId ||
+      player?.is_me ||
+      player?.player_status !==
+        "active" ||
+      (
+        state.conquest
+          .viewerIsSpectator &&
+        !isBot
+      )
+    ) {
+      continue;
+    }
+
+    const lat =
+      Number(player?.lat);
+
+    const lng =
+      Number(player?.lng);
+
+    if (
+      player?.lat === null ||
+      player?.lng === null ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      continue;
+    }
+
+    seen.add(participantId);
+
+    const fallbackName =
+      isBot
+        ? "Road Bot"
+        : "Rider";
+
+    const tooltip =
+      `${escapeHtml(
+        player?.display_name ||
+        fallbackName
+      )} • Rally`;
+
+    const existing =
+      state.conquest
+        .teammateMarkers
+        .get(participantId);
+
+    if (existing) {
+      existing.setLatLng([
+        lat,
+        lng
+      ]);
+
+      existing.setIcon(
+        rd89RallyParticipantIcon(
+          isBot
+        )
+      );
+
+      existing.setTooltipContent(
+        tooltip
+      );
+    } else {
+      const marker =
+        L.marker(
+          [lat, lng],
+          {
+            icon:
+              rd89RallyParticipantIcon(
+                isBot
+              ),
+
+            pane: "multiplayerPane",
+            interactive: false,
+            keyboard: false
+          }
+        ).addTo(
+          state.conquest.layer
+        );
+
+      marker.bindTooltip(
+        tooltip,
+        {
+          sticky: true
+        }
+      );
+
+      state.conquest
+        .teammateMarkers
+        .set(
+          participantId,
+          marker
+        );
+    }
+  }
+
+  for (
+    const [
+      participantId,
+      marker
+    ] of
+    state.conquest
+      .teammateMarkers
+      .entries()
+  ) {
+    if (!seen.has(participantId)) {
+      rd86ClearLayerItem(marker);
+
+      state.conquest
+        .teammateMarkers
+        .delete(participantId);
+    }
+  }
+};
+
+/* -------------------------------------------------- */
+/* Rally HUD                                          */
+/* -------------------------------------------------- */
+
+rd86RenderConquestState = function () {
+  roadDiscoveryV89.renderState();
+
+  const rally =
+    rd89IsRallyPhase();
+
+  const spectator =
+    Boolean(
+      state.conquest
+        .viewerIsSpectator
+    );
+
+  document.body.classList.toggle(
+    "conquest-rally-active",
+    rally
+  );
+
+  if (!rally) {
+    return;
+  }
+
+  document.body.classList.remove(
+    "conquest-red-team",
+    "conquest-blue-team"
+  );
+
+  for (
+    const badge of [
+      els.conquestTeamBadge,
+      els.conquestMapTeam
+    ]
+  ) {
+    if (!badge) {
+      continue;
+    }
+
+    badge.textContent =
+      spectator
+        ? "Spectator"
+        : "Rally";
+
+    badge.classList.remove(
+      "red",
+      "blue"
+    );
+  }
+};
+
+/* -------------------------------------------------- */
+/* Apply Rally state                                  */
+/* -------------------------------------------------- */
+
+rd86ApplyConquestState = function (
+  row
+) {
+  const previousRoundId =
+    String(
+      state.conquest.roundId || ""
+    );
+
+  const previousRallyReady =
+    Boolean(
+      state.conquest
+        .viewerCheckedIn
+    );
+
+  const nextPhase =
+    String(row?.phase || "");
+
+  const nextIsRally =
+    rd89IsRallyPhase(
+      nextPhase
+    );
+
+  const rallyLat =
+    Number(row?.rally_lat);
+
+  const rallyLng =
+    Number(row?.rally_lng);
+
+  state.conquest.rallyPoint =
+    Number.isFinite(rallyLat) &&
+    Number.isFinite(rallyLng)
+      ? {
+          lat: rallyLat,
+          lng: rallyLng
+        }
+      : null;
+
+  state.conquest.rallyRadiusM =
+    Number(
+      row?.rally_radius_m
+    ) || 100;
+
+  state.conquest.rallyEndsAt =
+    row?.rally_ends_at || null;
+
+  state.conquest.rallyGraceEndsAt =
+    row?.rally_grace_ends_at ||
+    null;
+
+  state.conquest
+    .rallyCountdownEndsAt =
+      row?.rally_countdown_ends_at ||
+      null;
+
+  state.conquest.rallyReadyCount =
+    Number(
+      row?.rally_ready_count
+    ) || 0;
+
+  state.conquest.rallyTotal =
+    Number(
+      row?.rally_total
+    ) || 0;
+
+  /*
+    This prevents the old team-start
+    notification from being used when
+    somebody enters the Rally area.
+  */
+  if (nextIsRally) {
+    state.conquest.viewerCheckedIn =
+      Boolean(
+        row?.viewer_checked_in
+      );
+  }
+
+  /*
+    Keep teams hidden during Rally.
+    Final teams appear after Rally has
+    completed and deployment begins.
+  */
+  const compatibleRow =
+    nextIsRally
+      ? {
+          ...row,
+
+          viewer_team: "",
+
+          players:
+            rd86NormaliseJsonArray(
+              row?.players
+            ).map((player) => ({
+              ...player,
+              team: "neutral"
+            }))
+        }
+      : row;
+
+  /*
+    Suppress the older early
+    team-assignment notification.
+  */
+  if (
+    nextIsRally &&
+    previousRoundId !==
+      String(row?.round_id || "")
+  ) {
+    state.conquest.roundId =
+      String(
+        row?.round_id || ""
+      );
+  }
+
+  roadDiscoveryV89.applyState(
+    compatibleRow
+  );
+
+  if (
+    nextIsRally &&
+    previousRoundId !==
+      state.conquest.roundId
+  ) {
+    showToast(
+      "Road Conquest Rally started"
+    );
+  }
+
+  if (
+    nextIsRally &&
+    !state.conquest
+      .viewerIsSpectator &&
+    !previousRallyReady &&
+    state.conquest.viewerCheckedIn
+  ) {
+    showToast(
+      "Rally reached • Assembled"
+    );
+  }
+};
+
+/* -------------------------------------------------- */
+/* Rally-aware state polling                          */
+/* -------------------------------------------------- */
+
+rd86PollConquestState =
+  async function (
+    options = {}
+  ) {
+    const force =
+      options.force === true;
+
+    if (
+      !hasActiveMultiplayerRoom() ||
+      !state.auth.client ||
+      !state.auth.user ||
+      state.conquest.polling ||
+      (
+        !force &&
+        !navigator.onLine
+      )
+    ) {
+      return;
+    }
+
+    state.conquest.polling = true;
+
+    const { data, error } =
+      await state.auth.client.rpc(
+        "get_conquest_state_v2",
+        {
+          p_room_id:
+            state.multiplayer.roomId
+        }
+      );
+
+    state.conquest.polling = false;
+
+    if (error) {
+      console.error(error);
+
+      state.conquest
+        .unavailableMessage =
+          rd86ConquestErrorMessage(
+            error
+          );
+
+      rd86RenderConquestState();
+
+      return;
+    }
+
+    const row =
+      Array.isArray(data)
+        ? data[0] || null
+        : data || null;
+
+    if (!row) {
+      if (
+        !state.conquest.starting
+      ) {
+        rd86ResetConquestState({
+          clearRound: true,
+          render: false
+        });
+
+        rd86RenderConquestState();
+      }
+
+      return;
+    }
+
+    if (
+      hasActiveHideSeekRound() &&
+      [
+        "finished",
+        "cancelled"
+      ].includes(
+        String(row?.phase || "")
+      )
+    ) {
+      rd86ResetConquestState({
+        clearRound: true,
+        render: false
+      });
+
+      return;
+    }
+
+    rd86ApplyConquestState(row);
+  };
+
+/* -------------------------------------------------- */
+/* Rally-aware GPS updates                            */
+/* -------------------------------------------------- */
+
+rd86MaybeSendConquestLocation =
+  async function (
+    point,
+    options = {}
+  ) {
+    const force =
+      options.force === true;
+
+    if (
+      state.conquest
+        .viewerIsSpectator ||
+      !hasActiveConquestRound() ||
+      !state.auth.client ||
+      !state.auth.user ||
+      !navigator.onLine ||
+      !point ||
+      !Number.isFinite(
+        Number(point.lat)
+      ) ||
+      !Number.isFinite(
+        Number(point.lng)
+      ) ||
+      !Number.isFinite(
+        Number(point.accuracy)
+      )
+    ) {
+      return false;
+    }
+
+    rd86MaybeUpdateDeploymentRoute(
+      point
+    );
+
+    const now = Date.now();
+
+    if (
+      !force &&
+      now -
+        state.conquest
+          .lastLocationSentAt <
+        RD86_CONQUEST_LOCATION_SEND_MS
+    ) {
+      return false;
+    }
+
+    if (
+      state.conquest
+        .updatingLocation
+    ) {
+      return false;
+    }
+
+    state.conquest
+      .lastLocationSentAt = now;
+
+    state.conquest
+      .updatingLocation = true;
+
+    const { data, error } =
+      await state.auth.client.rpc(
+        "update_conquest_location_v2",
+        {
+          p_round_id:
+            state.conquest.roundId,
+
+          p_lat:
+            Number(point.lat),
+
+          p_lng:
+            Number(point.lng),
+
+          p_accuracy:
+            Number(point.accuracy)
+        }
+      );
+
+    state.conquest
+      .updatingLocation = false;
+
+    if (error) {
+      console.error(error);
+      return false;
+    }
+
+    if (
+      data?.cache_collected
+    ) {
+      const tier =
+        String(
+          data.cache_tier ||
+          "Road"
+        );
+
+      const tierName =
+        tier.charAt(0).toUpperCase() +
+        tier.slice(1);
+
+      showToast(
+        `${tierName} Cache +` +
+        `${Number(
+          data.cache_reward
+        ) || 0}`
+      );
+    }
+
+    void rd86PollConquestState({
+      force: true
+    });
+
+    return Boolean(
+      data?.accepted
+    );
+  };
+
+/* -------------------------------------------------- */
+/* Rally reset                                        */
+/* -------------------------------------------------- */
+
+rd86ResetConquestState =
+  function (
+    options = {}
+  ) {
+    state.conquest.rallyPoint =
+      null;
+
+    state.conquest.rallyRadiusM =
+      100;
+
+    state.conquest.rallyEndsAt =
+      null;
+
+    state.conquest
+      .rallyGraceEndsAt = null;
+
+    state.conquest
+      .rallyCountdownEndsAt = null;
+
+    state.conquest
+      .rallyReadyCount = 0;
+
+    state.conquest.rallyTotal =
+      0;
+
+    document.body.classList.remove(
+      "conquest-rally-active"
+    );
+
+    return roadDiscoveryV89
+      .resetState(options);
+  };
+
+/* -------------------------------------------------- */
+/* Neutral own marker during Rally                    */
+/* -------------------------------------------------- */
+
+hs50OwnMarkerColour = function () {
+  if (rd89IsRallyPhase()) {
+    return RD89_RALLY_COLOUR;
+  }
+
+  return roadDiscoveryV89
+    .markerColour();
+};
+
+hs50OwnMarkerHaloColour =
+  function () {
+    if (rd89IsRallyPhase()) {
+      return (
+        "rgba(170, 179, 194, 0.28)"
+      );
+    }
+
+    return roadDiscoveryV89
+      .markerHaloColour();
+  };
