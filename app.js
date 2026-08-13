@@ -29370,3 +29370,113 @@ hs50OwnMarkerHaloColour =
     return roadDiscoveryV89
       .markerHaloColour();
   };
+
+/* ================================================== */
+/* Road Discovery AU v90 Compact Conquest Arena       */
+/* Append this block once to the bottom of app.js v89 */
+/* ================================================== */
+
+const RD90_CONQUEST_CANDIDATE_MIN_M =
+  600;
+
+const RD90_CONQUEST_CANDIDATE_MAX_M =
+  1500;
+
+rd86BuildConquestCandidates =
+  function (startPoint) {
+    const roadPoints =
+      state.roadSegments
+        .map((segment) =>
+          roadSegmentMidpoint(segment)
+        )
+        .filter(Boolean);
+
+    /*
+      Every team start, A-E objective and
+      cache now comes from a compact
+      three-kilometre-wide battlefield.
+
+      No candidate can be more than
+      1.5 km from the match centre.
+    */
+    const pool = roadPoints.filter(
+      (point) => {
+        const distance = haversine(
+          startPoint,
+          point
+        );
+
+        return (
+          distance >=
+            RD90_CONQUEST_CANDIDATE_MIN_M &&
+          distance <=
+            RD90_CONQUEST_CANDIDATE_MAX_M
+        );
+      }
+    );
+
+    shuffleHideSeekArray(pool);
+
+    const selected = [];
+
+    for (const point of pool) {
+      if (
+        selected.some(
+          (candidate) =>
+            haversine(
+              candidate,
+              point
+            ) <
+            RD86_CONQUEST_CANDIDATE_SPACING_M
+        )
+      ) {
+        continue;
+      }
+
+      let roadCount = 0;
+
+      for (
+        const roadPoint of
+        roadPoints
+      ) {
+        if (
+          haversine(
+            point,
+            roadPoint
+          ) <=
+          RD86_CONQUEST_ROAD_DENSITY_RADIUS_M
+        ) {
+          roadCount += 1;
+        }
+      }
+
+      if (
+        roadCount <
+        RD86_CONQUEST_MIN_ROAD_COUNT
+      ) {
+        continue;
+      }
+
+      selected.push({
+        lat: Number(
+          point.lat.toFixed(6)
+        ),
+
+        lng: Number(
+          point.lng.toFixed(6)
+        ),
+
+        road_count: roadCount,
+        routeable: false
+      });
+
+      if (
+        selected.length >=
+        RD86_CONQUEST_MAX_CANDIDATES
+      ) {
+        break;
+      }
+    }
+
+    return selected;
+  };
