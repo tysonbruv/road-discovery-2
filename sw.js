@@ -1,18 +1,18 @@
 "use strict";
 
 /*
-  Road Discovery AU v92 service worker
+  Road Discovery AU v93 service worker
 
-  Smaller 1.7 km Conquest arenas.
+  Compact Conquest candidate fix.
 
   Expected frontend versions:
-  - app.js?v=91
+  - app.js?v=92
   - style.css?v=65
 
   Recent files are also recognised during staged GitHub updates.
 */
 
-const CACHE_NAME = "road-discovery-au-v92";
+const CACHE_NAME = "road-discovery-au-v93";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,14 +23,14 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
-  "./app.js?v=91",
+  "./app.js?v=92",
 
   /* Recent fallbacks used during a staged GitHub update. */
+  "./app.js?v=91",
   "./app.js?v=90",
   "./style.css?v=64",
   "./app.js?v=89",
-  "./style.css?v=63",
-  "./app.js?v=88"
+  "./style.css?v=63"
 ];
 
 /* -------------------------------------------------- */
@@ -193,6 +193,9 @@ self.addEventListener("fetch", (event) => {
         ) {
           return (
             (await caches.match(
+              "./app.js?v=92"
+            )) ||
+            (await caches.match(
               "./app.js?v=91"
             )) ||
             (await caches.match(
@@ -200,9 +203,6 @@ self.addEventListener("fetch", (event) => {
             )) ||
             (await caches.match(
               "./app.js?v=89"
-            )) ||
-            (await caches.match(
-              "./app.js?v=88"
             )) ||
             Response.error()
           );
