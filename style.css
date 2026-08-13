@@ -8039,3 +8039,156 @@ body.conquest-spectator
     transition: none;
   }
 }
+
+/* ================================================== */
+/* Road Discovery AU v65 Conquest Rally               */
+/* Append this block once to the bottom of style.css  */
+/* ================================================== */
+
+:root {
+  --conquest-rally: #aab3c2;
+}
+
+/* Rally map marker */
+
+.leaflet-marker-icon.conquest-rally-marker-icon {
+  background: transparent;
+  border: 0;
+}
+
+.conquest-rally-marker {
+  width: 72px;
+  min-height: 50px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  border: 2px solid rgba(238, 247, 255, 0.92);
+  border-radius: 15px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(170, 179, 194, 0.98),
+      rgba(84, 94, 111, 0.98)
+    );
+
+  color: #090b0f;
+
+  box-shadow:
+    0 0 0 5px rgba(170, 179, 194, 0.17),
+    0 0 27px rgba(170, 179, 194, 0.62),
+    0 10px 24px rgba(0, 0, 0, 0.34);
+}
+
+.conquest-rally-marker strong,
+.conquest-rally-marker span {
+  display: block;
+  line-height: 1;
+}
+
+.conquest-rally-marker strong {
+  font-size: 12px;
+  font-weight: 1000;
+  letter-spacing: 0.045em;
+}
+
+.conquest-rally-marker span {
+  margin-top: 5px;
+
+  font-size: 7px;
+  font-weight: 950;
+  letter-spacing: 0.09em;
+}
+
+/* Rally HUD */
+
+body.conquest-rally-active
+.conquest-team-badge,
+body.conquest-rally-active
+.conquest-map-team {
+  border-color: rgba(170, 179, 194, 0.56);
+  background: rgba(170, 179, 194, 0.15);
+  color: rgba(238, 247, 255, 0.98);
+
+  box-shadow:
+    0 0 18px rgba(170, 179, 194, 0.16);
+}
+
+body.conquest-rally-active
+.conquest-game-box {
+  border-color: rgba(170, 179, 194, 0.38);
+
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(170, 179, 194, 0.13),
+      transparent 42%
+    ),
+    rgba(255, 255, 255, 0.035);
+}
+
+body.conquest-rally-active
+.conquest-phase-badge {
+  border-color: rgba(170, 179, 194, 0.4);
+  color: rgba(225, 232, 241, 0.96);
+}
+
+/* Neutral Rally roster */
+
+.conquest-player-row.neutral {
+  border-color: rgba(170, 179, 194, 0.2);
+  background: rgba(170, 179, 194, 0.055);
+}
+
+.conquest-player-dot.neutral {
+  background: var(--conquest-rally);
+
+  box-shadow:
+    0 0 13px rgba(170, 179, 194, 0.62);
+}
+
+/* Neutral Rally map dots */
+
+.conquest-rally-player-dot,
+.conquest-rally-bot-dot {
+  border: 4px solid rgba(238, 247, 255, 0.98);
+  border-radius: 999px;
+
+  background: var(--conquest-rally);
+
+  box-shadow:
+    0 0 0 4px rgba(170, 179, 194, 0.18),
+    0 0 19px rgba(170, 179, 194, 0.68);
+}
+
+.conquest-rally-player-dot {
+  width: 24px;
+  height: 24px;
+}
+
+.conquest-rally-bot-dot {
+  width: 30px;
+  height: 30px;
+
+  display: grid;
+  place-items: center;
+}
+
+.conquest-rally-bot-dot span {
+  color: #090b0f;
+
+  font-size: 7px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+/* Reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .conquest-rally-marker {
+    animation: none;
+  }
+}
