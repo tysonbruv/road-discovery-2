@@ -29653,3 +29653,95 @@ rd86BuildConquestCandidates = function (
 
   return selectedCandidates;
 };
+
+/* ================================================== */
+/* Road Discovery AU v93                              */
+/* Moderately Larger Balanced Conquest Arena          */
+/* ================================================== */
+
+const RD93_CONQUEST_CANDIDATE_MIN_M = 600;
+const RD93_CONQUEST_CANDIDATE_MAX_M = 1200;
+const RD93_CONQUEST_CANDIDATE_SPACING_M = 100;
+
+rd86BuildConquestCandidates = function (
+  startPoint
+) {
+  const roadPoints = state.roadSegments
+    .map((segment) =>
+      roadSegmentMidpoint(segment)
+    )
+    .filter(Boolean);
+
+  /*
+    Supply road points across a battlefield up to
+    approximately 2.4 kilometres wide. Supabase still
+    performs the final balanced A-E selection.
+  */
+  const candidatePool = roadPoints.filter(
+    (point) => {
+      const distanceFromCentre = haversine(
+        startPoint,
+        point
+      );
+
+      return (
+        distanceFromCentre >=
+          RD93_CONQUEST_CANDIDATE_MIN_M &&
+        distanceFromCentre <=
+          RD93_CONQUEST_CANDIDATE_MAX_M
+      );
+    }
+  );
+
+  shuffleHideSeekArray(candidatePool);
+
+  const selectedCandidates = [];
+
+  for (const point of candidatePool) {
+    const tooCloseToExistingCandidate =
+      selectedCandidates.some((candidate) => {
+        return (
+          haversine(candidate, point) <
+          RD93_CONQUEST_CANDIDATE_SPACING_M
+        );
+      });
+
+    if (tooCloseToExistingCandidate) {
+      continue;
+    }
+
+    let nearbyRoadCount = 0;
+
+    for (const roadPoint of roadPoints) {
+      if (
+        haversine(point, roadPoint) <=
+        RD86_CONQUEST_ROAD_DENSITY_RADIUS_M
+      ) {
+        nearbyRoadCount += 1;
+      }
+    }
+
+    if (
+      nearbyRoadCount <
+      RD86_CONQUEST_MIN_ROAD_COUNT
+    ) {
+      continue;
+    }
+
+    selectedCandidates.push({
+      lat: Number(point.lat.toFixed(6)),
+      lng: Number(point.lng.toFixed(6)),
+      road_count: nearbyRoadCount,
+      routeable: false
+    });
+
+    if (
+      selectedCandidates.length >=
+      RD86_CONQUEST_MAX_CANDIDATES
+    ) {
+      break;
+    }
+  }
+
+  return selectedCandidates;
+};
