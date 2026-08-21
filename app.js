@@ -29745,3 +29745,2206 @@ rd86BuildConquestCandidates = function (
 
   return selectedCandidates;
 };
+/* ================================================== */
+/* Road Discovery AU v94                              */
+/* Host-Placed Conquest Arenas                        */
+/* ================================================== */
+
+const RD94_ARENA_OBJECTIVE_CODES = [
+  "A",
+  "B",
+  "C",
+  "D",
+  "E"
+];
+
+const RD94_ARENA_MIN_OBJECTIVE_GAP_M = 650;
+const RD94_ARENA_MIN_SPAN_M = 1800;
+const RD94_ARENA_MAX_SPAN_M = 2400;
+const RD94_ARENA_MIN_CENTRE_M = 600;
+const RD94_ARENA_MAX_CENTRE_M = 1200;
+const RD94_ARENA_MAX_ROAD_SNAP_M = 90;
+
+const RD94_BLOCKED_HIGHWAY_TYPES = new Set([
+  "motorway",
+  "motorway_link",
+  "trunk",
+  "trunk_link",
+  "raceway",
+  "construction",
+  "proposed"
+]);
+
+const roadDiscoveryV94 = {
+  renderMultiplayerState,
+  stopMultiplayerMode,
+  leaveMultiplayerRoom
+};
+
+state.conquestArena = {
+  mode: "balanced",
+  active: false,
+  startKind: "multiplayer",
+  centre: null,
+  objectives: [],
+  layer: null,
+  centreMarker: null,
+  innerCircle: null,
+  outerCircle: null,
+  objectiveMarkers: new Map(),
+  busy: false,
+  mapClickBound: false
+};
+
+function rd94IsArenaHost() {
+  return Boolean(
+    state.auth.user?.id &&
+    state.multiplayer.createdBy &&
+    String(state.auth.user.id) ===
+      String(state.multiplayer.createdBy)
+  );
+}
+
+function rd94SafeHighwayType(value) {
+  return !RD94_BLOCKED_HIGHWAY_TYPES.has(
+    String(value || "road").toLowerCase()
+  );
+}
+
+function rd94RoundMetres(value) {
+  return Math.round(Number(value) || 0);
+}
+
+function rd94PairDistances(points) {
+  const distances = [];
+
+  for (
+    let firstIndex = 0;
+    firstIndex < points.length;
+    firstIndex += 1
+  ) {
+    for (
+      let secondIndex = firstIndex + 1;
+      secondIndex < points.length;
+      secondIndex += 1
+    ) {
+      distances.push(
+        haversine(
+          points[firstIndex],
+          points[secondIndex]
+        )
+      );
+    }
+  }
+
+  return distances;
+}
+
+function rd94ArenaValidation() {
+  const points =
+    state.conquestArena.objectives;
+
+  const pairDistances =
+    rd94PairDistances(points);
+
+  const minimumGap =
+    pairDistances.length > 0
+      ? Math.min(...pairDistances)
+      : 0;
+
+  const span =
+    pairDistances.length > 0
+      ? Math.max(...pairDistances)
+      : 0;
+
+  const centreDistances =
+    state.conquestArena.centre
+      ? points.map((point) =>
+          haversine(
+            state.conquestArena.centre,
+            point
+          )
+        )
+      : [];
+
+  const allInCentreRing =
+    centreDistances.every(
+      (distance) =>
+        distance >=
+          RD94_ARENA_MIN_CENTRE_M &&
+        distance <=
+          RD94_ARENA_MAX_CENTRE_M
+    );
+
+  const complete =
+    points.length ===
+      RD94_ARENA_OBJECTIVE_CODES.length;
+
+  const valid = Boolean(
+    complete &&
+    allInCentreRing &&
+    minimumGap >=
+      RD94_ARENA_MIN_OBJECTIVE_GAP_M &&
+    span >= RD94_ARENA_MIN_SPAN_M &&
+    span <= RD94_ARENA_MAX_SPAN_M
+  );
+
+  return {
+    complete,
+    valid,
+    minimumGap,
+    span,
+    allInCentreRing
+  };
+}
+
+function rd94InstallArenaStyles() {
+  if (document.getElementById(
+    "rd94ConquestArenaStyles"
+  )) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id = "rd94ConquestArenaStyles";
+
+  style.textContent = `
+    .rd94-arena-choice {
+      display: grid;
+      gap: 9px;
+      margin: 14px 0;
+      padding: 12px;
+      border: 1px solid rgba(143, 164, 196, 0.24);
+      border-radius: 16px;
+      background: rgba(12, 19, 31, 0.58);
+    }
+
+    .rd94-arena-choice-title {
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #dce9ff;
+    }
+
+    .rd94-arena-choice-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .rd94-arena-mode-btn {
+      min-height: 42px;
+      padding: 9px 10px;
+      border: 1px solid rgba(156, 177, 210, 0.28);
+      border-radius: 12px;
+      background: rgba(27, 38, 56, 0.86);
+      color: #f5f9ff;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 850;
+    }
+
+    .rd94-arena-mode-btn.active {
+      border-color: #7dc4ff;
+      background: rgba(43, 124, 188, 0.34);
+      box-shadow: 0 0 0 1px rgba(125, 196, 255, 0.3) inset;
+    }
+
+    .rd94-arena-mode-btn:disabled {
+      opacity: 0.45;
+    }
+
+    .rd94-arena-choice-note {
+      margin: 0;
+      color: #9fb2cc;
+      font-size: 0.76rem;
+      line-height: 1.38;
+    }
+
+    .rd94-arena-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 6500;
+      pointer-events: none;
+    }
+
+    .rd94-arena-overlay.hidden {
+      display: none;
+    }
+
+    .rd94-arena-panel {
+      position: absolute;
+      top: max(10px, env(safe-area-inset-top));
+      left: 50%;
+      width: min(94vw, 520px);
+      transform: translateX(-50%);
+      display: grid;
+      gap: 10px;
+      padding: 13px;
+      border: 1px solid rgba(147, 178, 221, 0.3);
+      border-radius: 18px;
+      background: rgba(8, 14, 24, 0.94);
+      color: #f7fbff;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(14px);
+      pointer-events: auto;
+    }
+
+    .rd94-arena-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .rd94-arena-heading strong {
+      display: block;
+      font-size: 1rem;
+    }
+
+    .rd94-arena-heading span {
+      display: block;
+      margin-top: 3px;
+      color: #a9bad0;
+      font-size: 0.75rem;
+      line-height: 1.35;
+    }
+
+    .rd94-arena-progress {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+    }
+
+    .rd94-arena-objective-chip {
+      min-height: 38px;
+      border: 1px solid rgba(151, 170, 199, 0.3);
+      border-radius: 11px;
+      background: rgba(31, 43, 61, 0.88);
+      color: #8291a5;
+      font: inherit;
+      font-weight: 950;
+    }
+
+    .rd94-arena-objective-chip.placed {
+      border-color: #f6ca55;
+      background: rgba(190, 130, 17, 0.24);
+      color: #ffe38a;
+    }
+
+    .rd94-arena-status {
+      min-height: 38px;
+      padding: 9px 10px;
+      border-radius: 12px;
+      background: rgba(28, 39, 56, 0.8);
+      color: #c7d6e9;
+      font-size: 0.78rem;
+      line-height: 1.42;
+    }
+
+    .rd94-arena-status.good {
+      background: rgba(19, 111, 75, 0.28);
+      color: #9ef0c5;
+    }
+
+    .rd94-arena-status.bad {
+      background: rgba(139, 55, 47, 0.28);
+      color: #ffc0b9;
+    }
+
+    .rd94-arena-actions {
+      display: grid;
+      grid-template-columns: auto auto 1fr;
+      gap: 8px;
+    }
+
+    .rd94-arena-action {
+      min-height: 42px;
+      padding: 9px 13px;
+      border: 1px solid rgba(151, 170, 199, 0.3);
+      border-radius: 12px;
+      background: rgba(31, 43, 61, 0.9);
+      color: #f5f9ff;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 850;
+    }
+
+    .rd94-arena-action.confirm {
+      border-color: rgba(93, 194, 139, 0.5);
+      background: rgba(24, 142, 83, 0.34);
+    }
+
+    .rd94-arena-action:disabled {
+      opacity: 0.42;
+    }
+
+    .rd94-arena-objective-icon {
+      background: transparent;
+      border: 0;
+    }
+
+    .rd94-arena-objective-marker {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border: 3px solid #ffe58b;
+      border-radius: 50%;
+      background: #171d27;
+      color: #ffe58b;
+      font-size: 1rem;
+      font-weight: 1000;
+      box-shadow:
+        0 0 0 5px rgba(255, 218, 92, 0.17),
+        0 7px 18px rgba(0, 0, 0, 0.42);
+    }
+
+    .rd94-arena-centre-icon {
+      background: transparent;
+      border: 0;
+    }
+
+    .rd94-arena-centre-marker {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 2px solid #dce8f7;
+      border-radius: 50%;
+      background: #222c3a;
+      color: #f5f9ff;
+      font-size: 0.58rem;
+      font-weight: 900;
+      box-shadow: 0 5px 14px rgba(0, 0, 0, 0.36);
+    }
+
+    @media (max-width: 520px) {
+      .rd94-arena-panel {
+        width: calc(100vw - 16px);
+        padding: 11px;
+      }
+
+      .rd94-arena-actions {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .rd94-arena-action.confirm {
+        grid-column: 1 / -1;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function rd94ArenaChoiceHtml(scope) {
+  return `
+    <div
+      class="rd94-arena-choice"
+      data-rd94-arena-choice="${escapeHtml(scope)}"
+    >
+      <div class="rd94-arena-choice-title">
+        Arena layout
+      </div>
+
+      <div class="rd94-arena-choice-buttons">
+        <button
+          class="rd94-arena-mode-btn"
+          type="button"
+          data-rd94-arena-mode="balanced"
+        >
+          Balanced Random
+        </button>
+
+        <button
+          class="rd94-arena-mode-btn"
+          type="button"
+          data-rd94-arena-mode="custom"
+        >
+          Place A–E
+        </button>
+      </div>
+
+      <p class="rd94-arena-choice-note"></p>
+    </div>
+  `;
+}
+
+function rd94InjectArenaChoice(
+  containerId,
+  startButtonId,
+  scope
+) {
+  const container =
+    document.getElementById(containerId);
+
+  const startButton =
+    document.getElementById(startButtonId);
+
+  if (
+    !container ||
+    !startButton ||
+    container.querySelector(
+      `[data-rd94-arena-choice="${scope}"]`
+    )
+  ) {
+    return;
+  }
+
+  const holder =
+    document.createElement("div");
+
+  holder.innerHTML =
+    rd94ArenaChoiceHtml(scope);
+
+  const choice = holder.firstElementChild;
+
+  startButton.parentNode?.insertBefore(
+    choice,
+    startButton
+  );
+
+  choice?.addEventListener(
+    "click",
+    (event) => {
+      const button =
+        event.target.closest(
+          "[data-rd94-arena-mode]"
+        );
+
+      if (!button || button.disabled) return;
+
+      const mode =
+        button.dataset.rd94ArenaMode ===
+        "custom"
+          ? "custom"
+          : "balanced";
+
+      rd94SetArenaMode(mode);
+    }
+  );
+}
+
+function rd94EnsureArenaChoices() {
+  rd94InstallArenaStyles();
+
+  rd94InjectArenaChoice(
+    "conquestSetupBox",
+    "startConquestBtn",
+    "multiplayer"
+  );
+
+  rd94InjectArenaChoice(
+    "customConquestBox",
+    "startCustomConquestBtn",
+    "custom"
+  );
+
+  rd94EnsurePlacementOverlay();
+  rd94BindStartInterceptors();
+  rd94RenderArenaChoices();
+}
+
+function rd94SetArenaMode(mode) {
+  if (
+    mode === "custom" &&
+    !rd94IsArenaHost()
+  ) {
+    showToast(
+      "Only the room creator can place A–E"
+    );
+    return;
+  }
+
+  state.conquestArena.mode =
+    mode === "custom"
+      ? "custom"
+      : "balanced";
+
+  rd94RenderArenaChoices();
+}
+
+function rd94RenderArenaChoices() {
+  const isHost = rd94IsArenaHost();
+  const customSelected =
+    state.conquestArena.mode === "custom";
+
+  for (
+    const choice of
+    document.querySelectorAll(
+      "[data-rd94-arena-choice]"
+    )
+  ) {
+    for (
+      const button of
+      choice.querySelectorAll(
+        "[data-rd94-arena-mode]"
+      )
+    ) {
+      const mode =
+        button.dataset.rd94ArenaMode;
+
+      button.classList.toggle(
+        "active",
+        mode === state.conquestArena.mode
+      );
+
+      button.disabled =
+        mode === "custom" && !isHost;
+    }
+
+    const note = choice.querySelector(
+      ".rd94-arena-choice-note"
+    );
+
+    if (note) {
+      note.textContent = !isHost
+        ? "The room creator can choose and place a custom arena."
+        : customSelected
+          ? "Start opens the map so you can place five safe objectives before teams are created."
+          : "A–E are spread automatically across reachable roads.";
+    }
+  }
+
+  const startButton =
+    document.getElementById(
+      "startConquestBtn"
+    );
+
+  if (
+    startButton &&
+    customSelected &&
+    !state.conquest.starting
+  ) {
+    startButton.textContent =
+      "Place A–E & Start";
+  }
+
+  const customStartButton =
+    document.getElementById(
+      "startCustomConquestBtn"
+    );
+
+  if (
+    customStartButton &&
+    customSelected &&
+    !state.customConquest.starting
+  ) {
+    customStartButton.textContent =
+      "Place A–E & Start";
+  }
+}
+
+function rd94EnsurePlacementOverlay() {
+  if (document.getElementById(
+    "rd94ArenaOverlay"
+  )) {
+    return;
+  }
+
+  const overlay =
+    document.createElement("div");
+
+  overlay.id = "rd94ArenaOverlay";
+  overlay.className =
+    "rd94-arena-overlay hidden";
+
+  overlay.innerHTML = `
+    <div
+      class="rd94-arena-panel"
+      role="dialog"
+      aria-modal="false"
+      aria-label="Place Conquest objectives"
+    >
+      <div class="rd94-arena-heading">
+        <div>
+          <strong>Place Conquest A–E</strong>
+          <span>
+            Tap safe public roads. Tap a placed letter below to remove it, or drag its marker.
+          </span>
+        </div>
+      </div>
+
+      <div
+        id="rd94ArenaProgress"
+        class="rd94-arena-progress"
+      ></div>
+
+      <div
+        id="rd94ArenaStatus"
+        class="rd94-arena-status"
+      ></div>
+
+      <div class="rd94-arena-actions">
+        <button
+          id="rd94ArenaCancelBtn"
+          class="rd94-arena-action"
+          type="button"
+        >
+          Cancel
+        </button>
+
+        <button
+          id="rd94ArenaUndoBtn"
+          class="rd94-arena-action"
+          type="button"
+        >
+          Undo
+        </button>
+
+        <button
+          id="rd94ArenaConfirmBtn"
+          class="rd94-arena-action confirm"
+          type="button"
+        >
+          Confirm A–E
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  document.getElementById(
+    "rd94ArenaCancelBtn"
+  )?.addEventListener(
+    "click",
+    () => rd94CancelArenaPlacement()
+  );
+
+  document.getElementById(
+    "rd94ArenaUndoBtn"
+  )?.addEventListener(
+    "click",
+    rd94UndoArenaObjective
+  );
+
+  document.getElementById(
+    "rd94ArenaConfirmBtn"
+  )?.addEventListener(
+    "click",
+    () => {
+      void rd94ConfirmArenaPlacement();
+    }
+  );
+
+  document.getElementById(
+    "rd94ArenaProgress"
+  )?.addEventListener(
+    "click",
+    (event) => {
+      const button =
+        event.target.closest(
+          "[data-rd94-remove-objective]"
+        );
+
+      if (!button || button.disabled) return;
+
+      rd94RemoveArenaObjective(
+        button.dataset
+          .rd94RemoveObjective
+      );
+    }
+  );
+}
+
+function rd94BindStartInterceptors() {
+  const bindings = [
+    ["startConquestBtn", "multiplayer"],
+    ["startCustomConquestBtn", "custom"]
+  ];
+
+  for (const [buttonId, startKind] of bindings) {
+    const button =
+      document.getElementById(buttonId);
+
+    if (
+      !button ||
+      button.dataset.rd94ArenaBound ===
+        "true"
+    ) {
+      continue;
+    }
+
+    button.dataset.rd94ArenaBound =
+      "true";
+
+    button.addEventListener(
+      "click",
+      (event) => {
+        if (
+          state.conquestArena.mode !==
+          "custom"
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        void rd94BeginArenaPlacement(
+          startKind
+        );
+      },
+      true
+    );
+  }
+}
+
+function rd94ArenaObjectiveIcon(code) {
+  return L.divIcon({
+    className:
+      "rd94-arena-objective-icon",
+    html: `
+      <div class="rd94-arena-objective-marker">
+        ${escapeHtml(code)}
+      </div>
+    `,
+    iconSize: [44, 44],
+    iconAnchor: [22, 22]
+  });
+}
+
+function rd94ArenaCentreIcon() {
+  return L.divIcon({
+    className:
+      "rd94-arena-centre-icon",
+    html: `
+      <div class="rd94-arena-centre-marker">
+        RALLY
+      </div>
+    `,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17]
+  });
+}
+
+function rd94EnsurePlacementLayer() {
+  if (
+    state.map &&
+    !state.conquestArena.layer
+  ) {
+    state.conquestArena.layer =
+      L.layerGroup().addTo(state.map);
+  }
+}
+
+function rd94ClearPlacementLayers() {
+  if (state.conquestArena.layer) {
+    state.conquestArena.layer.clearLayers();
+  }
+
+  state.conquestArena.centreMarker = null;
+  state.conquestArena.innerCircle = null;
+  state.conquestArena.outerCircle = null;
+  state.conquestArena.objectiveMarkers.clear();
+}
+
+function rd94DrawArenaCentre() {
+  rd94EnsurePlacementLayer();
+
+  const centre =
+    state.conquestArena.centre;
+
+  if (!centre || !state.conquestArena.layer) {
+    return;
+  }
+
+  state.conquestArena.outerCircle =
+    L.circle(
+      [centre.lat, centre.lng],
+      {
+        radius:
+          RD94_ARENA_MAX_CENTRE_M,
+        color: "#d8e6f8",
+        weight: 2,
+        opacity: 0.62,
+        fillOpacity: 0.025,
+        dashArray: "10 9",
+        interactive: false
+      }
+    ).addTo(state.conquestArena.layer);
+
+  state.conquestArena.innerCircle =
+    L.circle(
+      [centre.lat, centre.lng],
+      {
+        radius:
+          RD94_ARENA_MIN_CENTRE_M,
+        color: "#9daec4",
+        weight: 1,
+        opacity: 0.42,
+        fillOpacity: 0.02,
+        dashArray: "5 8",
+        interactive: false
+      }
+    ).addTo(state.conquestArena.layer);
+
+  state.conquestArena.centreMarker =
+    L.marker(
+      [centre.lat, centre.lng],
+      {
+        icon: rd94ArenaCentreIcon(),
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 10
+      }
+    ).addTo(state.conquestArena.layer);
+}
+
+function rd94ClosestPointOnSegment(
+  point,
+  segment
+) {
+  const coords = segment?.coords;
+
+  if (
+    !Array.isArray(coords) ||
+    coords.length < 2
+  ) {
+    return null;
+  }
+
+  const a = {
+    lat: Number(coords[0][0]),
+    lng: Number(coords[0][1])
+  };
+
+  const b = {
+    lat: Number(coords[1][0]),
+    lng: Number(coords[1][1])
+  };
+
+  if (
+    !Number.isFinite(a.lat) ||
+    !Number.isFinite(a.lng) ||
+    !Number.isFinite(b.lat) ||
+    !Number.isFinite(b.lng)
+  ) {
+    return null;
+  }
+
+  const metresPerLat = 111320;
+  const metresPerLng =
+    Math.max(
+      1000,
+      Math.cos(
+        Number(point.lat) *
+        Math.PI / 180
+      ) * 111320
+    );
+
+  const ax =
+    (a.lng - point.lng) *
+    metresPerLng;
+
+  const ay =
+    (a.lat - point.lat) *
+    metresPerLat;
+
+  const bx =
+    (b.lng - point.lng) *
+    metresPerLng;
+
+  const by =
+    (b.lat - point.lat) *
+    metresPerLat;
+
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSquared =
+    dx * dx + dy * dy;
+
+  const fraction =
+    lengthSquared > 0
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            -(
+              ax * dx + ay * dy
+            ) / lengthSquared
+          )
+        )
+      : 0;
+
+  const snapped = {
+    lat:
+      a.lat +
+      (b.lat - a.lat) * fraction,
+    lng:
+      a.lng +
+      (b.lng - a.lng) * fraction,
+    highway:
+      String(segment.highway || "road"),
+    road_name:
+      String(segment.name || "Road")
+  };
+
+  return {
+    ...snapped,
+    distance: haversine(point, snapped)
+  };
+}
+
+function rd94NearestSafeRoadPoint(point) {
+  let nearest = null;
+
+  for (const segment of state.roadSegments) {
+    if (!rd94SafeHighwayType(
+      segment?.highway
+    )) {
+      continue;
+    }
+
+    const candidate =
+      rd94ClosestPointOnSegment(
+        point,
+        segment
+      );
+
+    if (
+      candidate &&
+      (
+        !nearest ||
+        candidate.distance <
+          nearest.distance
+      )
+    ) {
+      nearest = candidate;
+    }
+  }
+
+  if (
+    !nearest ||
+    nearest.distance >
+      RD94_ARENA_MAX_ROAD_SNAP_M
+  ) {
+    return null;
+  }
+
+  return {
+    lat: Number(nearest.lat.toFixed(6)),
+    lng: Number(nearest.lng.toFixed(6)),
+    highway: nearest.highway,
+    road_name: nearest.road_name
+  };
+}
+
+function rd94ValidateNewObjective(
+  point,
+  replacingCode = ""
+) {
+  const centre =
+    state.conquestArena.centre;
+
+  if (!centre) {
+    return {
+      valid: false,
+      message: "The arena centre is unavailable."
+    };
+  }
+
+  const centreDistance =
+    haversine(centre, point);
+
+  if (
+    centreDistance <
+      RD94_ARENA_MIN_CENTRE_M ||
+    centreDistance >
+      RD94_ARENA_MAX_CENTRE_M
+  ) {
+    return {
+      valid: false,
+      message:
+        "Place each objective inside the 600–1,200 metre arena ring."
+    };
+  }
+
+  for (
+    const objective of
+    state.conquestArena.objectives
+  ) {
+    if (
+      objective.code === replacingCode
+    ) {
+      continue;
+    }
+
+    const gap =
+      haversine(objective, point);
+
+    if (
+      gap <
+      RD94_ARENA_MIN_OBJECTIVE_GAP_M
+    ) {
+      return {
+        valid: false,
+        message:
+          `Too close to ${objective.code}. Keep every objective at least 650 metres apart.`
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    message: ""
+  };
+}
+
+function rd94DrawArenaObjectives() {
+  rd94EnsurePlacementLayer();
+
+  const activeCodes = new Set(
+    state.conquestArena.objectives.map(
+      (objective) => objective.code
+    )
+  );
+
+  for (
+    const objective of
+    state.conquestArena.objectives
+  ) {
+    let marker =
+      state.conquestArena
+        .objectiveMarkers
+        .get(objective.code);
+
+    if (marker) {
+      marker.setLatLng([
+        objective.lat,
+        objective.lng
+      ]);
+      continue;
+    }
+
+    marker = L.marker(
+      [objective.lat, objective.lng],
+      {
+        icon:
+          rd94ArenaObjectiveIcon(
+            objective.code
+          ),
+        draggable: true,
+        keyboard: false,
+        zIndexOffset: 50
+      }
+    ).addTo(state.conquestArena.layer);
+
+    marker.on(
+      "dragstart",
+      () => {
+        marker.rd94PreviousPoint = {
+          lat: objective.lat,
+          lng: objective.lng
+        };
+      }
+    );
+
+    marker.on(
+      "dragend",
+      () => {
+        const latlng = marker.getLatLng();
+
+        const snapped =
+          rd94NearestSafeRoadPoint({
+            lat: Number(latlng.lat),
+            lng: Number(latlng.lng)
+          });
+
+        const validation = snapped
+          ? rd94ValidateNewObjective(
+              snapped,
+              objective.code
+            )
+          : {
+              valid: false,
+              message:
+                "That point is not close enough to a suitable public road."
+            };
+
+        if (!validation.valid) {
+          const previous =
+            marker.rd94PreviousPoint ||
+            objective;
+
+          marker.setLatLng([
+            previous.lat,
+            previous.lng
+          ]);
+
+          showToast(validation.message);
+          return;
+        }
+
+        objective.lat = snapped.lat;
+        objective.lng = snapped.lng;
+        objective.highway =
+          snapped.highway;
+        objective.road_name =
+          snapped.road_name;
+
+        marker.setLatLng([
+          objective.lat,
+          objective.lng
+        ]);
+
+        rd94RenderPlacementOverlay();
+      }
+    );
+
+    marker.bindTooltip(
+      `Objective ${escapeHtml(objective.code)} • Drag to move`,
+      { direction: "top" }
+    );
+
+    state.conquestArena
+      .objectiveMarkers
+      .set(objective.code, marker);
+  }
+
+  for (
+    const [code, marker] of
+    state.conquestArena
+      .objectiveMarkers
+      .entries()
+  ) {
+    if (!activeCodes.has(code)) {
+      state.conquestArena.layer
+        ?.removeLayer(marker);
+
+      state.conquestArena
+        .objectiveMarkers
+        .delete(code);
+    }
+  }
+}
+
+function rd94RenderPlacementOverlay(
+  overrideMessage = ""
+) {
+  const overlay =
+    document.getElementById(
+      "rd94ArenaOverlay"
+    );
+
+  const progress =
+    document.getElementById(
+      "rd94ArenaProgress"
+    );
+
+  const status =
+    document.getElementById(
+      "rd94ArenaStatus"
+    );
+
+  const undoButton =
+    document.getElementById(
+      "rd94ArenaUndoBtn"
+    );
+
+  const confirmButton =
+    document.getElementById(
+      "rd94ArenaConfirmBtn"
+    );
+
+  if (!overlay || !progress || !status) {
+    return;
+  }
+
+  overlay.classList.toggle(
+    "hidden",
+    !state.conquestArena.active
+  );
+
+  progress.innerHTML =
+    RD94_ARENA_OBJECTIVE_CODES
+      .map((code) => {
+        const placed =
+          state.conquestArena.objectives
+            .some(
+              (objective) =>
+                objective.code === code
+            );
+
+        return `
+          <button
+            class="rd94-arena-objective-chip ${placed ? "placed" : ""}"
+            type="button"
+            data-rd94-remove-objective="${code}"
+            ${placed ? "" : "disabled"}
+            aria-label="${placed ? `Remove objective ${code}` : `Objective ${code} not placed` }"
+          >
+            ${code}
+          </button>
+        `;
+      })
+      .join("");
+
+  const validation =
+    rd94ArenaValidation();
+
+  status.classList.remove(
+    "good",
+    "bad"
+  );
+
+  if (overrideMessage) {
+    status.textContent = overrideMessage;
+  } else if (!validation.complete) {
+    const nextCode =
+      RD94_ARENA_OBJECTIVE_CODES[
+        state.conquestArena
+          .objectives.length
+      ];
+
+    status.textContent =
+      `Tap a suitable road to place ${nextCode}. ` +
+      `${state.conquestArena.objectives.length}/5 placed • ` +
+      "minimum 650 m between objectives.";
+  } else if (
+    validation.minimumGap <
+    RD94_ARENA_MIN_OBJECTIVE_GAP_M
+  ) {
+    status.textContent =
+      `Objectives are only ${rd94RoundMetres(validation.minimumGap)} m apart. Move one until the minimum is 650 m.`;
+    status.classList.add("bad");
+  } else if (
+    validation.span <
+    RD94_ARENA_MIN_SPAN_M
+  ) {
+    status.textContent =
+      `Arena span is ${rd94RoundMetres(validation.span)} m. Move an outer objective until the span reaches 1.8 km.`;
+    status.classList.add("bad");
+  } else if (
+    validation.span >
+    RD94_ARENA_MAX_SPAN_M
+  ) {
+    status.textContent =
+      `Arena span is ${rd94RoundMetres(validation.span)} m. Keep the complete arena within 2.4 km.`;
+    status.classList.add("bad");
+  } else if (!validation.allInCentreRing) {
+    status.textContent =
+      "Every objective must stay inside the 600–1,200 metre arena ring.";
+    status.classList.add("bad");
+  } else {
+    status.textContent =
+      `Arena ready • nearest gap ${rd94RoundMetres(validation.minimumGap)} m • total span ${rd94RoundMetres(validation.span)} m.`;
+    status.classList.add("good");
+  }
+
+  if (undoButton) {
+    undoButton.disabled = Boolean(
+      state.conquestArena.busy ||
+      state.conquestArena.objectives
+        .length === 0
+    );
+  }
+
+  if (confirmButton) {
+    confirmButton.disabled = Boolean(
+      state.conquestArena.busy ||
+      !validation.valid
+    );
+
+    confirmButton.textContent =
+      state.conquestArena.busy
+        ? "Checking arena..."
+        : "Confirm A–E";
+  }
+
+  rd94DrawArenaObjectives();
+}
+
+function rd94HandleArenaMapClick(event) {
+  if (
+    !state.conquestArena.active ||
+    state.conquestArena.busy ||
+    state.conquestArena.objectives.length >=
+      RD94_ARENA_OBJECTIVE_CODES.length
+  ) {
+    return;
+  }
+
+  const snapped =
+    rd94NearestSafeRoadPoint({
+      lat: Number(event.latlng.lat),
+      lng: Number(event.latlng.lng)
+    });
+
+  if (!snapped) {
+    showToast(
+      "Tap closer to a suitable public road"
+    );
+    return;
+  }
+
+  const validation =
+    rd94ValidateNewObjective(snapped);
+
+  if (!validation.valid) {
+    showToast(validation.message);
+    return;
+  }
+
+  const code =
+    RD94_ARENA_OBJECTIVE_CODES[
+      state.conquestArena.objectives.length
+    ];
+
+  state.conquestArena.objectives.push({
+    code,
+    lat: snapped.lat,
+    lng: snapped.lng,
+    highway: snapped.highway,
+    road_name: snapped.road_name
+  });
+
+  showToast(
+    `Objective ${code} placed • ${snapped.road_name}`
+  );
+
+  rd94RenderPlacementOverlay();
+}
+
+function rd94BindArenaMapClick() {
+  if (
+    !state.map ||
+    state.conquestArena.mapClickBound
+  ) {
+    return;
+  }
+
+  state.map.on(
+    "click",
+    rd94HandleArenaMapClick
+  );
+
+  state.conquestArena.mapClickBound = true;
+}
+
+function rd94UnbindArenaMapClick() {
+  if (
+    !state.map ||
+    !state.conquestArena.mapClickBound
+  ) {
+    return;
+  }
+
+  state.map.off(
+    "click",
+    rd94HandleArenaMapClick
+  );
+
+  state.conquestArena.mapClickBound = false;
+}
+
+function rd94RemoveArenaObjective(code) {
+  if (state.conquestArena.busy) return;
+
+  const index =
+    state.conquestArena.objectives
+      .findIndex(
+        (objective) =>
+          objective.code === code
+      );
+
+  if (index < 0) return;
+
+  state.conquestArena.objectives.splice(
+    index,
+    1
+  );
+
+  state.conquestArena.objectives
+    .forEach((objective, objectiveIndex) => {
+      objective.code =
+        RD94_ARENA_OBJECTIVE_CODES[
+          objectiveIndex
+        ];
+    });
+
+  rd94ClearPlacementLayers();
+  rd94DrawArenaCentre();
+  rd94RenderPlacementOverlay();
+}
+
+function rd94UndoArenaObjective() {
+  const last =
+    state.conquestArena.objectives.at(-1);
+
+  if (last) {
+    rd94RemoveArenaObjective(last.code);
+  }
+}
+
+async function rd94ArenaStartPoint(startKind) {
+  if (startKind === "custom") {
+    const roster = rd87CustomRoster();
+
+    if (!roster.valid) {
+      throw new Error(
+        roster.errors[0] ||
+        "Choose a valid Red and Blue roster."
+      );
+    }
+
+    return rd87CustomStartPoint(roster);
+  }
+
+  return getFreshRouteStartPoint();
+}
+
+async function rd94BeginArenaPlacement(
+  startKind
+) {
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    !rd94IsArenaHost() ||
+    state.conquestArena.busy ||
+    hasActiveConquestRound()
+  ) {
+    if (!rd94IsArenaHost()) {
+      showToast(
+        "Only the room creator can place A–E"
+      );
+    }
+    return;
+  }
+
+  if (hasActiveHideSeekRound()) {
+    showToast(
+      "Finish Hide & Seek before placing a Conquest arena"
+    );
+    return;
+  }
+
+  if (startKind === "multiplayer") {
+    const memberCount =
+      state.multiplayer.members.length;
+
+    if (
+      memberCount <
+        RD86_CONQUEST_MIN_PLAYERS ||
+      memberCount >
+        RD86_CONQUEST_MAX_PLAYERS
+    ) {
+      showToast(
+        "Road Conquest needs 4–8 riders"
+      );
+      return;
+    }
+  }
+
+  state.conquestArena.busy = true;
+  state.conquestArena.startKind =
+    startKind === "custom"
+      ? "custom"
+      : "multiplayer";
+
+  closePanels();
+  state.awaitingWaypointClick = false;
+
+  if (state.myPlaces) {
+    state.myPlaces.placingType = null;
+    state.myPlaces.movingPlaceId = null;
+  }
+
+  showToast(
+    "Loading roads for custom arena placement"
+  );
+
+  try {
+    const startPoint =
+      await rd94ArenaStartPoint(
+        state.conquestArena.startKind
+      );
+
+    if (
+      !startPoint ||
+      !Number.isFinite(
+        Number(startPoint.lat)
+      ) ||
+      !Number.isFinite(
+        Number(startPoint.lng)
+      ) ||
+      (
+        Number(startPoint.accuracy) >
+          MAX_GPS_ACCURACY_M &&
+        Number(startPoint.accuracy) !== 0
+      )
+    ) {
+      throw new Error(
+        "Need GPS accuracy of 35 metres or better before placing the arena."
+      );
+    }
+
+    const roadsReady =
+      await ensureRoadsNearPoint(
+        startPoint,
+        {
+          replaceIfFar: true,
+          quiet: false
+        }
+      );
+
+    if (
+      !roadsReady ||
+      state.roadSegments.length === 0
+    ) {
+      throw new Error(
+        "Could not load roads for this arena."
+      );
+    }
+
+    let centre = {
+      lat: Number(startPoint.lat),
+      lng: Number(startPoint.lng),
+      accuracy:
+        Number(startPoint.accuracy) || 0
+    };
+
+    if (
+      state.conquestArena.startKind ===
+        "custom" &&
+      rd87CustomRoster().humans.length === 0
+    ) {
+      const snappedCentre =
+        rd94NearestSafeRoadPoint(centre);
+
+      if (snappedCentre) {
+        centre = {
+          ...snappedCentre,
+          accuracy: 0
+        };
+      }
+    }
+
+    state.conquestArena.centre = centre;
+    state.conquestArena.objectives = [];
+    state.conquestArena.active = true;
+    state.conquestArena.busy = false;
+
+    rd94ClearPlacementLayers();
+    rd94DrawArenaCentre();
+    rd94BindArenaMapClick();
+
+    state.followUser = false;
+
+    state.map?.setView(
+      [centre.lat, centre.lng],
+      Math.min(
+        14,
+        Number(state.map.getZoom()) || 14
+      ),
+      { animate: true }
+    );
+
+    rd94RenderPlacementOverlay();
+
+    showToast(
+      "Tap five safe roads to place A–E"
+    );
+  } catch (error) {
+    console.error(error);
+
+    state.conquestArena.busy = false;
+    state.conquestArena.active = false;
+
+    const message =
+      rd86ConquestErrorMessage(error);
+
+    showToast(message);
+    rd94RenderPlacementOverlay();
+  }
+}
+
+function rd94CancelArenaPlacement(
+  showMessage = true
+) {
+  state.conquestArena.active = false;
+  state.conquestArena.busy = false;
+  state.conquestArena.centre = null;
+  state.conquestArena.objectives = [];
+
+  rd94UnbindArenaMapClick();
+  rd94ClearPlacementLayers();
+  rd94RenderPlacementOverlay();
+
+  if (showMessage) {
+    showToast(
+      "Custom arena placement cancelled"
+    );
+  }
+}
+
+function rd94Cross(origin, a, b) {
+  return (
+    (a.lng - origin.lng) *
+      (b.lat - origin.lat) -
+    (a.lat - origin.lat) *
+      (b.lng - origin.lng)
+  );
+}
+
+function rd94ConvexHull(points) {
+  const sorted = points
+    .map((point) => ({
+      lat: Number(point.lat),
+      lng: Number(point.lng)
+    }))
+    .sort(
+      (a, b) =>
+        a.lng - b.lng ||
+        a.lat - b.lat
+    );
+
+  if (sorted.length <= 2) {
+    return sorted;
+  }
+
+  const lower = [];
+
+  for (const point of sorted) {
+    while (
+      lower.length >= 2 &&
+      rd94Cross(
+        lower[lower.length - 2],
+        lower[lower.length - 1],
+        point
+      ) <= 0
+    ) {
+      lower.pop();
+    }
+
+    lower.push(point);
+  }
+
+  const upper = [];
+
+  for (
+    let index = sorted.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    const point = sorted[index];
+
+    while (
+      upper.length >= 2 &&
+      rd94Cross(
+        upper[upper.length - 2],
+        upper[upper.length - 1],
+        point
+      ) <= 0
+    ) {
+      upper.pop();
+    }
+
+    upper.push(point);
+  }
+
+  lower.pop();
+  upper.pop();
+
+  return lower.concat(upper);
+}
+
+function rd94PointInPolygon(point, polygon) {
+  let inside = false;
+
+  for (
+    let index = 0, previous = polygon.length - 1;
+    index < polygon.length;
+    previous = index, index += 1
+  ) {
+    const currentPoint = polygon[index];
+    const previousPoint = polygon[previous];
+
+    const crosses = Boolean(
+      (
+        currentPoint.lat > point.lat
+      ) !== (
+        previousPoint.lat > point.lat
+      ) &&
+      point.lng <
+        (
+          (
+            previousPoint.lng -
+            currentPoint.lng
+          ) *
+          (
+            point.lat -
+            currentPoint.lat
+          ) /
+          (
+            previousPoint.lat -
+            currentPoint.lat
+          ) +
+          currentPoint.lng
+        )
+    );
+
+    if (crosses) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+function rd94BuildCustomArenaCandidates() {
+  const centre =
+    state.conquestArena.centre;
+
+  const objectives =
+    state.conquestArena.objectives;
+
+  const hull =
+    rd94ConvexHull(objectives);
+
+  const roadPoints =
+    state.roadSegments
+      .filter(
+        (segment) =>
+          rd94SafeHighwayType(
+            segment?.highway
+          )
+      )
+      .map((segment) => ({
+        ...roadSegmentMidpoint(segment),
+        highway:
+          String(segment.highway || "road")
+      }))
+      .filter(
+        (point) =>
+          Number.isFinite(
+            Number(point?.lat)
+          ) &&
+          Number.isFinite(
+            Number(point?.lng)
+          )
+      );
+
+  const pool = roadPoints.filter(
+    (point) => {
+      const centreDistance =
+        haversine(centre, point);
+
+      if (
+        centreDistance <
+          RD94_ARENA_MIN_CENTRE_M ||
+        centreDistance >
+          RD94_ARENA_MAX_CENTRE_M ||
+        !rd94PointInPolygon(
+          point,
+          hull
+        )
+      ) {
+        return false;
+      }
+
+      return true;
+    }
+  );
+
+  shuffleHideSeekArray(pool);
+
+  const selected = [];
+
+  for (const point of pool) {
+    if (
+      selected.some(
+        (candidate) =>
+          haversine(
+            candidate,
+            point
+          ) <
+          RD93_CONQUEST_CANDIDATE_SPACING_M
+      )
+    ) {
+      continue;
+    }
+
+    let roadCount = 0;
+
+    for (const roadPoint of roadPoints) {
+      if (
+        haversine(
+          point,
+          roadPoint
+        ) <=
+        RD86_CONQUEST_ROAD_DENSITY_RADIUS_M
+      ) {
+        roadCount += 1;
+      }
+    }
+
+    if (
+      roadCount <
+      RD86_CONQUEST_MIN_ROAD_COUNT
+    ) {
+      continue;
+    }
+
+    selected.push({
+      lat: Number(point.lat.toFixed(6)),
+      lng: Number(point.lng.toFixed(6)),
+      road_count: roadCount,
+      routeable: false
+    });
+
+    if (
+      selected.length >=
+      RD86_CONQUEST_MAX_CANDIDATES -
+        RD94_ARENA_OBJECTIVE_CODES.length
+    ) {
+      break;
+    }
+  }
+
+  /*
+    Keep the five verified edge locations in the supplied
+    pool so the existing balanced-round transaction can
+    always prove the required 1.8 km span. The server
+    removes candidates close to A-E immediately after it
+    installs the host's final objective coordinates, so
+    caches cannot spawn on top of an objective.
+  */
+  for (const objective of objectives) {
+    selected.push({
+      lat: Number(
+        Number(objective.lat).toFixed(6)
+      ),
+      lng: Number(
+        Number(objective.lng).toFixed(6)
+      ),
+      road_count: 100000,
+      routeable: false
+    });
+  }
+
+  return selected;
+}
+
+async function rd94ValidateObjectiveRoutes() {
+  const routeable =
+    await rd86FilterRouteableCandidates(
+      state.conquestArena.centre,
+      state.conquestArena.objectives.map(
+        (objective) => ({
+          ...objective,
+          road_count: 100000,
+          routeable: false
+        })
+      )
+    );
+
+  if (
+    routeable.length !==
+    RD94_ARENA_OBJECTIVE_CODES.length
+  ) {
+    throw new Error(
+      "Every objective must be reachable by a normal road route from the Rally area. Move the unreachable objective and try again."
+    );
+  }
+}
+
+function rd94CustomObjectivePayload() {
+  return state.conquestArena.objectives
+    .map((objective) => ({
+      code: objective.code,
+      lat: Number(
+        Number(objective.lat).toFixed(6)
+      ),
+      lng: Number(
+        Number(objective.lng).toFixed(6)
+      )
+    }));
+}
+
+async function rd94StartPreparedArena() {
+  const startKind =
+    state.conquestArena.startKind;
+
+  const centre = {
+    ...state.conquestArena.centre
+  };
+
+  const objectivePayload =
+    rd94CustomObjectivePayload();
+
+  const roster =
+    startKind === "custom"
+      ? rd87CustomRoster()
+      : null;
+
+  if (
+    startKind === "custom" &&
+    !roster?.valid
+  ) {
+    throw new Error(
+      roster?.errors?.[0] ||
+      "Choose a valid Red and Blue roster."
+    );
+  }
+
+  state.conquestArena.busy = true;
+  state.conquest.starting = true;
+
+  if (startKind === "custom") {
+    state.customConquest.starting = true;
+    state.customConquest.preparationText =
+      "Checking the custom arena...";
+  } else {
+    state.conquest.preparationText =
+      "Checking the custom arena...";
+  }
+
+  rd94RenderPlacementOverlay(
+    "Checking all five road routes..."
+  );
+
+  try {
+    await rd94ValidateObjectiveRoutes();
+
+    rd94RenderPlacementOverlay(
+      "Building safe cache locations inside A–E..."
+    );
+
+    const candidates =
+      rd94BuildCustomArenaCandidates();
+
+    if (
+      candidates.length <
+      RD86_CONQUEST_MIN_CANDIDATES
+    ) {
+      throw new Error(
+        "Not enough suitable cache and team-start roads exist inside this A–E boundary. Adjust the outer objectives and try again."
+      );
+    }
+
+    const routeable =
+      await rd86FilterRouteableCandidates(
+        centre,
+        candidates
+      );
+
+    if (
+      routeable.length <
+      RD86_CONQUEST_MIN_CANDIDATES
+    ) {
+      throw new Error(
+        "Not enough reachable roads exist inside this custom arena. Adjust A–E and try again."
+      );
+    }
+
+    if (rd86HasConquestRound()) {
+      rd86ResetConquestState({
+        clearRound: true,
+        render: false
+      });
+    }
+
+    rd94RenderPlacementOverlay(
+      "Creating teams, starts and the custom arena..."
+    );
+
+    const sharedParameters = {
+      p_room_id:
+        state.multiplayer.roomId,
+      p_start_lat:
+        Number(centre.lat),
+      p_start_lng:
+        Number(centre.lng),
+      p_road_candidates:
+        routeable.map(
+          (candidate) => ({
+            lat: candidate.lat,
+            lng: candidate.lng,
+            road_count:
+              candidate.road_count,
+            routeable: true
+          })
+        ),
+      p_objectives: objectivePayload,
+      p_safety_ack: true
+    };
+
+    const rpcName =
+      startKind === "custom"
+        ? "start_custom_conquest_round_custom_arena"
+        : "start_conquest_round_custom_arena";
+
+    const parameters =
+      startKind === "custom"
+        ? {
+            ...sharedParameters,
+            p_human_teams:
+              roster.humans,
+            p_red_bots:
+              roster.redBots,
+            p_blue_bots:
+              roster.blueBots
+          }
+        : sharedParameters;
+
+    const { data, error } =
+      await state.auth.client.rpc(
+        rpcName,
+        parameters
+      );
+
+    if (error) throw error;
+
+    const roundId = Array.isArray(data)
+      ? data[0]
+      : data;
+
+    if (!roundId) {
+      throw new Error(
+        "Could not read the new custom-arena match."
+      );
+    }
+
+    state.conquest.roundId =
+      String(roundId);
+
+    state.conquest.preparationText = "";
+    state.customConquest.preparationText = "";
+
+    state.conquestArena.active = false;
+    state.conquestArena.busy = false;
+    rd94UnbindArenaMapClick();
+    rd94ClearPlacementLayers();
+    rd94RenderPlacementOverlay();
+
+    clearMultiplayerMarkers();
+
+    await rd86PollConquestState({
+      force: true
+    });
+
+    if (
+      startKind === "multiplayer" &&
+      state.currentPoint
+    ) {
+      void rd86MaybeSendConquestLocation(
+        state.currentPoint,
+        { force: true }
+      );
+    }
+
+    showToast(
+      startKind === "custom"
+        ? "Custom Conquest started with host-placed A–E"
+        : "Road Conquest started with host-placed A–E"
+    );
+  } catch (error) {
+    console.error(error);
+
+    const message =
+      rd86ConquestErrorMessage(error);
+
+    state.conquest.preparationText =
+      message;
+    state.customConquest.preparationText =
+      message;
+
+    state.conquestArena.busy = false;
+    state.conquestArena.active = true;
+
+    rd94BindArenaMapClick();
+    rd94RenderPlacementOverlay(message);
+    showToast(message);
+  } finally {
+    state.conquest.starting = false;
+    state.customConquest.starting = false;
+
+    renderMultiplayerState();
+  }
+}
+
+async function rd94ConfirmArenaPlacement() {
+  if (
+    state.conquestArena.busy ||
+    !rd94ArenaValidation().valid
+  ) {
+    return;
+  }
+
+  const safetyAccepted = window.confirm(
+    "I confirm that A, B, C, D and E are safe, public and legally accessible road locations. None require stopping on a motorway, freeway, tunnel or dangerous roadside.\n\nPlayers must obey all road rules, avoid quiet residential streets and never interact with the phone while riding or driving.\n\nCreate this Custom Arena?"
+  );
+
+  if (!safetyAccepted) return;
+
+  await rd94StartPreparedArena();
+}
+
+renderMultiplayerState = function () {
+  const result =
+    roadDiscoveryV94
+      .renderMultiplayerState();
+
+  rd94EnsureArenaChoices();
+
+  if (
+    state.conquestArena.active &&
+    !hasActiveMultiplayerRoom()
+  ) {
+    rd94CancelArenaPlacement(false);
+  }
+
+  return result;
+};
+
+stopMultiplayerMode = function (
+  options = {}
+) {
+  rd94CancelArenaPlacement(false);
+
+  return roadDiscoveryV94
+    .stopMultiplayerMode(options);
+};
+
+leaveMultiplayerRoom = async function (
+  options = {}
+) {
+  rd94CancelArenaPlacement(false);
+
+  return roadDiscoveryV94
+    .leaveMultiplayerRoom(options);
+};
+
+function rd94InitCustomArena() {
+  rd94EnsureArenaChoices();
+
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.key === "Escape" &&
+        state.conquestArena.active &&
+        !state.conquestArena.busy
+      ) {
+        rd94CancelArenaPlacement();
+      }
+    }
+  );
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd94InitCustomArena,
+    { once: true }
+  );
+} else {
+  rd94InitCustomArena();
+}
