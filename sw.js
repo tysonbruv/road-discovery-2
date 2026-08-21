@@ -1,18 +1,16 @@
 "use strict";
 
 /*
-  Road Discovery AU v94 service worker
+  Road Discovery AU v95 service worker
 
-  Larger balanced Conquest arenas.
+  Host-placed Conquest arenas.
 
   Expected frontend versions:
-  - app.js?v=93
+  - app.js?v=94
   - style.css?v=65
-
-  Recent files are also recognised during staged GitHub updates.
 */
 
-const CACHE_NAME = "road-discovery-au-v94";
+const CACHE_NAME = "road-discovery-au-v95";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,19 +21,15 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
-  "./app.js?v=93",
+  "./app.js?v=94",
 
   /* Recent fallbacks used during a staged GitHub update. */
+  "./app.js?v=93",
   "./app.js?v=92",
   "./app.js?v=91",
-  "./app.js?v=90",
   "./style.css?v=64",
   "./style.css?v=63"
 ];
-
-/* -------------------------------------------------- */
-/* Install                                            */
-/* -------------------------------------------------- */
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -61,10 +55,6 @@ self.addEventListener("install", (event) => {
   );
 });
 
-/* -------------------------------------------------- */
-/* Activate                                           */
-/* -------------------------------------------------- */
-
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
@@ -72,21 +62,18 @@ self.addEventListener("activate", (event) => {
       .then((cacheNames) => {
         return Promise.all(
           cacheNames
-            .filter((cacheName) => {
-              return cacheName !== CACHE_NAME;
-            })
-            .map((cacheName) => {
-              return caches.delete(cacheName);
-            })
+            .filter(
+              (cacheName) =>
+                cacheName !== CACHE_NAME
+            )
+            .map((cacheName) =>
+              caches.delete(cacheName)
+            )
         );
       })
       .then(() => self.clients.claim())
   );
 });
-
-/* -------------------------------------------------- */
-/* Fetch                                              */
-/* -------------------------------------------------- */
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
@@ -98,16 +85,12 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   /*
-    External requests are not intercepted. This includes Leaflet,
-    Supabase, map tiles, Overpass road data and OSRM routes.
+    Leaflet, Supabase, map tiles, Overpass and OSRM remain
+    network-managed and are not intercepted here.
   */
   if (url.origin !== self.location.origin) {
     return;
   }
-
-  /* ------------------------------------------------ */
-  /* Page navigation                                  */
-  /* ------------------------------------------------ */
 
   if (request.mode === "navigate") {
     event.respondWith(
@@ -143,10 +126,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  /* ------------------------------------------------ */
-  /* Local JavaScript, CSS, manifest and icon files   */
-  /* ------------------------------------------------ */
-
   event.respondWith(
     fetch(request)
       .then((networkResponse) => {
@@ -174,59 +153,35 @@ self.addEventListener("fetch", (event) => {
           return exactCachedResponse;
         }
 
-        if (
-          url.pathname.endsWith("/style.css")
-        ) {
+        if (url.pathname.endsWith("/style.css")) {
           return (
-            (await caches.match(
-              "./style.css?v=65"
-            )) ||
-            (await caches.match(
-              "./style.css?v=64"
-            )) ||
-            (await caches.match(
-              "./style.css?v=63"
-            )) ||
+            (await caches.match("./style.css?v=65")) ||
+            (await caches.match("./style.css?v=64")) ||
+            (await caches.match("./style.css?v=63")) ||
+            Response.error()
+          );
+        }
+
+        if (url.pathname.endsWith("/app.js")) {
+          return (
+            (await caches.match("./app.js?v=94")) ||
+            (await caches.match("./app.js?v=93")) ||
+            (await caches.match("./app.js?v=92")) ||
+            (await caches.match("./app.js?v=91")) ||
             Response.error()
           );
         }
 
         if (
-          url.pathname.endsWith("/app.js")
+          url.pathname.endsWith("/manifest.json")
         ) {
           return (
-            (await caches.match(
-              "./app.js?v=93"
-            )) ||
-            (await caches.match(
-              "./app.js?v=92"
-            )) ||
-            (await caches.match(
-              "./app.js?v=91"
-            )) ||
-            (await caches.match(
-              "./app.js?v=90"
-            )) ||
+            (await caches.match("./manifest.json")) ||
             Response.error()
           );
         }
 
-        if (
-          url.pathname.endsWith(
-            "/manifest.json"
-          )
-        ) {
-          return (
-            (await caches.match(
-              "./manifest.json"
-            )) ||
-            Response.error()
-          );
-        }
-
-        if (
-          url.pathname.endsWith("/icon.svg")
-        ) {
+        if (url.pathname.endsWith("/icon.svg")) {
           return (
             (await caches.match("./icon.svg")) ||
             Response.error()
