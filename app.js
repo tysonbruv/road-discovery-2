@@ -32404,3 +32404,176 @@ if (document.readyState === "loading") {
 } else {
   rd95InitConquestSettings();
 }
+
+/* ================================================== */
+/* Road Discovery AU v97                              */
+/* One Objective May Use The Rally Area               */
+/* ================================================== */
+
+rd94ArenaValidation = function () {
+  const points =
+    state.conquestArena.objectives;
+
+  const pairDistances =
+    rd94PairDistances(points);
+
+  const minimumGap =
+    pairDistances.length > 0
+      ? Math.min(...pairDistances)
+      : 0;
+
+  const span =
+    pairDistances.length > 0
+      ? Math.max(...pairDistances)
+      : 0;
+
+  const centreDistances =
+    state.conquestArena.centre
+      ? points.map((point) =>
+          haversine(
+            state.conquestArena.centre,
+            point
+          )
+        )
+      : [];
+
+  const rallyObjectiveCount =
+    centreDistances.filter(
+      (distance) =>
+        distance <
+          RD94_ARENA_MIN_CENTRE_M
+    ).length;
+
+  const allInCentreRing = Boolean(
+    rallyObjectiveCount <= 1 &&
+    centreDistances.every(
+      (distance) =>
+        distance <=
+          RD94_ARENA_MAX_CENTRE_M
+    )
+  );
+
+  const complete =
+    points.length ===
+      RD94_ARENA_OBJECTIVE_CODES.length;
+
+  const valid = Boolean(
+    complete &&
+    allInCentreRing &&
+    minimumGap >=
+      RD94_ARENA_MIN_OBJECTIVE_GAP_M &&
+    span >= RD94_ARENA_MIN_SPAN_M &&
+    span <= RD94_ARENA_MAX_SPAN_M
+  );
+
+  return {
+    complete,
+    valid,
+    minimumGap,
+    span,
+    allInCentreRing,
+    rallyObjectiveCount
+  };
+};
+
+
+rd94ValidateNewObjective = function (
+  point,
+  replacingCode = ""
+) {
+  const centre =
+    state.conquestArena.centre;
+
+  if (!centre) {
+    return {
+      valid: false,
+      message:
+        "The arena centre is unavailable."
+    };
+  }
+
+  const centreDistance =
+    haversine(centre, point);
+
+  if (
+    centreDistance >
+      RD94_ARENA_MAX_CENTRE_M
+  ) {
+    return {
+      valid: false,
+      message:
+        "Keep every objective within 2,000 metres of Rally."
+    };
+  }
+
+  const anotherObjectiveUsesRally =
+    state.conquestArena.objectives.some(
+      (objective) =>
+        objective.code !== replacingCode &&
+        haversine(centre, objective) <
+          RD94_ARENA_MIN_CENTRE_M
+    );
+
+  if (
+    centreDistance <
+      RD94_ARENA_MIN_CENTRE_M &&
+    anotherObjectiveUsesRally
+  ) {
+    return {
+      valid: false,
+      message:
+        "Only one objective can be placed inside the Rally area."
+    };
+  }
+
+  for (
+    const objective of
+    state.conquestArena.objectives
+  ) {
+    if (
+      objective.code === replacingCode
+    ) {
+      continue;
+    }
+
+    if (
+      haversine(objective, point) <
+      RD94_ARENA_MIN_OBJECTIVE_GAP_M
+    ) {
+      return {
+        valid: false,
+        message:
+          `Too close to ${objective.code}. Keep every objective at least 650 metres apart.`
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    message: ""
+  };
+};
+
+
+function rd97UpdateRallyObjectiveInstructions() {
+  const instruction =
+    document.querySelector(
+      ".rd94-arena-heading span"
+    );
+
+  if (instruction) {
+    instruction.textContent =
+      "Tap safe public roads. One objective may be placed inside Rally. Tap a placed letter to remove it, or drag its marker.";
+  }
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd97UpdateRallyObjectiveInstructions,
+    { once: true }
+  );
+} else {
+  rd97UpdateRallyObjectiveInstructions();
+}
