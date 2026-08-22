@@ -31948,3 +31948,459 @@ if (document.readyState === "loading") {
 } else {
   rd94InitCustomArena();
 }
+
+/* ================================================== */
+/* Road Discovery AU v95                              */
+/* Conquest Settings Cog                              */
+/* ================================================== */
+
+const roadDiscoveryV95 = {
+  renderMultiplayerState,
+  stopMultiplayerMode,
+  leaveMultiplayerRoom
+};
+
+state.conquestSettings = {
+  open: false
+};
+
+function rd95InstallConquestSettingsStyles() {
+  if (
+    document.getElementById(
+      "rd95ConquestSettingsStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd95ConquestSettingsStyles";
+
+  style.textContent = `
+    #conquestSetupBox.rd95-conquest-settings-host {
+      position: relative;
+    }
+
+    .rd95-conquest-settings-cog {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 4;
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 1px solid rgba(151, 174, 207, 0.3);
+      border-radius: 12px;
+      background: rgba(27, 39, 58, 0.9);
+      color: #eaf3ff;
+      font-family: Arial, sans-serif;
+      font-size: 1.25rem;
+      line-height: 1;
+      box-shadow: 0 5px 14px rgba(0, 0, 0, 0.24);
+      cursor: pointer;
+    }
+
+    .rd95-conquest-settings-cog:hover,
+    .rd95-conquest-settings-cog:focus-visible {
+      border-color: #7dc4ff;
+      background: rgba(42, 113, 168, 0.42);
+      outline: none;
+    }
+
+    .rd95-conquest-settings-cog:disabled {
+      opacity: 0.42;
+      cursor: default;
+    }
+
+    .rd95-conquest-settings-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 6900;
+      display: grid;
+      place-items: center;
+      padding:
+        max(14px, env(safe-area-inset-top))
+        12px
+        max(14px, env(safe-area-inset-bottom));
+      background: rgba(2, 7, 14, 0.76);
+      backdrop-filter: blur(8px);
+    }
+
+    .rd95-conquest-settings-overlay.hidden {
+      display: none;
+    }
+
+    .rd95-conquest-settings-panel {
+      width: min(94vw, 560px);
+      max-height: min(88vh, 760px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid rgba(147, 178, 221, 0.3);
+      border-radius: 20px;
+      background: rgba(9, 16, 27, 0.98);
+      color: #f7fbff;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
+    }
+
+    .rd95-conquest-settings-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 15px 15px 13px;
+      border-bottom: 1px solid rgba(147, 178, 221, 0.18);
+    }
+
+    .rd95-conquest-settings-heading strong {
+      display: block;
+      font-size: 1rem;
+    }
+
+    .rd95-conquest-settings-heading span {
+      display: block;
+      margin-top: 3px;
+      color: #9fb2cc;
+      font-size: 0.76rem;
+    }
+
+    .rd95-conquest-settings-close {
+      flex: 0 0 auto;
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 1px solid rgba(151, 174, 207, 0.28);
+      border-radius: 12px;
+      background: rgba(31, 43, 61, 0.9);
+      color: #f7fbff;
+      font: inherit;
+      font-size: 1.2rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd95-conquest-settings-content {
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 14px;
+    }
+
+    #customConquestBox.rd95-custom-conquest-inside-settings {
+      margin: 0 !important;
+      max-width: none !important;
+    }
+
+    #customConquestBox.rd95-custom-conquest-inside-settings:not(.hidden) {
+      display: block;
+    }
+
+    @media (max-width: 520px) {
+      .rd95-conquest-settings-overlay {
+        place-items: end center;
+        padding-left: 8px;
+        padding-right: 8px;
+      }
+
+      .rd95-conquest-settings-panel {
+        width: 100%;
+        max-height: 91vh;
+        border-radius: 20px 20px 14px 14px;
+      }
+
+      .rd95-conquest-settings-content {
+        padding: 11px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function rd95EnsureConquestSettings() {
+  rd95InstallConquestSettingsStyles();
+
+  const conquestBox =
+    document.getElementById(
+      "conquestSetupBox"
+    );
+
+  const customBox =
+    document.getElementById(
+      "customConquestBox"
+    );
+
+  if (!conquestBox || !customBox) {
+    return;
+  }
+
+  conquestBox.classList.add(
+    "rd95-conquest-settings-host"
+  );
+
+  let cog = document.getElementById(
+    "rd95ConquestSettingsCog"
+  );
+
+  if (!cog) {
+    cog = document.createElement("button");
+    cog.id = "rd95ConquestSettingsCog";
+    cog.className =
+      "rd95-conquest-settings-cog";
+    cog.type = "button";
+    cog.textContent = "⚙︎";
+    cog.setAttribute(
+      "aria-label",
+      "Open Conquest settings"
+    );
+    cog.setAttribute(
+      "title",
+      "Conquest settings"
+    );
+
+    cog.addEventListener(
+      "click",
+      rd95OpenConquestSettings
+    );
+
+    conquestBox.appendChild(cog);
+  }
+
+  let overlay = document.getElementById(
+    "rd95ConquestSettingsOverlay"
+  );
+
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id =
+      "rd95ConquestSettingsOverlay";
+    overlay.className =
+      "rd95-conquest-settings-overlay hidden";
+    overlay.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+
+    overlay.innerHTML = `
+      <section
+        class="rd95-conquest-settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rd95ConquestSettingsTitle"
+      >
+        <header class="rd95-conquest-settings-heading">
+          <div>
+            <strong id="rd95ConquestSettingsTitle">
+              Conquest Settings
+            </strong>
+            <span>
+              Custom teams, human players and bots
+            </span>
+          </div>
+
+          <button
+            id="rd95ConquestSettingsClose"
+            class="rd95-conquest-settings-close"
+            type="button"
+            aria-label="Close Conquest settings"
+          >
+            ×
+          </button>
+        </header>
+
+        <div
+          id="rd95ConquestSettingsContent"
+          class="rd95-conquest-settings-content"
+        ></div>
+      </section>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener(
+      "click",
+      (event) => {
+        if (event.target === overlay) {
+          rd95CloseConquestSettings();
+        }
+      }
+    );
+
+    overlay.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.target.closest(
+            "#startCustomConquestBtn"
+          )
+        ) {
+          rd95CloseConquestSettings();
+        }
+      },
+      true
+    );
+
+    document.getElementById(
+      "rd95ConquestSettingsClose"
+    )?.addEventListener(
+      "click",
+      rd95CloseConquestSettings
+    );
+  }
+
+  const content = document.getElementById(
+    "rd95ConquestSettingsContent"
+  );
+
+  if (
+    content &&
+    customBox.parentElement !== content
+  ) {
+    customBox.classList.add(
+      "rd95-custom-conquest-inside-settings"
+    );
+
+    content.appendChild(customBox);
+  }
+
+  rd95RenderConquestSettings();
+}
+
+function rd95OpenConquestSettings() {
+  if (
+    !hasActiveMultiplayerRoom() ||
+    hasActiveConquestRound() ||
+    hasActiveHideSeekRound()
+  ) {
+    return;
+  }
+
+  state.conquestSettings.open = true;
+
+  rd87RenderCustomConquestLobby?.();
+  rd94EnsureArenaChoices?.();
+  rd95RenderConquestSettings();
+
+  window.setTimeout(() => {
+    document.getElementById(
+      "rd95ConquestSettingsClose"
+    )?.focus();
+  }, 0);
+}
+
+function rd95CloseConquestSettings() {
+  state.conquestSettings.open = false;
+  rd95RenderConquestSettings();
+}
+
+function rd95RenderConquestSettings() {
+  const overlay = document.getElementById(
+    "rd95ConquestSettingsOverlay"
+  );
+
+  const cog = document.getElementById(
+    "rd95ConquestSettingsCog"
+  );
+
+  const gameBusy = Boolean(
+    hasActiveConquestRound() ||
+    hasActiveHideSeekRound() ||
+    state.conquest.starting ||
+    state.customConquest.starting ||
+    state.hideSeek.starting
+  );
+
+  if (gameBusy) {
+    state.conquestSettings.open = false;
+  }
+
+  if (cog) {
+    cog.disabled = Boolean(
+      !hasActiveMultiplayerRoom() ||
+      gameBusy
+    );
+
+    cog.setAttribute(
+      "aria-expanded",
+      state.conquestSettings.open
+        ? "true"
+        : "false"
+    );
+  }
+
+  if (overlay) {
+    overlay.classList.toggle(
+      "hidden",
+      !state.conquestSettings.open
+    );
+
+    overlay.setAttribute(
+      "aria-hidden",
+      state.conquestSettings.open
+        ? "false"
+        : "true"
+    );
+  }
+}
+
+renderMultiplayerState = function () {
+  const result =
+    roadDiscoveryV95
+      .renderMultiplayerState();
+
+  rd95EnsureConquestSettings();
+  rd95RenderConquestSettings();
+
+  return result;
+};
+
+stopMultiplayerMode = function (
+  options = {}
+) {
+  rd95CloseConquestSettings();
+
+  return roadDiscoveryV95
+    .stopMultiplayerMode(options);
+};
+
+leaveMultiplayerRoom = async function (
+  options = {}
+) {
+  rd95CloseConquestSettings();
+
+  return roadDiscoveryV95
+    .leaveMultiplayerRoom(options);
+};
+
+function rd95InitConquestSettings() {
+  rd95EnsureConquestSettings();
+
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.key === "Escape" &&
+        state.conquestSettings.open
+      ) {
+        rd95CloseConquestSettings();
+      }
+    }
+  );
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd95InitConquestSettings,
+    { once: true }
+  );
+} else {
+  rd95InitConquestSettings();
+}
