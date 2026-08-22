@@ -1,16 +1,16 @@
 "use strict";
 
 /*
-  Road Discovery AU v96 service worker
+  Road Discovery AU v97 service worker
 
-  Conquest settings cog and cleaner game-mode sidebar.
+  Wider host-placed Custom Conquest arenas.
 
   Expected frontend versions:
-  - app.js?v=95
+  - app.js?v=96
   - style.css?v=65
 */
 
-const CACHE_NAME = "road-discovery-au-v96";
+const CACHE_NAME = "road-discovery-au-v97";
 
 const CORE_APP_SHELL = [
   "./",
@@ -21,6 +21,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=96",
   "./app.js?v=95",
   "./app.js?v=94",
 
@@ -153,35 +154,62 @@ self.addEventListener("fetch", (event) => {
           return exactCachedResponse;
         }
 
-        if (url.pathname.endsWith("/style.css")) {
+        if (
+          url.pathname.endsWith("/style.css")
+        ) {
           return (
-            (await caches.match("./style.css?v=65")) ||
-            (await caches.match("./style.css?v=64")) ||
-            (await caches.match("./style.css?v=63")) ||
-            Response.error()
-          );
-        }
-
-        if (url.pathname.endsWith("/app.js")) {
-          return (
-            (await caches.match("./app.js?v=95")) ||
-            (await caches.match("./app.js?v=94")) ||
-            (await caches.match("./app.js?v=93")) ||
-            (await caches.match("./app.js?v=92")) ||
+            (await caches.match(
+              "./style.css?v=65"
+            )) ||
+            (await caches.match(
+              "./style.css?v=64"
+            )) ||
+            (await caches.match(
+              "./style.css?v=63"
+            )) ||
             Response.error()
           );
         }
 
         if (
-          url.pathname.endsWith("/manifest.json")
+          url.pathname.endsWith("/app.js")
         ) {
           return (
-            (await caches.match("./manifest.json")) ||
+            (await caches.match(
+              "./app.js?v=96"
+            )) ||
+            (await caches.match(
+              "./app.js?v=95"
+            )) ||
+            (await caches.match(
+              "./app.js?v=94"
+            )) ||
+            (await caches.match(
+              "./app.js?v=93"
+            )) ||
+            (await caches.match(
+              "./app.js?v=92"
+            )) ||
             Response.error()
           );
         }
 
-        if (url.pathname.endsWith("/icon.svg")) {
+        if (
+          url.pathname.endsWith(
+            "/manifest.json"
+          )
+        ) {
+          return (
+            (await caches.match(
+              "./manifest.json"
+            )) ||
+            Response.error()
+          );
+        }
+
+        if (
+          url.pathname.endsWith("/icon.svg")
+        ) {
           return (
             (await caches.match("./icon.svg")) ||
             Response.error()
