@@ -1,16 +1,16 @@
 "use strict";
 
 /*
-  Road Discovery AU v95 service worker
+  Road Discovery AU v96 service worker
 
-  Host-placed Conquest arenas.
+  Conquest settings cog and cleaner game-mode sidebar.
 
   Expected frontend versions:
-  - app.js?v=94
+  - app.js?v=95
   - style.css?v=65
 */
 
-const CACHE_NAME = "road-discovery-au-v95";
+const CACHE_NAME = "road-discovery-au-v96";
 
 const CORE_APP_SHELL = [
   "./",
@@ -21,12 +21,12 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=95",
   "./app.js?v=94",
 
   /* Recent fallbacks used during a staged GitHub update. */
   "./app.js?v=93",
   "./app.js?v=92",
-  "./app.js?v=91",
   "./style.css?v=64",
   "./style.css?v=63"
 ];
@@ -164,10 +164,10 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=95")) ||
             (await caches.match("./app.js?v=94")) ||
             (await caches.match("./app.js?v=93")) ||
             (await caches.match("./app.js?v=92")) ||
-            (await caches.match("./app.js?v=91")) ||
             Response.error()
           );
         }
