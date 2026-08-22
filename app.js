@@ -29760,9 +29760,9 @@ const RD94_ARENA_OBJECTIVE_CODES = [
 
 const RD94_ARENA_MIN_OBJECTIVE_GAP_M = 650;
 const RD94_ARENA_MIN_SPAN_M = 1800;
-const RD94_ARENA_MAX_SPAN_M = 2400;
+const RD94_ARENA_MAX_SPAN_M = 4000;
 const RD94_ARENA_MIN_CENTRE_M = 600;
-const RD94_ARENA_MAX_CENTRE_M = 1200;
+const RD94_ARENA_MAX_CENTRE_M = 2000;
 const RD94_ARENA_MAX_ROAD_SNAP_M = 90;
 
 const RD94_BLOCKED_HIGHWAY_TYPES = new Set([
@@ -30761,7 +30761,7 @@ function rd94ValidateNewObjective(
     return {
       valid: false,
       message:
-        "Place each objective inside the 600–1,200 metre arena ring."
+        "Place each objective inside the 600–2,000 gmetre arena ring."
     };
   }
 
@@ -31025,7 +31025,7 @@ function rd94RenderPlacementOverlay(
     RD94_ARENA_MAX_SPAN_M
   ) {
     status.textContent =
-      `Arena span is ${rd94RoundMetres(validation.span)} m. Keep the complete arena within 2.4 km.`;
+      `Arena span is ${rd94RoundMetres(validation.span)} m. Keep the complete arena within 4 km.`;
     status.classList.add("bad");
   } else if (!validation.allInCentreRing) {
     status.textContent =
