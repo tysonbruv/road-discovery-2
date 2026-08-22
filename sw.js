@@ -1,16 +1,16 @@
 "use strict";
 
 /*
-  Road Discovery AU v97 service worker
+  Road Discovery AU v98 service worker
 
-  Wider host-placed Custom Conquest arenas.
+  One Custom Conquest objective may use Rally.
 
   Expected frontend versions:
-  - app.js?v=96
+  - app.js?v=97
   - style.css?v=65
 */
 
-const CACHE_NAME = "road-discovery-au-v97";
+const CACHE_NAME = "road-discovery-au-v98";
 
 const CORE_APP_SHELL = [
   "./",
@@ -21,11 +21,12 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=97",
   "./app.js?v=96",
   "./app.js?v=95",
   "./app.js?v=94",
 
-  /* Recent fallbacks used during a staged GitHub update. */
+  /* Recent fallbacks used during a staged update. */
   "./app.js?v=93",
   "./app.js?v=92",
   "./style.css?v=64",
@@ -40,16 +41,18 @@ self.addEventListener("install", (event) => {
         await cache.addAll(CORE_APP_SHELL);
 
         await Promise.all(
-          VERSIONED_APP_FILES.map(async (file) => {
-            try {
-              await cache.add(file);
-            } catch (error) {
-              console.warn(
-                `Could not pre-cache ${file}. It will be cached when available.`,
-                error
-              );
+          VERSIONED_APP_FILES.map(
+            async (file) => {
+              try {
+                await cache.add(file);
+              } catch (error) {
+                console.warn(
+                  `Could not pre-cache ${file}. It will be cached when available.`,
+                  error
+                );
+              }
             }
-          })
+          )
         );
       })
       .then(() => self.skipWaiting())
@@ -118,7 +121,9 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(async () => {
           return (
-            (await caches.match("./index.html")) ||
+            (await caches.match(
+              "./index.html"
+            )) ||
             (await caches.match("./"))
           );
         })
@@ -140,7 +145,10 @@ self.addEventListener("fetch", (event) => {
           caches
             .open(CACHE_NAME)
             .then((cache) => {
-              cache.put(request, responseCopy);
+              cache.put(
+                request,
+                responseCopy
+              );
             });
         }
 
@@ -155,7 +163,9 @@ self.addEventListener("fetch", (event) => {
         }
 
         if (
-          url.pathname.endsWith("/style.css")
+          url.pathname.endsWith(
+            "/style.css"
+          )
         ) {
           return (
             (await caches.match(
@@ -172,9 +182,14 @@ self.addEventListener("fetch", (event) => {
         }
 
         if (
-          url.pathname.endsWith("/app.js")
+          url.pathname.endsWith(
+            "/app.js"
+          )
         ) {
           return (
+            (await caches.match(
+              "./app.js?v=97"
+            )) ||
             (await caches.match(
               "./app.js?v=96"
             )) ||
@@ -208,10 +223,14 @@ self.addEventListener("fetch", (event) => {
         }
 
         if (
-          url.pathname.endsWith("/icon.svg")
+          url.pathname.endsWith(
+            "/icon.svg"
+          )
         ) {
           return (
-            (await caches.match("./icon.svg")) ||
+            (await caches.match(
+              "./icon.svg"
+            )) ||
             Response.error()
           );
         }
