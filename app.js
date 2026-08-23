@@ -33101,3 +33101,232 @@ if (document.readyState === "loading") {
 } else {
   rd99InitMultiplayerSafetyNotice();
 }
+
+/* ================================================== */
+/* Road Discovery AU v100                             */
+/* Clear Multiplayer Game Mode Dividers               */
+/* ================================================== */
+
+const roadDiscoveryV100 = {
+  renderMultiplayerState
+};
+
+
+function rd100InstallGameModeDividerStyles() {
+  if (
+    document.getElementById(
+      "rd100GameModeDividerStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd100GameModeDividerStyles";
+
+  style.textContent = `
+    #multiplayerActiveBox > .hide-seek-divider,
+    #multiplayerActiveBox > .conquest-divider {
+      display: none !important;
+    }
+
+    .rd100-game-modes-title {
+      margin: 20px 0 12px;
+      color: #eef4ff;
+      font-size: 1rem;
+      font-weight: 950;
+      line-height: 1.2;
+      letter-spacing: 0.015em;
+    }
+
+    .rd100-game-mode-divider {
+      width: 100%;
+      height: 1px;
+      margin: 14px 0;
+      border: 0;
+      background: rgba(133, 58, 58, 0.68);
+      box-shadow: none;
+    }
+
+    .rd100-game-modes-title +
+      .rd100-game-mode-divider {
+      margin-top: 0;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd100CreateDivider(id) {
+  let divider =
+    document.getElementById(id);
+
+  if (!divider) {
+    divider =
+      document.createElement("div");
+
+    divider.id = id;
+    divider.className =
+      "rd100-game-mode-divider";
+
+    divider.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+  }
+
+  return divider;
+}
+
+
+function rd100FirstElementInParent(
+  parent,
+  elements
+) {
+  return elements
+    .filter(
+      (element) =>
+        element?.parentNode === parent
+    )
+    .sort((first, second) => {
+      const position =
+        first.compareDocumentPosition(
+          second
+        );
+
+      return position &
+        Node.DOCUMENT_POSITION_FOLLOWING
+        ? -1
+        : 1;
+    })[0] || null;
+}
+
+
+function rd100EnsureGameModeDividers() {
+  rd100InstallGameModeDividerStyles();
+
+  const leaveButton =
+    document.getElementById(
+      "leaveMultiplayerRoomBtn"
+    );
+
+  const parent = leaveButton?.parentNode;
+
+  if (!parent) return;
+
+  const hideSeekAnchor =
+    rd100FirstElementInParent(
+      parent,
+      [
+        document.getElementById(
+          "hideSeekSetupBox"
+        ),
+        document.getElementById(
+          "hideSeekGameBox"
+        )
+      ]
+    );
+
+  const conquestAnchor =
+    rd100FirstElementInParent(
+      parent,
+      [
+        document.getElementById(
+          "conquestSetupBox"
+        ),
+        document.getElementById(
+          "conquestGameBox"
+        )
+      ]
+    );
+
+  if (!hideSeekAnchor || !conquestAnchor) {
+    return;
+  }
+
+  let title =
+    document.getElementById(
+      "rd100GameModesTitle"
+    );
+
+  if (!title) {
+    title = document.createElement("h3");
+    title.id = "rd100GameModesTitle";
+    title.className =
+      "rd100-game-modes-title";
+    title.textContent = "Game modes";
+  }
+
+  const topDivider =
+    rd100CreateDivider(
+      "rd100BeforeHideSeekDivider"
+    );
+
+  const middleDivider =
+    rd100CreateDivider(
+      "rd100AfterHideSeekDivider"
+    );
+
+  const bottomDivider =
+    rd100CreateDivider(
+      "rd100AfterConquestDivider"
+    );
+
+  parent.insertBefore(
+    title,
+    hideSeekAnchor
+  );
+
+  parent.insertBefore(
+    topDivider,
+    hideSeekAnchor
+  );
+
+  parent.insertBefore(
+    middleDivider,
+    conquestAnchor
+  );
+
+  const safetyNotice =
+    document.getElementById(
+      "rd99MultiplayerSafetyNotice"
+    );
+
+  parent.insertBefore(
+    bottomDivider,
+    safetyNotice?.parentNode === parent
+      ? safetyNotice
+      : leaveButton
+  );
+}
+
+
+renderMultiplayerState = function () {
+  const result =
+    roadDiscoveryV100
+      .renderMultiplayerState();
+
+  rd100EnsureGameModeDividers();
+
+  return result;
+};
+
+
+function rd100InitGameModeDividers() {
+  rd100EnsureGameModeDividers();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd100InitGameModeDividers,
+    { once: true }
+  );
+} else {
+  rd100InitGameModeDividers();
+}
