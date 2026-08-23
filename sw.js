@@ -1,16 +1,16 @@
 "use strict";
 
 /*
-  Road Discovery AU v100 service worker
+  Road Discovery AU v101 service worker
 
-  One shared Multiplayer safety notice above Leave room.
+  Clear Multiplayer game-mode heading and dividers.
 
   Expected frontend versions:
-  - app.js?v=99
+  - app.js?v=100
   - style.css?v=65
 */
 
-const CACHE_NAME = "road-discovery-au-v100";
+const CACHE_NAME = "road-discovery-au-v101";
 
 const CORE_APP_SHELL = [
   "./",
@@ -21,14 +21,14 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=100",
   "./app.js?v=99",
   "./app.js?v=98",
   "./app.js?v=97",
-  "./app.js?v=96",
 
   /* Recent fallbacks used during a staged GitHub update. */
+  "./app.js?v=96",
   "./app.js?v=95",
-  "./app.js?v=94",
   "./style.css?v=64",
   "./style.css?v=63"
 ];
@@ -166,12 +166,12 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/app.js")) {
           return (
+            (await caches.match("./app.js?v=100")) ||
             (await caches.match("./app.js?v=99")) ||
             (await caches.match("./app.js?v=98")) ||
             (await caches.match("./app.js?v=97")) ||
             (await caches.match("./app.js?v=96")) ||
             (await caches.match("./app.js?v=95")) ||
-            (await caches.match("./app.js?v=94")) ||
             Response.error()
           );
         }
