@@ -35412,3 +35412,73 @@ if (
 } else {
   rd107InitConquestFlow();
 }
+
+/* ================================================== */
+/* Road Discovery AU v108                             */
+/* Allow one human to configure a bot Conquest match  */
+/* ================================================== */
+
+const roadDiscoveryV108 = {
+  rd107ApplyPlaceOnlyUi
+};
+
+
+rd107ApplyPlaceOnlyUi = function () {
+  const result =
+    roadDiscoveryV108
+      .rd107ApplyPlaceOnlyUi();
+
+  const startButton =
+    document.getElementById(
+      "startConquestBtn"
+    );
+
+  const preparationText =
+    document.getElementById(
+      "conquestPreparationText"
+    );
+
+  const roomActive =
+    hasActiveMultiplayerRoom();
+
+  const isHost =
+    rd87IsRoomCreator();
+
+  const gameBusy = Boolean(
+    hasActiveConquestRound() ||
+    hasActiveHideSeekRound() ||
+    state.conquest.starting ||
+    state.customConquest.starting ||
+    state.hideSeek.starting ||
+    state.multiplayer.leaving
+  );
+
+  if (startButton) {
+    startButton.disabled = Boolean(
+      !roomActive ||
+      !isHost ||
+      gameBusy
+    );
+
+    if (!gameBusy) {
+      startButton.textContent =
+        "Start Road Conquest";
+    }
+  }
+
+  if (
+    preparationText &&
+    roomActive &&
+    !gameBusy
+  ) {
+    preparationText.textContent =
+      isHost
+        ? "Open Conquest Settings to configure humans and bots."
+        : "Waiting for the room creator to configure the match.";
+  }
+
+  return result;
+};
+
+
+rd107ApplyPlaceOnlyUi();
