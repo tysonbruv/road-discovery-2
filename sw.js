@@ -1,18 +1,18 @@
 "use strict";
 
 /*
-  Road Discovery AU v109 service worker
+  Road Discovery AU v110 service worker
 
-  Place A–E only and settings-first
-  Road Conquest flow.
+  Allows one human room creator to configure
+  and start a Road Conquest match with bots.
 
   Expected frontend versions:
-  - app.js?v=107
+  - app.js?v=108
   - style.css?v=65
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v109";
+  "road-discovery-au-v110";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,6 +23,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=108",
   "./app.js?v=107",
   "./app.js?v=106",
   "./app.js?v=105",
@@ -267,6 +268,11 @@ self.addEventListener(
             )
           ) {
             return (
+              (
+                await caches.match(
+                  "./app.js?v=108"
+                )
+              ) ||
               (
                 await caches.match(
                   "./app.js?v=107"
