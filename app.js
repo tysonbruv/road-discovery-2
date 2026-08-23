@@ -33939,3 +33939,99 @@ if (document.readyState === "loading") {
 } else {
   rd103InitTrailCentrelineSetting();
 }
+
+/* ================================================== */
+/* Road Discovery AU v104                             */
+/* Waypoint Pin + Front-Facing My Places House        */
+/* ================================================== */
+
+function rd104ToolIconSvg(pathMarkup) {
+  return `
+    <svg
+      class="places-tool-icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      ${pathMarkup}
+    </svg>
+  `;
+}
+
+function rd104WaypointPinSvg() {
+  return rd104ToolIconSvg(`
+    <path
+      d="M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z"
+    ></path>
+
+    <circle
+      cx="12"
+      cy="10"
+      r="2.25"
+    ></circle>
+  `);
+}
+
+function rd104FrontHouseSvg() {
+  return rd104ToolIconSvg(`
+    <path
+      d="M3.25 11.25 12 3.75l8.75 7.5"
+    ></path>
+
+    <path
+      d="M5 10.25V20h14v-9.75"
+    ></path>
+
+    <path
+      d="M9.5 20v-6h5v6"
+    ></path>
+  `);
+}
+
+/*
+  My Places uses this function whenever its toolbar
+  button is first created.
+*/
+rd63ToolButtonSvg = function () {
+  return rd104FrontHouseSvg();
+};
+
+function rd104ApplyMainToolIcons() {
+  const waypointButton =
+    document.getElementById("waypointBtn");
+
+  const placesButton =
+    document.getElementById("placesBtn");
+
+  if (waypointButton) {
+    waypointButton.innerHTML =
+      rd104WaypointPinSvg();
+  }
+
+  if (placesButton) {
+    placesButton.innerHTML =
+      rd104FrontHouseSvg();
+  }
+}
+
+function rd104InitMainToolIcons() {
+  rd104ApplyMainToolIcons();
+
+  /*
+    Covers the same startup frame in which My Places
+    creates its toolbar button.
+  */
+  window.requestAnimationFrame(
+    rd104ApplyMainToolIcons
+  );
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd104InitMainToolIcons,
+    { once: true }
+  );
+} else {
+  rd104InitMainToolIcons();
+}
