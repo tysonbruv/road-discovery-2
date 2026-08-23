@@ -1,18 +1,18 @@
 "use strict";
 
 /*
-  Road Discovery AU v110 service worker
+  Road Discovery AU v111 service worker
 
-  Allows one human room creator to configure
-  and start a Road Conquest match with bots.
+  Host-placed Rally Circle before
+  Conquest objectives A–E.
 
   Expected frontend versions:
-  - app.js?v=108
+  - app.js?v=109
   - style.css?v=65
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v110";
+  "road-discovery-au-v111";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,6 +23,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=109",
   "./app.js?v=108",
   "./app.js?v=107",
   "./app.js?v=106",
@@ -268,6 +269,11 @@ self.addEventListener(
             )
           ) {
             return (
+              (
+                await caches.match(
+                  "./app.js?v=109"
+                )
+              ) ||
               (
                 await caches.match(
                   "./app.js?v=108"
