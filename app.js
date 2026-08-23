@@ -35187,3 +35187,228 @@ if (
 } else {
   rd106InitCustomConquestConfirmation();
 }
+
+/* ================================================== */
+/* Road Discovery AU v107                             */
+/* Place A–E only + settings-first Conquest flow      */
+/* ================================================== */
+
+const roadDiscoveryV107 = {
+  rd94RenderArenaChoices,
+  rd95EnsureConquestSettings,
+  rd95RenderConquestSettings,
+  renderMultiplayerState
+};
+
+
+function rd107InstallConquestFlowStyles() {
+  if (
+    document.getElementById(
+      "rd107ConquestFlowStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd107ConquestFlowStyles";
+
+  style.textContent = `
+    #rd95ConquestSettingsCog,
+    [data-rd94-arena-mode="balanced"] {
+      display: none !important;
+    }
+
+    .rd94-arena-choice-buttons {
+      grid-template-columns: 1fr !important;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd107ApplyPlaceOnlyUi() {
+  state.conquestArena.mode = "custom";
+
+  for (
+    const balancedButton of
+    document.querySelectorAll(
+      '[data-rd94-arena-mode="balanced"]'
+    )
+  ) {
+    balancedButton.remove();
+  }
+
+  for (
+    const placeButton of
+    document.querySelectorAll(
+      '[data-rd94-arena-mode="custom"]'
+    )
+  ) {
+    placeButton.classList.add("active");
+
+    placeButton.textContent =
+      "Place A–E";
+  }
+
+  for (
+    const note of
+    document.querySelectorAll(
+      ".rd94-arena-choice-note"
+    )
+  ) {
+    note.textContent =
+      rd94IsArenaHost()
+        ? "Place five safe objectives after confirming the Conquest settings."
+        : "The room creator places the five Conquest objectives.";
+  }
+
+  const mainStartButton =
+    document.getElementById(
+      "startConquestBtn"
+    );
+
+  if (
+    mainStartButton &&
+    !state.conquest.starting
+  ) {
+    mainStartButton.textContent =
+      "Start Road Conquest";
+  }
+
+  const cog =
+    document.getElementById(
+      "rd95ConquestSettingsCog"
+    );
+
+  if (cog) {
+    cog.hidden = true;
+    cog.tabIndex = -1;
+
+    cog.setAttribute(
+      "aria-hidden",
+      "true"
+    );
+  }
+}
+
+
+function rd107OpenSettingsFromMainStart(
+  event
+) {
+  const button =
+    event.target.closest?.(
+      "#startConquestBtn"
+    );
+
+  if (!button) return;
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  if (button.disabled) return;
+
+  if (!rd94IsArenaHost()) {
+    showToast(
+      "Only the room creator can start Road Conquest"
+    );
+
+    return;
+  }
+
+  state.conquestArena.mode = "custom";
+
+  rd95OpenConquestSettings();
+  rd107ApplyPlaceOnlyUi();
+}
+
+
+function rd107InstallMainStartInterceptor() {
+  if (
+    document.documentElement.dataset
+      .rd107MainStartBound === "true"
+  ) {
+    return;
+  }
+
+  document.documentElement.dataset
+    .rd107MainStartBound = "true";
+
+  document.addEventListener(
+    "click",
+    rd107OpenSettingsFromMainStart,
+    true
+  );
+}
+
+
+rd94RenderArenaChoices = function () {
+  state.conquestArena.mode = "custom";
+
+  const result =
+    roadDiscoveryV107
+      .rd94RenderArenaChoices();
+
+  rd107ApplyPlaceOnlyUi();
+
+  return result;
+};
+
+
+rd95EnsureConquestSettings = function () {
+  const result =
+    roadDiscoveryV107
+      .rd95EnsureConquestSettings();
+
+  rd107ApplyPlaceOnlyUi();
+
+  return result;
+};
+
+
+rd95RenderConquestSettings = function () {
+  const result =
+    roadDiscoveryV107
+      .rd95RenderConquestSettings();
+
+  rd107ApplyPlaceOnlyUi();
+
+  return result;
+};
+
+
+renderMultiplayerState = function () {
+  const result =
+    roadDiscoveryV107
+      .renderMultiplayerState();
+
+  rd107ApplyPlaceOnlyUi();
+
+  return result;
+};
+
+
+function rd107InitConquestFlow() {
+  rd107InstallConquestFlowStyles();
+  rd107InstallMainStartInterceptor();
+  rd94EnsureArenaChoices();
+  rd107ApplyPlaceOnlyUi();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd107InitConquestFlow,
+    { once: true }
+  );
+
+} else {
+  rd107InitConquestFlow();
+}
