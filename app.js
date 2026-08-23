@@ -34094,3 +34094,1096 @@ if (document.readyState === "loading") {
 } else {
   rd105InitSoloCustomConquest();
 }
+
+/* ================================================== */
+/* Road Discovery AU v106                             */
+/* Custom Conquest Roster Confirmation + Bot AI       */
+/* ================================================== */
+
+const RD106_BOT_DIFFICULTIES = [
+  "easy",
+  "normal",
+  "hard",
+  "unfair"
+];
+
+const roadDiscoveryV106 = {
+  renderMultiplayerState,
+  rd87RenderCustomConquestLobby,
+  rd94RenderArenaChoices,
+  rd95CloseConquestSettings,
+  stopMultiplayerMode,
+  leaveMultiplayerRoom
+};
+
+Object.assign(state.customConquest, {
+  confirmingRoster: false,
+  confirmedStart: false,
+  botDifficulties: {
+    red: [],
+    blue: []
+  }
+});
+
+
+function rd106SafeBotDifficulty(value) {
+  const difficulty = String(
+    value || ""
+  ).toLowerCase();
+
+  return RD106_BOT_DIFFICULTIES.includes(
+    difficulty
+  )
+    ? difficulty
+    : "normal";
+}
+
+
+function rd106DifficultyLabel(value) {
+  const difficulty =
+    rd106SafeBotDifficulty(value);
+
+  return difficulty.charAt(0).toUpperCase() +
+    difficulty.slice(1);
+}
+
+
+function rd106SyncBotDifficulties() {
+  const roster = rd87CustomRoster();
+
+  for (const team of ["red", "blue"]) {
+    const count = team === "red"
+      ? roster.redBots
+      : roster.blueBots;
+
+    const existing = Array.isArray(
+      state.customConquest.botDifficulties?.[team]
+    )
+      ? state.customConquest.botDifficulties[team]
+      : [];
+
+    state.customConquest.botDifficulties[team] =
+      Array.from(
+        { length: count },
+        (_, index) =>
+          rd106SafeBotDifficulty(
+            existing[index]
+          )
+      );
+  }
+
+  return roster;
+}
+
+
+function rd106BotDifficultyPayload() {
+  rd106SyncBotDifficulties();
+
+  return {
+    red:
+      state.customConquest.botDifficulties
+        .red.slice(),
+
+    blue:
+      state.customConquest.botDifficulties
+        .blue.slice()
+  };
+}
+
+
+function rd106InstallStyles() {
+  if (
+    document.getElementById(
+      "rd106CustomConquestStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd106CustomConquestStyles";
+
+  style.textContent = `
+    #customConquestBox.rd106-confirming-roster
+      > :not(#rd106CustomConquestReview) {
+      display: none !important;
+    }
+
+    #rd106CustomConquestReview[hidden] {
+      display: none !important;
+    }
+
+    .rd106-review {
+      display: grid;
+      gap: 13px;
+    }
+
+    .rd106-review-heading {
+      display: grid;
+      gap: 4px;
+    }
+
+    .rd106-review-heading strong {
+      color: #f7fbff;
+      font-size: 1.05rem;
+      font-weight: 950;
+    }
+
+    .rd106-review-heading span {
+      color: #9fb2cc;
+      font-size: 0.76rem;
+      line-height: 1.4;
+    }
+
+    .rd106-review-summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid
+        rgba(168, 124, 255, 0.34);
+      border-radius: 13px;
+      background:
+        rgba(96, 53, 157, 0.2);
+      color: #f5edff;
+      font-size: 0.78rem;
+      font-weight: 850;
+    }
+
+    .rd106-roster-section {
+      display: grid;
+      gap: 8px;
+    }
+
+    .rd106-roster-title {
+      color: #ffc857;
+      font-size: 0.75rem;
+      font-weight: 950;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .rd106-roster-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .rd106-roster-row {
+      min-height: 46px;
+      display: grid;
+      grid-template-columns:
+        minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 9px 8px 11px;
+      border: 1px solid
+        rgba(151, 174, 207, 0.2);
+      border-radius: 12px;
+      background:
+        rgba(19, 29, 44, 0.72);
+    }
+
+    .rd106-roster-row.red {
+      border-left: 3px solid
+        rgba(255, 82, 92, 0.78);
+    }
+
+    .rd106-roster-row.blue {
+      border-left: 3px solid
+        rgba(75, 166, 255, 0.82);
+    }
+
+    .rd106-roster-person {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+
+    .rd106-roster-person strong {
+      overflow: hidden;
+      color: #f6f9ff;
+      font-size: 0.78rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rd106-roster-person span {
+      color: #92a6c1;
+      font-size: 0.68rem;
+      font-weight: 750;
+    }
+
+    .rd106-team-badge {
+      min-width: 64px;
+      padding: 7px 9px;
+      border-radius: 9px;
+      text-align: center;
+      font-size: 0.7rem;
+      font-weight: 950;
+      text-transform: uppercase;
+    }
+
+    .rd106-team-badge.red {
+      color: #ff9ca3;
+      background:
+        rgba(137, 29, 39, 0.34);
+    }
+
+    .rd106-team-badge.blue {
+      color: #9fd2ff;
+      background:
+        rgba(22, 83, 137, 0.36);
+    }
+
+    .rd106-difficulty-select {
+      width: 108px;
+      min-height: 35px;
+      padding: 6px 28px 6px 9px;
+      border: 1px solid
+        rgba(255, 200, 87, 0.45);
+      border-radius: 9px;
+      background: #0b111b;
+      color: #fff3cf;
+      font: inherit;
+      font-size: 0.72rem;
+      font-weight: 850;
+    }
+
+    .rd106-difficulty-guide {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      padding: 10px;
+      border: 1px solid
+        rgba(151, 174, 207, 0.18);
+      border-radius: 12px;
+      background:
+        rgba(8, 14, 24, 0.55);
+      color: #9fb2cc;
+      font-size: 0.67rem;
+      line-height: 1.35;
+    }
+
+    .rd106-difficulty-guide strong {
+      color: #eaf2ff;
+    }
+
+    .rd106-safety-note {
+      margin: 0;
+      padding: 10px 11px;
+      border-left: 3px solid
+        rgba(255, 152, 44, 0.72);
+      border-radius: 8px;
+      background:
+        rgba(111, 57, 13, 0.2);
+      color: #d8c3a5;
+      font-size: 0.69rem;
+      line-height: 1.42;
+    }
+
+    .rd106-review-actions {
+      display: grid;
+      grid-template-columns:
+        0.72fr 1.28fr;
+      gap: 8px;
+    }
+
+    .rd106-review-action {
+      min-height: 46px;
+      padding: 9px 10px;
+      border: 1px solid
+        rgba(151, 174, 207, 0.28);
+      border-radius: 12px;
+      background:
+        rgba(28, 41, 60, 0.92);
+      color: #f6f9ff;
+      font: inherit;
+      font-size: 0.76rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd106-review-action.start {
+      border-color:
+        rgba(171, 113, 255, 0.58);
+
+      background: linear-gradient(
+        100deg,
+        rgba(110, 43, 93, 0.9),
+        rgba(32, 79, 125, 0.94)
+      );
+    }
+
+    .rd106-review-action:disabled {
+      opacity: 0.42;
+      cursor: default;
+    }
+
+    @media (max-width: 420px) {
+      .rd106-roster-row {
+        grid-template-columns:
+          minmax(0, 1fr) 102px;
+      }
+
+      .rd106-difficulty-select {
+        width: 102px;
+      }
+
+      .rd106-difficulty-guide {
+        grid-template-columns: 1fr;
+      }
+
+      .rd106-review-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd106DifficultyOptions(selected) {
+  return RD106_BOT_DIFFICULTIES
+    .map(
+      (difficulty) => `
+        <option
+          value="${difficulty}"
+          ${
+            difficulty === selected
+              ? "selected"
+              : ""
+          }
+        >
+          ${rd106DifficultyLabel(
+            difficulty
+          )}
+        </option>
+      `
+    )
+    .join("");
+}
+
+
+function rd106HumanReviewRows(roster) {
+  const humansById = new Map(
+    roster.humans.map(
+      (human) => [
+        String(human.user_id),
+        human
+      ]
+    )
+  );
+
+  return rd87RoomMembers()
+    .filter((member) =>
+      humansById.has(
+        String(member.user_id)
+      )
+    )
+    .map((member) => {
+      const userId =
+        String(member.user_id);
+
+      const human =
+        humansById.get(userId);
+
+      const team = human.team;
+
+      const isMe =
+        userId ===
+        String(
+          state.auth.user?.id || ""
+        );
+
+      const name = escapeHtml(
+        member.display_name ||
+          "Road rider"
+      );
+
+      return `
+        <div
+          class="rd106-roster-row ${team}"
+        >
+          <div
+            class="rd106-roster-person"
+          >
+            <strong>
+              ${name}${
+                isMe ? " • You" : ""
+              }
+            </strong>
+
+            <span>Human rider</span>
+          </div>
+
+          <span
+            class="rd106-team-badge ${team}"
+          >
+            ${escapeHtml(team)}
+          </span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+
+function rd106BotReviewRows(
+  team,
+  count
+) {
+  const difficulties =
+    state.customConquest
+      .botDifficulties[team];
+
+  return Array.from(
+    { length: count },
+    (_, index) => {
+      const selected =
+        rd106SafeBotDifficulty(
+          difficulties[index]
+        );
+
+      const teamLabel =
+        team === "red"
+          ? "Red"
+          : "Blue";
+
+      return `
+        <label
+          class="rd106-roster-row ${team}"
+        >
+          <span
+            class="rd106-roster-person"
+          >
+            <strong>
+              ${teamLabel} Road Bot ${
+                index + 1
+              }
+            </strong>
+
+            <span>
+              ${teamLabel} team • road-following bot
+            </span>
+          </span>
+
+          <select
+            class="rd106-difficulty-select"
+            data-rd106-bot-team="${team}"
+            data-rd106-bot-index="${index}"
+            aria-label="Difficulty for ${teamLabel} Road Bot ${
+              index + 1
+            }"
+          >
+            ${rd106DifficultyOptions(
+              selected
+            )}
+          </select>
+        </label>
+      `;
+    }
+  ).join("");
+}
+
+
+function rd106ReviewHtml(roster) {
+  const humanRows =
+    rd106HumanReviewRows(roster);
+
+  const botRows = [
+    rd106BotReviewRows(
+      "red",
+      roster.redBots
+    ),
+
+    rd106BotReviewRows(
+      "blue",
+      roster.blueBots
+    )
+  ].join("");
+
+  const duration =
+    rd98SafeConquestDuration(
+      state.customConquest
+        .matchDurationMinutes
+    );
+
+  const arenaLabel =
+    state.conquestArena.mode ===
+      "custom"
+      ? "Host-placed A–E"
+      : "Balanced Random";
+
+  return `
+    <section
+      class="rd106-review-heading"
+    >
+      <strong>
+        Confirm Custom Conquest
+      </strong>
+
+      <span>
+        Review everybody in this match and choose each bot's difficulty.
+      </span>
+    </section>
+
+    <div
+      class="rd106-review-summary"
+    >
+      <span>
+        RED ${roster.redTotal}
+        vs
+        BLUE ${roster.blueTotal}
+      </span>
+
+      <span>
+        ${rd98DurationLabel(duration)}
+        •
+        ${arenaLabel}
+      </span>
+    </div>
+
+    <section
+      class="rd106-roster-section"
+    >
+      <div
+        class="rd106-roster-title"
+      >
+        Humans
+      </div>
+
+      <div
+        class="rd106-roster-list"
+      >
+        ${
+          humanRows ||
+          `
+            <div class="empty-state">
+              Spectator-controlled bot match
+            </div>
+          `
+        }
+      </div>
+    </section>
+
+    <section
+      class="rd106-roster-section"
+    >
+      <div
+        class="rd106-roster-title"
+      >
+        Bots • individual difficulty
+      </div>
+
+      <div
+        class="rd106-roster-list"
+      >
+        ${botRows}
+      </div>
+    </section>
+
+    <div
+      class="rd106-difficulty-guide"
+    >
+      <span>
+        <strong>Easy</strong>
+        • 70% speed, slower reactions
+      </span>
+
+      <span>
+        <strong>Normal</strong>
+        • current balanced bot
+      </span>
+
+      <span>
+        <strong>Hard</strong>
+        • 110% speed, smarter reactions
+      </span>
+
+      <span>
+        <strong>Unfair</strong>
+        • 125% speed, aggressive AI
+      </span>
+    </div>
+
+    <p class="rd106-safety-note">
+      Bot speed is simulated. Never try to match a bot's pace. Riders must obey speed limits and all road rules.
+    </p>
+
+    <div
+      class="rd106-review-actions"
+    >
+      <button
+        id="rd106BackToConquestSettingsBtn"
+        class="rd106-review-action"
+        type="button"
+      >
+        Back to Settings
+      </button>
+
+      <button
+        id="rd106StartConfirmedConquestBtn"
+        class="rd106-review-action start"
+        type="button"
+        ${
+          roster.valid
+            ? ""
+            : "disabled"
+        }
+      >
+        Start Custom Conquest
+      </button>
+    </div>
+  `;
+}
+
+
+function rd106EnsureReviewPanel() {
+  rd106InstallStyles();
+
+  const customBox =
+    document.getElementById(
+      "customConquestBox"
+    );
+
+  if (!customBox) return null;
+
+  let review =
+    document.getElementById(
+      "rd106CustomConquestReview"
+    );
+
+  if (!review) {
+    review =
+      document.createElement("div");
+
+    review.id =
+      "rd106CustomConquestReview";
+
+    review.className =
+      "rd106-review";
+
+    review.hidden = true;
+
+    review.addEventListener(
+      "change",
+      (event) => {
+        const select =
+          event.target.closest(
+            "[data-rd106-bot-team]"
+          );
+
+        if (!select) return;
+
+        const team =
+          select.dataset
+            .rd106BotTeam;
+
+        const index = Number(
+          select.dataset
+            .rd106BotIndex
+        );
+
+        if (
+          !["red", "blue"].includes(
+            team
+          ) ||
+          !Number.isInteger(index) ||
+          index < 0
+        ) {
+          return;
+        }
+
+        state.customConquest
+          .botDifficulties[team][index] =
+            rd106SafeBotDifficulty(
+              select.value
+            );
+
+        select.value =
+          state.customConquest
+            .botDifficulties[team][index];
+      }
+    );
+
+    review.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.target.closest(
+            "#rd106BackToConquestSettingsBtn"
+          )
+        ) {
+          state.customConquest
+            .confirmingRoster = false;
+
+          rd106RenderConfirmationUi();
+
+          return;
+        }
+
+        if (
+          event.target.closest(
+            "#rd106StartConfirmedConquestBtn"
+          )
+        ) {
+          rd106StartConfirmedConquest();
+        }
+      }
+    );
+
+    customBox.appendChild(review);
+  }
+
+  return review;
+}
+
+
+function rd106RenderConfirmationUi() {
+  const review =
+    rd106EnsureReviewPanel();
+
+  const customBox =
+    document.getElementById(
+      "customConquestBox"
+    );
+
+  const startButton =
+    document.getElementById(
+      "startCustomConquestBtn"
+    );
+
+  if (!review || !customBox) return;
+
+  const confirming = Boolean(
+    state.customConquest
+      .confirmingRoster
+  );
+
+  customBox.classList.toggle(
+    "rd106-confirming-roster",
+    confirming
+  );
+
+  review.hidden = !confirming;
+
+  if (confirming) {
+    const roster =
+      rd106SyncBotDifficulties();
+
+    review.innerHTML =
+      rd106ReviewHtml(roster);
+  }
+
+  if (
+    startButton &&
+    !state.customConquest.starting
+  ) {
+    startButton.textContent =
+      "Confirm Custom Conquest";
+  }
+
+  const headingSubtitle =
+    document.querySelector(
+      ".rd95-conquest-settings-heading span"
+    );
+
+  if (headingSubtitle) {
+    headingSubtitle.textContent =
+      confirming
+        ? "Review roster and individual bot difficulty"
+        : "Custom teams, human players and bots";
+  }
+}
+
+
+function rd106OpenRosterConfirmation() {
+  const roster =
+    rd106SyncBotDifficulties();
+
+  if (
+    !rd87IsRoomCreator() ||
+    !roster.valid ||
+    state.customConquest.starting
+  ) {
+    showToast(
+      roster.errors[0] ||
+        "Choose a valid Red and Blue roster"
+    );
+
+    return;
+  }
+
+  state.customConquest
+    .confirmingRoster = true;
+
+  rd106RenderConfirmationUi();
+
+  window.setTimeout(() => {
+    document.getElementById(
+      "rd106StartConfirmedConquestBtn"
+    )?.focus();
+  }, 0);
+}
+
+
+function rd106StartConfirmedConquest() {
+  const roster =
+    rd106SyncBotDifficulties();
+
+  if (
+    !rd87IsRoomCreator() ||
+    !roster.valid ||
+    state.customConquest.starting
+  ) {
+    showToast(
+      roster.errors[0] ||
+        "Choose a valid Red and Blue roster"
+    );
+
+    return;
+  }
+
+  rd106BotDifficultyPayload();
+
+  state.customConquest
+    .confirmingRoster = false;
+
+  state.customConquest
+    .confirmedStart = true;
+
+  rd106RenderConfirmationUi();
+
+  try {
+    document.getElementById(
+      "startCustomConquestBtn"
+    )?.click();
+
+  } finally {
+    state.customConquest
+      .confirmedStart = false;
+  }
+}
+
+
+function rd106InterceptFirstStart(
+  event
+) {
+  const startButton =
+    event.target.closest?.(
+      "#startCustomConquestBtn"
+    );
+
+  if (
+    !startButton ||
+    state.customConquest
+      .confirmedStart
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  rd106OpenRosterConfirmation();
+}
+
+
+function rd106InstallStartInterceptor() {
+  if (
+    document.documentElement.dataset
+      .rd106StartConfirmationBound ===
+      "true"
+  ) {
+    return;
+  }
+
+  document.documentElement.dataset
+    .rd106StartConfirmationBound =
+      "true";
+
+  document.addEventListener(
+    "click",
+    rd106InterceptFirstStart,
+    true
+  );
+}
+
+
+function rd106InstallDifficultyRpcBridge() {
+  const client = state.auth.client;
+
+  if (
+    !client ||
+    client.rd106DifficultyBridgeInstalled
+  ) {
+    return;
+  }
+
+  const originalRpc =
+    client.rpc.bind(client);
+
+  client.rpc = function (
+    functionName,
+    parameters = {},
+    options
+  ) {
+    let nextFunctionName =
+      functionName;
+
+    if (
+      functionName ===
+        "start_custom_conquest_round"
+    ) {
+      nextFunctionName =
+        "start_custom_conquest_round_with_difficulties";
+
+      parameters = {
+        ...parameters,
+
+        p_match_duration_minutes:
+          rd98SafeConquestDuration(
+            state.customConquest
+              .matchDurationMinutes
+          ),
+
+        p_bot_difficulties:
+          rd106BotDifficultyPayload()
+      };
+
+    } else if (
+      functionName ===
+        "start_custom_conquest_round_custom_arena"
+    ) {
+      nextFunctionName =
+        "start_custom_conquest_round_custom_arena_with_difficulties";
+
+      parameters = {
+        ...parameters,
+
+        p_match_duration_minutes:
+          rd98SafeConquestDuration(
+            state.customConquest
+              .matchDurationMinutes
+          ),
+
+        p_bot_difficulties:
+          rd106BotDifficultyPayload()
+      };
+    }
+
+    return originalRpc(
+      nextFunctionName,
+      parameters,
+      options
+    );
+  };
+
+  client.rd106DifficultyBridgeInstalled =
+    true;
+}
+
+
+rd87RenderCustomConquestLobby =
+function () {
+  const result =
+    roadDiscoveryV106
+      .rd87RenderCustomConquestLobby();
+
+  rd106SyncBotDifficulties();
+  rd106RenderConfirmationUi();
+
+  return result;
+};
+
+
+rd94RenderArenaChoices =
+function () {
+  const result =
+    roadDiscoveryV106
+      .rd94RenderArenaChoices();
+
+  rd106RenderConfirmationUi();
+
+  return result;
+};
+
+
+rd95CloseConquestSettings =
+function () {
+  state.customConquest
+    .confirmingRoster = false;
+
+  const result =
+    roadDiscoveryV106
+      .rd95CloseConquestSettings();
+
+  rd106RenderConfirmationUi();
+
+  return result;
+};
+
+
+renderMultiplayerState =
+function () {
+  rd106InstallDifficultyRpcBridge();
+
+  const result =
+    roadDiscoveryV106
+      .renderMultiplayerState();
+
+  rd106RenderConfirmationUi();
+
+  return result;
+};
+
+
+stopMultiplayerMode =
+function (
+  options = {}
+) {
+  state.customConquest
+    .confirmingRoster = false;
+
+  return roadDiscoveryV106
+    .stopMultiplayerMode(options);
+};
+
+
+leaveMultiplayerRoom =
+async function (
+  options = {}
+) {
+  state.customConquest
+    .confirmingRoster = false;
+
+  return roadDiscoveryV106
+    .leaveMultiplayerRoom(options);
+};
+
+
+function rd106InitCustomConquestConfirmation() {
+  rd106InstallStyles();
+  rd106InstallStartInterceptor();
+  rd106InstallDifficultyRpcBridge();
+  rd106SyncBotDifficulties();
+  rd106RenderConfirmationUi();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd106InitCustomConquestConfirmation,
+    { once: true }
+  );
+
+} else {
+  rd106InitCustomConquestConfirmation();
+}
