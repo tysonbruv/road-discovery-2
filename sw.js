@@ -1,18 +1,18 @@
 "use strict";
 
 /*
-  Road Discovery AU v111 service worker
+  Road Discovery AU v112 service worker
 
-  Host-placed Rally Circle before
-  Conquest objectives A–E.
+  Adds the 900-metre middle arena
+  placement guide.
 
   Expected frontend versions:
-  - app.js?v=109
+  - app.js?v=110
   - style.css?v=65
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v111";
+  "road-discovery-au-v112";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,6 +23,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=110",
   "./app.js?v=109",
   "./app.js?v=108",
   "./app.js?v=107",
@@ -31,11 +32,6 @@ const VERSIONED_APP_FILES = [
   "./app.js?v=104",
   "./app.js?v=103",
   "./app.js?v=102",
-
-  /*
-    Recent fallbacks used during
-    a staged GitHub update.
-  */
   "./app.js?v=101",
   "./app.js?v=100",
   "./app.js?v=99",
@@ -269,6 +265,11 @@ self.addEventListener(
             )
           ) {
             return (
+              (
+                await caches.match(
+                  "./app.js?v=110"
+                )
+              ) ||
               (
                 await caches.match(
                   "./app.js?v=109"
