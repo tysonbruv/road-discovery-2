@@ -34035,3 +34035,62 @@ if (document.readyState === "loading") {
 } else {
   rd104InitMainToolIcons();
 }
+
+/* ================================================== */
+/* Road Discovery AU v105                             */
+/* Allow Solo Human vs Bots in Custom Conquest        */
+/* ================================================== */
+
+const roadDiscoveryV105 = {
+  blockedSingleRiderHandler:
+    rd101BlockSingleRiderCustomConquest
+};
+
+/*
+  Custom Conquest already validates the real matchup:
+  Red and Blue must each contain at least one human or
+  bot, with no more than four participants per team.
+
+  The additional v101 room-member check is therefore
+  removed from Custom Conquest only. Standard Conquest
+  still requires at least two real room riders.
+*/
+rd101ApplyCustomConquestMinimum = function () {
+  rd101InstallConquestSettingStyles();
+};
+
+rd101BlockSingleRiderCustomConquest = function () {
+  /* Match validity is handled by rd87CustomRoster. */
+};
+
+rd101BindCustomConquestMinimum = function () {
+  document.removeEventListener(
+    "click",
+    roadDiscoveryV105.blockedSingleRiderHandler,
+    true
+  );
+
+  document.documentElement.dataset
+    .rd101ConquestMinimumBound = "matchup";
+};
+
+function rd105InitSoloCustomConquest() {
+  rd101BindCustomConquestMinimum();
+  rd101InstallConquestSettingStyles();
+
+  /*
+    Recalculate the start button from the selected
+    humans and bots, clearing the old two-rider text.
+  */
+  renderMultiplayerState();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd105InitSoloCustomConquest,
+    { once: true }
+  );
+} else {
+  rd105InitSoloCustomConquest();
+}
