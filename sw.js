@@ -1,16 +1,16 @@
 "use strict";
 
 /*
-  Road Discovery AU v102 service worker
+  Road Discovery AU v103 service worker
 
-  Two-rider Conquest minimum and highlighted settings labels.
+  Single dark centreline for discovered-road trails.
 
   Expected frontend versions:
-  - app.js?v=101
+  - app.js?v=102
   - style.css?v=65
 */
 
-const CACHE_NAME = "road-discovery-au-v102";
+const CACHE_NAME = "road-discovery-au-v103";
 
 const CORE_APP_SHELL = [
   "./",
@@ -21,12 +21,13 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=102",
   "./app.js?v=101",
   "./app.js?v=100",
   "./app.js?v=99",
-  "./app.js?v=98",
 
   /* Recent fallbacks used during a staged GitHub update. */
+  "./app.js?v=98",
   "./app.js?v=97",
   "./app.js?v=96",
   "./style.css?v=64",
@@ -80,19 +81,15 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
 
-  if (request.method !== "GET") {
-    return;
-  }
+  if (request.method !== "GET") return;
 
   const url = new URL(request.url);
 
   /*
-    Leaflet, Supabase, map tiles, Overpass and OSRM remain
-    network-managed and are not intercepted here.
+    External requests are not intercepted. This includes Leaflet,
+    Supabase, map tiles, Overpass road data and OSRM routes.
   */
-  if (url.origin !== self.location.origin) {
-    return;
-  }
+  if (url.origin !== self.location.origin) return;
 
   if (request.mode === "navigate") {
     event.respondWith(
@@ -157,21 +154,42 @@ self.addEventListener("fetch", (event) => {
 
         if (url.pathname.endsWith("/style.css")) {
           return (
-            (await caches.match("./style.css?v=65")) ||
-            (await caches.match("./style.css?v=64")) ||
-            (await caches.match("./style.css?v=63")) ||
+            (await caches.match(
+              "./style.css?v=65"
+            )) ||
+            (await caches.match(
+              "./style.css?v=64"
+            )) ||
+            (await caches.match(
+              "./style.css?v=63"
+            )) ||
             Response.error()
           );
         }
 
         if (url.pathname.endsWith("/app.js")) {
           return (
-            (await caches.match("./app.js?v=101")) ||
-            (await caches.match("./app.js?v=100")) ||
-            (await caches.match("./app.js?v=99")) ||
-            (await caches.match("./app.js?v=98")) ||
-            (await caches.match("./app.js?v=97")) ||
-            (await caches.match("./app.js?v=96")) ||
+            (await caches.match(
+              "./app.js?v=102"
+            )) ||
+            (await caches.match(
+              "./app.js?v=101"
+            )) ||
+            (await caches.match(
+              "./app.js?v=100"
+            )) ||
+            (await caches.match(
+              "./app.js?v=99"
+            )) ||
+            (await caches.match(
+              "./app.js?v=98"
+            )) ||
+            (await caches.match(
+              "./app.js?v=97"
+            )) ||
+            (await caches.match(
+              "./app.js?v=96"
+            )) ||
             Response.error()
           );
         }
@@ -180,7 +198,9 @@ self.addEventListener("fetch", (event) => {
           url.pathname.endsWith("/manifest.json")
         ) {
           return (
-            (await caches.match("./manifest.json")) ||
+            (await caches.match(
+              "./manifest.json"
+            )) ||
             Response.error()
           );
         }
