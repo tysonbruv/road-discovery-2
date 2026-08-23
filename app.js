@@ -35482,3 +35482,676 @@ rd107ApplyPlaceOnlyUi = function () {
 
 
 rd107ApplyPlaceOnlyUi();
+
+/* ================================================== */
+/* Road Discovery AU v109                             */
+/* Host-placed Rally before objectives A–E            */
+/* ================================================== */
+
+const roadDiscoveryV109 = {
+  rd94RenderPlacementOverlay
+};
+
+
+function rd109InstallRallyStyles() {
+  if (
+    document.getElementById(
+      "rd109RallyStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id = "rd109RallyStyles";
+
+  style.textContent = `
+    .rd94-arena-progress {
+      grid-template-columns:
+        repeat(6, minmax(0, 1fr));
+    }
+
+    .rd109-rally-chip {
+      min-width: 0;
+      padding-inline: 5px;
+      font-size: 0.64rem;
+    }
+
+    .rd109-rally-chip.placed {
+      border-color: #d8e6f8;
+      background:
+        rgba(116, 139, 168, 0.3);
+      color: #f3f8ff;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd109RallyValidForObjectives(
+  point
+) {
+  if (!point) return false;
+
+  return state.conquestArena.objectives
+    .every((objective) => {
+      const distance =
+        haversine(
+          point,
+          objective
+        );
+
+      return Boolean(
+        distance >=
+          RD94_ARENA_MIN_CENTRE_M &&
+        distance <=
+          RD94_ARENA_MAX_CENTRE_M
+      );
+    });
+}
+
+
+async function rd109SnapRallyPoint(
+  point
+) {
+  const roadsReady =
+    await ensureRoadsNearPoint(
+      point,
+      {
+        replaceIfFar: true,
+        quiet: false
+      }
+    );
+
+  if (
+    !roadsReady ||
+    state.roadSegments.length === 0
+  ) {
+    throw new Error(
+      "Could not load roads near that Rally location."
+    );
+  }
+
+  const snapped =
+    rd94NearestSafeRoadPoint(point);
+
+  if (!snapped) {
+    throw new Error(
+      "Place Rally closer to a safe public road or reachable parking entrance."
+    );
+  }
+
+  return {
+    ...snapped,
+    accuracy: 0
+  };
+}
+
+
+function rd94DrawArenaCentre() {
+  rd94EnsurePlacementLayer();
+
+  const centre =
+    state.conquestArena.centre;
+
+  if (
+    !centre ||
+    !state.conquestArena.layer
+  ) {
+    return;
+  }
+
+  state.conquestArena.outerCircle =
+    L.circle(
+      [centre.lat, centre.lng],
+      {
+        radius:
+          RD94_ARENA_MAX_CENTRE_M,
+        color: "#d8e6f8",
+        weight: 2,
+        opacity: 0.62,
+        fillOpacity: 0.025,
+        dashArray: "10 9",
+        interactive: false
+      }
+    ).addTo(
+      state.conquestArena.layer
+    );
+
+  state.conquestArena.innerCircle =
+    L.circle(
+      [centre.lat, centre.lng],
+      {
+        radius:
+          RD94_ARENA_MIN_CENTRE_M,
+        color: "#9daec4",
+        weight: 1,
+        opacity: 0.42,
+        fillOpacity: 0.02,
+        dashArray: "5 8",
+        interactive: false
+      }
+    ).addTo(
+      state.conquestArena.layer
+    );
+
+  const marker =
+    L.marker(
+      [centre.lat, centre.lng],
+      {
+        icon:
+          rd94ArenaCentreIcon(),
+        draggable: true,
+        keyboard: false,
+        zIndexOffset: 10
+      }
+    ).addTo(
+      state.conquestArena.layer
+    );
+
+  marker.bindTooltip(
+    "Rally Circle • Drag to move",
+    { direction: "top" }
+  );
+
+  marker.on(
+    "dragstart",
+    () => {
+      marker.rd109PreviousRally = {
+        ...state.conquestArena.centre
+      };
+    }
+  );
+
+  marker.on(
+    "dragend",
+    async () => {
+      if (
+        state.conquestArena.busy
+      ) {
+        return;
+      }
+
+      const previous =
+        marker.rd109PreviousRally ||
+        {
+          ...state.conquestArena
+            .centre
+        };
+
+      const latlng =
+        marker.getLatLng();
+
+      state.conquestArena.busy =
+        true;
+
+      rd94RenderPlacementOverlay(
+        "Checking the new Rally location..."
+      );
+
+      try {
+        const snapped =
+          await rd109SnapRallyPoint({
+            lat: Number(latlng.lat),
+            lng: Number(latlng.lng)
+          });
+
+        if (
+          !rd109RallyValidForObjectives(
+            snapped
+          )
+        ) {
+          throw new Error(
+            "That move would place an objective outside the 600–1,200 metre Rally ring."
+          );
+        }
+
+        state.conquestArena.centre =
+          snapped;
+
+        showToast(
+          `Rally moved • ${snapped.road_name}`
+        );
+
+      } catch (error) {
+        state.conquestArena.centre =
+          previous;
+
+        showToast(
+          rd86ConquestErrorMessage(
+            error
+          )
+        );
+      }
+
+      state.conquestArena.busy =
+        false;
+
+      rd94ClearPlacementLayers();
+      rd94DrawArenaCentre();
+      rd94RenderPlacementOverlay();
+    }
+  );
+
+  state.conquestArena.centreMarker =
+    marker;
+}
+
+
+async function rd94HandleArenaMapClick(
+  event
+) {
+  if (
+    !state.conquestArena.active ||
+    state.conquestArena.busy
+  ) {
+    return;
+  }
+
+  const tappedPoint = {
+    lat: Number(event.latlng.lat),
+    lng: Number(event.latlng.lng)
+  };
+
+  /*
+    The first map tap places Rally.
+  */
+  if (!state.conquestArena.centre) {
+    state.conquestArena.busy =
+      true;
+
+    rd94RenderPlacementOverlay(
+      "Loading roads near the Rally location..."
+    );
+
+    try {
+      const rally =
+        await rd109SnapRallyPoint(
+          tappedPoint
+        );
+
+      state.conquestArena.centre =
+        rally;
+
+      state.conquestArena.busy =
+        false;
+
+      rd94ClearPlacementLayers();
+      rd94DrawArenaCentre();
+
+      state.map?.setView(
+        [rally.lat, rally.lng],
+        Math.min(
+          14,
+          Number(
+            state.map.getZoom()
+          ) || 14
+        ),
+        { animate: true }
+      );
+
+      showToast(
+        `Rally placed • ${rally.road_name}`
+      );
+
+      rd94RenderPlacementOverlay();
+
+    } catch (error) {
+      state.conquestArena.busy =
+        false;
+
+      showToast(
+        rd86ConquestErrorMessage(
+          error
+        )
+      );
+
+      rd94RenderPlacementOverlay();
+    }
+
+    return;
+  }
+
+  /*
+    Later map taps place A–E.
+  */
+  if (
+    state.conquestArena.objectives
+      .length >=
+    RD94_ARENA_OBJECTIVE_CODES
+      .length
+  ) {
+    return;
+  }
+
+  const snapped =
+    rd94NearestSafeRoadPoint(
+      tappedPoint
+    );
+
+  if (!snapped) {
+    showToast(
+      "Tap closer to a suitable public road"
+    );
+
+    return;
+  }
+
+  const validation =
+    rd94ValidateNewObjective(
+      snapped
+    );
+
+  if (!validation.valid) {
+    showToast(validation.message);
+    return;
+  }
+
+  const code =
+    RD94_ARENA_OBJECTIVE_CODES[
+      state.conquestArena
+        .objectives.length
+    ];
+
+  state.conquestArena
+    .objectives.push({
+      code,
+      lat: snapped.lat,
+      lng: snapped.lng,
+      highway: snapped.highway,
+      road_name: snapped.road_name
+    });
+
+  showToast(
+    `Objective ${code} placed • ${snapped.road_name}`
+  );
+
+  rd94RenderPlacementOverlay();
+}
+
+
+async function rd94BeginArenaPlacement(
+  startKind
+) {
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.auth.user ||
+    !rd94IsArenaHost() ||
+    state.conquestArena.busy ||
+    hasActiveConquestRound()
+  ) {
+    if (!rd94IsArenaHost()) {
+      showToast(
+        "Only the room creator can place Rally and A–E"
+      );
+    }
+
+    return;
+  }
+
+  if (hasActiveHideSeekRound()) {
+    showToast(
+      "Finish Hide & Seek before placing a Conquest arena"
+    );
+
+    return;
+  }
+
+  if (startKind === "custom") {
+    const roster =
+      rd87CustomRoster();
+
+    if (!roster.valid) {
+      showToast(
+        roster.errors[0] ||
+        "Choose a valid Red and Blue roster."
+      );
+
+      return;
+    }
+  }
+
+  state.conquestArena.startKind =
+    startKind === "custom"
+      ? "custom"
+      : "multiplayer";
+
+  state.conquestArena.centre =
+    null;
+
+  state.conquestArena.objectives =
+    [];
+
+  state.conquestArena.active =
+    true;
+
+  state.conquestArena.busy =
+    false;
+
+  closePanels();
+
+  state.awaitingWaypointClick =
+    false;
+
+  if (state.myPlaces) {
+    state.myPlaces.placingType =
+      null;
+
+    state.myPlaces.movingPlaceId =
+      null;
+  }
+
+  rd94ClearPlacementLayers();
+  rd94BindArenaMapClick();
+
+  state.followUser = false;
+
+  rd94RenderPlacementOverlay();
+
+  showToast(
+    "Tap a safe public road to place the Rally Circle"
+  );
+}
+
+
+rd94RenderPlacementOverlay =
+function (
+  overrideMessage = ""
+) {
+  const result =
+    roadDiscoveryV109
+      .rd94RenderPlacementOverlay(
+        overrideMessage
+      );
+
+  const centre =
+    state.conquestArena.centre;
+
+  const progress =
+    document.getElementById(
+      "rd94ArenaProgress"
+    );
+
+  const status =
+    document.getElementById(
+      "rd94ArenaStatus"
+    );
+
+  const undoButton =
+    document.getElementById(
+      "rd94ArenaUndoBtn"
+    );
+
+  const confirmButton =
+    document.getElementById(
+      "rd94ArenaConfirmBtn"
+    );
+
+  const heading =
+    document.querySelector(
+      ".rd94-arena-heading strong"
+    );
+
+  const subtitle =
+    document.querySelector(
+      ".rd94-arena-heading span"
+    );
+
+  if (heading) {
+    heading.textContent =
+      "Place Rally and Conquest A–E";
+  }
+
+  if (subtitle) {
+    subtitle.textContent =
+      "Place Rally first, then A–E. Drag Rally or any letter to move it before confirming.";
+  }
+
+  if (progress) {
+    const rallyChip = `
+      <button
+        class="rd94-arena-objective-chip rd109-rally-chip ${centre ? "placed" : ""}"
+        type="button"
+        data-rd109-rally-chip="true"
+        ${centre ? "" : "disabled"}
+        aria-label="${centre ? "Remove Rally Circle" : "Rally Circle not placed"}"
+      >
+        RALLY
+      </button>
+    `;
+
+    progress.insertAdjacentHTML(
+      "afterbegin",
+      rallyChip
+    );
+  }
+
+  if (
+    status &&
+    !centre &&
+    !overrideMessage
+  ) {
+    status.classList.remove(
+      "good",
+      "bad"
+    );
+
+    status.textContent =
+      "Tap a safe public road or reachable parking entrance to place the Rally Circle.";
+  }
+
+  if (undoButton) {
+    undoButton.disabled = Boolean(
+      state.conquestArena.busy ||
+      (
+        !centre &&
+        state.conquestArena
+          .objectives.length === 0
+      )
+    );
+  }
+
+  if (
+    confirmButton &&
+    !centre
+  ) {
+    confirmButton.disabled = true;
+  }
+
+  return result;
+};
+
+
+function rd109RemoveRally() {
+  if (
+    state.conquestArena.busy ||
+    !state.conquestArena.centre
+  ) {
+    return;
+  }
+
+  state.conquestArena.centre =
+    null;
+
+  state.conquestArena.objectives =
+    [];
+
+  rd94ClearPlacementLayers();
+  rd94RenderPlacementOverlay();
+
+  showToast(
+    "Rally removed • tap the map to place it again"
+  );
+}
+
+
+function rd109InstallRallyControls() {
+  if (
+    document.documentElement.dataset
+      .rd109RallyControlsBound ===
+      "true"
+  ) {
+    return;
+  }
+
+  document.documentElement.dataset
+    .rd109RallyControlsBound =
+      "true";
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (
+        event.target.closest(
+          "[data-rd109-rally-chip]"
+        )
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        rd109RemoveRally();
+        return;
+      }
+
+      if (
+        event.target.closest(
+          "#rd94ArenaUndoBtn"
+        ) &&
+        state.conquestArena.active &&
+        state.conquestArena.centre &&
+        state.conquestArena
+          .objectives.length === 0
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        rd109RemoveRally();
+      }
+    },
+    true
+  );
+}
+
+
+function rd109InitRallyPlacement() {
+  rd109InstallRallyStyles();
+  rd109InstallRallyControls();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd109InitRallyPlacement,
+    { once: true }
+  );
+
+} else {
+  rd109InitRallyPlacement();
+}
