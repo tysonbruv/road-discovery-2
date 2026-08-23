@@ -1,18 +1,18 @@
 "use strict";
 
 /*
-  Road Discovery AU v112 service worker
+  Road Discovery AU v113 service worker
 
-  Adds the 900-metre middle arena
-  placement guide.
+  Direct host-placed Conquest arena with
+  team starts approximately 500 m from Rally.
 
   Expected frontend versions:
-  - app.js?v=110
+  - app.js?v=111
   - style.css?v=65
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v112";
+  "road-discovery-au-v113";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,6 +23,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=111",
   "./app.js?v=110",
   "./app.js?v=109",
   "./app.js?v=108",
@@ -265,6 +266,11 @@ self.addEventListener(
             )
           ) {
             return (
+              (
+                await caches.match(
+                  "./app.js?v=111"
+                )
+              ) ||
               (
                 await caches.match(
                   "./app.js?v=110"
