@@ -36203,3 +36203,190 @@ rd94DrawArenaCentre = function () {
 
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v111                             */
+/* Team-start roads around 500 metres from Rally      */
+/* ================================================== */
+
+const roadDiscoveryV111 = {
+  rd94BuildCustomArenaCandidates
+};
+
+const RD111_TEAM_START_MIN_M =
+  400;
+
+const RD111_TEAM_START_MAX_M =
+  590;
+
+const RD111_TEAM_START_LIMIT =
+  15;
+
+const RD111_OUTER_CANDIDATE_LIMIT =
+  60;
+
+
+rd94BuildCustomArenaCandidates =
+function () {
+  const existing =
+    roadDiscoveryV111
+      .rd94BuildCustomArenaCandidates();
+
+  const centre =
+    state.conquestArena.centre;
+
+  const objectives =
+    state.conquestArena.objectives;
+
+  if (
+    !centre ||
+    objectives.length !== 5
+  ) {
+    return existing;
+  }
+
+  const hull =
+    rd94ConvexHull(objectives);
+
+  const objectiveCandidates =
+    existing
+      .filter(
+        (candidate) =>
+          Number(
+            candidate.road_count
+          ) >= 100000
+      )
+      .slice(0, 5);
+
+  const outerCandidates =
+    existing
+      .filter(
+        (candidate) =>
+          Number(
+            candidate.road_count
+          ) < 100000
+      )
+      .slice(
+        0,
+        RD111_OUTER_CANDIDATE_LIMIT
+      );
+
+  const roadPoints =
+    state.roadSegments
+      .filter((segment) =>
+        rd94SafeHighwayType(
+          segment?.highway
+        )
+      )
+      .map((segment) => ({
+        ...roadSegmentMidpoint(
+          segment
+        ),
+
+        highway: String(
+          segment.highway || "road"
+        )
+      }))
+      .filter((point) =>
+        Number.isFinite(
+          Number(point?.lat)
+        ) &&
+        Number.isFinite(
+          Number(point?.lng)
+        )
+      )
+      .filter((point) => {
+        const rallyDistance =
+          haversine(
+            centre,
+            point
+          );
+
+        return Boolean(
+          rallyDistance >=
+            RD111_TEAM_START_MIN_M &&
+          rallyDistance <=
+            RD111_TEAM_START_MAX_M &&
+          rd94PointInPolygon(
+            point,
+            hull
+          )
+        );
+      });
+
+  shuffleHideSeekArray(
+    roadPoints
+  );
+
+  const innerCandidates = [];
+
+  for (const point of roadPoints) {
+    if (
+      innerCandidates.some(
+        (candidate) =>
+          haversine(
+            candidate,
+            point
+          ) <
+          RD93_CONQUEST_CANDIDATE_SPACING_M
+      )
+    ) {
+      continue;
+    }
+
+    let roadCount = 0;
+
+    for (
+      const roadPoint of
+      roadPoints
+    ) {
+      if (
+        haversine(
+          point,
+          roadPoint
+        ) <=
+        RD86_CONQUEST_ROAD_DENSITY_RADIUS_M
+      ) {
+        roadCount += 1;
+      }
+    }
+
+    if (
+      roadCount <
+      RD86_CONQUEST_MIN_ROAD_COUNT
+    ) {
+      continue;
+    }
+
+    innerCandidates.push({
+      lat: Number(
+        Number(point.lat)
+          .toFixed(6)
+      ),
+
+      lng: Number(
+        Number(point.lng)
+          .toFixed(6)
+      ),
+
+      road_count: roadCount,
+      routeable: false
+    });
+
+    if (
+      innerCandidates.length >=
+        RD111_TEAM_START_LIMIT
+    ) {
+      break;
+    }
+  }
+
+  return [
+    ...innerCandidates,
+    ...outerCandidates,
+    ...objectiveCandidates
+  ].slice(
+    0,
+    RD86_CONQUEST_MAX_CANDIDATES
+  );
+};
