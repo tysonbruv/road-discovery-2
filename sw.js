@@ -1,18 +1,18 @@
 "use strict";
 
 /*
-  Road Discovery AU v108 service worker
+  Road Discovery AU v109 service worker
 
-  Per-bot Custom Conquest difficulty
-  and roster confirmation.
+  Place A–E only and settings-first
+  Road Conquest flow.
 
   Expected frontend versions:
-  - app.js?v=106
+  - app.js?v=107
   - style.css?v=65
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v108";
+  "road-discovery-au-v109";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,6 +23,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=107",
   "./app.js?v=106",
   "./app.js?v=105",
   "./app.js?v=104",
@@ -266,6 +267,11 @@ self.addEventListener(
             )
           ) {
             return (
+              (
+                await caches.match(
+                  "./app.js?v=107"
+                )
+              ) ||
               (
                 await caches.match(
                   "./app.js?v=106"
