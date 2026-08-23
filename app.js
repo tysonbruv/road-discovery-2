@@ -32577,3 +32577,401 @@ if (document.readyState === "loading") {
 } else {
   rd97UpdateRallyObjectiveInstructions();
 }
+
+/* ================================================== */
+/* Road Discovery AU v98                              */
+/* Cleaner Conquest Settings + Match Length           */
+/* ================================================== */
+
+const RD98_CONQUEST_DURATIONS = [
+  20,
+  28,
+  40,
+  60
+];
+
+state.customConquest.matchDurationMinutes = 28;
+
+const roadDiscoveryV98 = {
+  renderMultiplayerState
+};
+
+
+function rd98SafeConquestDuration(value) {
+  const duration = Number(value);
+
+  return RD98_CONQUEST_DURATIONS.includes(
+    duration
+  )
+    ? duration
+    : 28;
+}
+
+
+function rd98HidePresetButtons() {
+  const presetButtons = [
+    document.getElementById(
+      "customConquestPresetWatchBtn"
+    ),
+    document.getElementById(
+      "customConquestPresetPlayBtn"
+    ),
+    document.getElementById(
+      "customConquestPresetChallengeBtn"
+    )
+  ].filter(Boolean);
+
+  for (const button of presetButtons) {
+    button.hidden = true;
+    button.style.display = "none";
+  }
+
+  const sharedParent =
+    presetButtons.length > 0 &&
+    presetButtons.every(
+      (button) =>
+        button.parentElement ===
+          presetButtons[0].parentElement
+    )
+      ? presetButtons[0].parentElement
+      : null;
+
+  if (sharedParent) {
+    sharedParent.hidden = true;
+    sharedParent.style.display = "none";
+  }
+}
+
+
+function rd98InstallDurationStyles() {
+  if (
+    document.getElementById(
+      "rd98ConquestDurationStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd98ConquestDurationStyles";
+
+  style.textContent = `
+    .rd98-conquest-duration {
+      display: grid;
+      gap: 9px;
+      margin: 14px 0;
+      padding: 12px;
+      border: 1px solid rgba(143, 164, 196, 0.24);
+      border-radius: 16px;
+      background: rgba(12, 19, 31, 0.58);
+    }
+
+    .rd98-conquest-duration-title {
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #dce9ff;
+    }
+
+    .rd98-conquest-duration-options {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 7px;
+    }
+
+    .rd98-conquest-duration-btn {
+      min-height: 42px;
+      padding: 8px 6px;
+      border: 1px solid rgba(156, 177, 210, 0.28);
+      border-radius: 12px;
+      background: rgba(27, 38, 56, 0.86);
+      color: #f5f9ff;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 850;
+      cursor: pointer;
+    }
+
+    .rd98-conquest-duration-btn.active {
+      border-color: #b686ff;
+      background: rgba(118, 65, 190, 0.38);
+      box-shadow:
+        0 0 0 1px rgba(182, 134, 255, 0.28) inset;
+    }
+
+    .rd98-conquest-duration-btn:disabled {
+      opacity: 0.44;
+      cursor: default;
+    }
+
+    .rd98-conquest-duration-note {
+      margin: 0;
+      color: #9fb2cc;
+      font-size: 0.74rem;
+      line-height: 1.35;
+    }
+
+    @media (max-width: 420px) {
+      .rd98-conquest-duration-options {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd98DurationLabel(minutes) {
+  return minutes === 60
+    ? "1 hour"
+    : `${minutes} min`;
+}
+
+
+function rd98EnsureDurationSetting() {
+  rd98InstallDurationStyles();
+  rd98HidePresetButtons();
+
+  const customBox =
+    document.getElementById(
+      "customConquestBox"
+    );
+
+  if (!customBox) return;
+
+  let durationBox =
+    document.getElementById(
+      "rd98ConquestDuration"
+    );
+
+  if (!durationBox) {
+    durationBox =
+      document.createElement("section");
+
+    durationBox.id =
+      "rd98ConquestDuration";
+
+    durationBox.className =
+      "rd98-conquest-duration";
+
+    durationBox.innerHTML = `
+      <div class="rd98-conquest-duration-title">
+        Match length
+      </div>
+
+      <div class="rd98-conquest-duration-options">
+        ${RD98_CONQUEST_DURATIONS
+          .map(
+            (minutes) => `
+              <button
+                class="rd98-conquest-duration-btn"
+                type="button"
+                data-rd98-duration="${minutes}"
+              >
+                ${rd98DurationLabel(minutes)}
+              </button>
+            `
+          )
+          .join("")}
+      </div>
+
+      <p class="rd98-conquest-duration-note">
+        The match timer starts after Rally, deployment and the ten-second countdown.
+      </p>
+    `;
+
+    durationBox.addEventListener(
+      "click",
+      (event) => {
+        const button =
+          event.target.closest(
+            "[data-rd98-duration]"
+          );
+
+        if (
+          !button ||
+          button.disabled ||
+          !rd87IsRoomCreator()
+        ) {
+          return;
+        }
+
+        state.customConquest
+          .matchDurationMinutes =
+            rd98SafeConquestDuration(
+              button.dataset
+                .rd98Duration
+            );
+
+        rd98RenderDurationSetting();
+      }
+    );
+
+    const arenaChoice =
+      customBox.querySelector(
+        '[data-rd94-arena-choice="custom"]'
+      );
+
+    if (arenaChoice) {
+      arenaChoice.parentNode.insertBefore(
+        durationBox,
+        arenaChoice
+      );
+    } else {
+      const startButton =
+        document.getElementById(
+          "startCustomConquestBtn"
+        );
+
+      customBox.insertBefore(
+        durationBox,
+        startButton || null
+      );
+    }
+  }
+
+  rd98RenderDurationSetting();
+}
+
+
+function rd98RenderDurationSetting() {
+  const duration =
+    rd98SafeConquestDuration(
+      state.customConquest
+        .matchDurationMinutes
+    );
+
+  state.customConquest
+    .matchDurationMinutes = duration;
+
+  const isHost = rd87IsRoomCreator();
+  const gameBusy = Boolean(
+    hasActiveConquestRound() ||
+    hasActiveHideSeekRound() ||
+    state.conquest.starting ||
+    state.customConquest.starting
+  );
+
+  for (
+    const button of
+    document.querySelectorAll(
+      "[data-rd98-duration]"
+    )
+  ) {
+    const buttonDuration = Number(
+      button.dataset.rd98Duration
+    );
+
+    button.classList.toggle(
+      "active",
+      buttonDuration === duration
+    );
+
+    button.disabled = Boolean(
+      !isHost || gameBusy
+    );
+
+    button.setAttribute(
+      "aria-pressed",
+      buttonDuration === duration
+        ? "true"
+        : "false"
+    );
+  }
+}
+
+
+function rd98InstallDurationRpcBridge() {
+  const client = state.auth.client;
+
+  if (
+    !client ||
+    client.rd98DurationBridgeInstalled
+  ) {
+    return;
+  }
+
+  const originalRpc =
+    client.rpc.bind(client);
+
+  client.rpc = function (
+    functionName,
+    parameters = {},
+    options
+  ) {
+    if (
+      functionName ===
+        "start_custom_conquest_round" ||
+      functionName ===
+        "start_custom_conquest_round_custom_arena"
+    ) {
+      parameters = {
+        ...parameters,
+        p_match_duration_minutes:
+          rd98SafeConquestDuration(
+            state.customConquest
+              .matchDurationMinutes
+          )
+      };
+    }
+
+    return originalRpc(
+      functionName,
+      parameters,
+      options
+    );
+  };
+
+  client.rd98DurationBridgeInstalled = true;
+}
+
+
+renderMultiplayerState = function () {
+  rd98InstallDurationRpcBridge();
+
+  const result =
+    roadDiscoveryV98
+      .renderMultiplayerState();
+
+  rd98EnsureDurationSetting();
+
+  return result;
+};
+
+
+function rd98InitConquestDuration() {
+  rd98InstallDurationRpcBridge();
+  rd98EnsureDurationSetting();
+
+  document.getElementById(
+    "customConquestBox"
+  )?.addEventListener(
+    "click",
+    (event) => {
+      if (
+        event.target.closest(
+          "#startCustomConquestBtn"
+        )
+      ) {
+        rd98InstallDurationRpcBridge();
+      }
+    },
+    true
+  );
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd98InitConquestDuration,
+    { once: true }
+  );
+} else {
+  rd98InitConquestDuration();
+}
