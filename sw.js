@@ -1,16 +1,16 @@
 "use strict";
 
 /*
-  Road Discovery AU v105 service worker
+  Road Discovery AU v106 service worker
 
-  Three-dot General Menu button on the main map.
+  Waypoint pin and front-facing My Places house icons.
 
   Expected frontend versions:
-  - app.js?v=103
+  - app.js?v=104
   - style.css?v=65
 */
 
-const CACHE_NAME = "road-discovery-au-v105";
+const CACHE_NAME = "road-discovery-au-v106";
 
 const CORE_APP_SHELL = [
   "./",
@@ -21,15 +21,15 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=104",
   "./app.js?v=103",
   "./app.js?v=102",
   "./app.js?v=101",
-  "./app.js?v=100",
 
   /* Recent fallbacks used during a staged GitHub update. */
+  "./app.js?v=100",
   "./app.js?v=99",
   "./app.js?v=98",
-  "./app.js?v=97",
   "./style.css?v=64",
   "./style.css?v=63"
 ];
@@ -170,6 +170,9 @@ self.addEventListener("fetch", (event) => {
         if (url.pathname.endsWith("/app.js")) {
           return (
             (await caches.match(
+              "./app.js?v=104"
+            )) ||
+            (await caches.match(
               "./app.js?v=103"
             )) ||
             (await caches.match(
@@ -186,9 +189,6 @@ self.addEventListener("fetch", (event) => {
             )) ||
             (await caches.match(
               "./app.js?v=98"
-            )) ||
-            (await caches.match(
-              "./app.js?v=97"
             )) ||
             Response.error()
           );
