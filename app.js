@@ -23495,7 +23495,7 @@ const RD86_CONQUEST_NEUTRAL = "#9aa3b2";
 const RD86_CONQUEST_LOCATION_SEND_MS = 3000;
 const RD86_CONQUEST_ROUTE_REROUTE_MS = 45000;
 const RD86_CONQUEST_ROUTE_REROUTE_M = 140;
-const RD86_CONQUEST_MIN_PLAYERS = 4;
+const RD86_CONQUEST_MIN_PLAYERS = 2;
 const RD86_CONQUEST_MAX_PLAYERS = 8;
 const RD86_CONQUEST_MIN_CANDIDATES = 18;
 const RD86_CONQUEST_MAX_CANDIDATES = 60;
@@ -24282,7 +24282,7 @@ function rd86RenderConquestState() {
       (
         memberCount <
           RD86_CONQUEST_MIN_PLAYERS
-          ? "At least 4 riders must be in the room."
+          ? "At least 2 riders must be in the room."
           : memberCount >
               RD86_CONQUEST_MAX_PLAYERS
             ? "Road Conquest supports a maximum of 8 riders."
@@ -25440,7 +25440,7 @@ async function rd86StartConquestRound() {
     RD86_CONQUEST_MIN_PLAYERS
   ) {
     showToast(
-      "Road Conquest needs at least 4 riders"
+      "Road Conquest needs at least 2 riders"
     );
     return;
   }
@@ -31236,7 +31236,7 @@ async function rd94BeginArenaPlacement(
         RD86_CONQUEST_MAX_PLAYERS
     ) {
       showToast(
-        "Road Conquest needs 4–8 riders"
+        "Road Conquest needs 2–8 riders"
       );
       return;
     }
@@ -33329,4 +33329,158 @@ if (document.readyState === "loading") {
   );
 } else {
   rd100InitGameModeDividers();
+}
+
+/* ================================================== */
+/* Road Discovery AU v101                             */
+/* Custom Conquest Minimum + Highlighted Labels       */
+/* ================================================== */
+
+const RD101_CONQUEST_MIN_ROOM_RIDERS = 2;
+
+const roadDiscoveryV101 = {
+  renderMultiplayerState
+};
+
+
+function rd101InstallConquestSettingStyles() {
+  if (
+    document.getElementById(
+      "rd101ConquestSettingStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd101ConquestSettingStyles";
+
+  style.textContent = `
+    #customConquestBox
+      .custom-conquest-section-title {
+      color: #ffc857 !important;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd101ConquestRoomRiderCount() {
+  return Array.isArray(
+    state.multiplayer.members
+  )
+    ? state.multiplayer.members.length
+    : 0;
+}
+
+
+function rd101ApplyCustomConquestMinimum() {
+  rd101InstallConquestSettingStyles();
+
+  const memberCount =
+    rd101ConquestRoomRiderCount();
+
+  const startButton =
+    document.getElementById(
+      "startCustomConquestBtn"
+    );
+
+  const preparationText =
+    document.getElementById(
+      "customConquestPreparationText"
+    );
+
+  if (
+    startButton &&
+    memberCount <
+      RD101_CONQUEST_MIN_ROOM_RIDERS
+  ) {
+    startButton.disabled = true;
+  }
+
+  if (
+    preparationText &&
+    memberCount <
+      RD101_CONQUEST_MIN_ROOM_RIDERS &&
+    !state.customConquest.starting
+  ) {
+    preparationText.textContent =
+      "At least 2 riders must be in the room.";
+  }
+}
+
+
+function rd101BlockSingleRiderCustomConquest(
+  event
+) {
+  const startButton = event.target.closest(
+    "#startCustomConquestBtn"
+  );
+
+  if (
+    !startButton ||
+    rd101ConquestRoomRiderCount() >=
+      RD101_CONQUEST_MIN_ROOM_RIDERS
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  showToast(
+    "Road Conquest needs at least 2 riders"
+  );
+}
+
+
+function rd101BindCustomConquestMinimum() {
+  if (
+    document.documentElement.dataset
+      .rd101ConquestMinimumBound === "true"
+  ) {
+    return;
+  }
+
+  document.documentElement.dataset
+    .rd101ConquestMinimumBound = "true";
+
+  document.addEventListener(
+    "click",
+    rd101BlockSingleRiderCustomConquest,
+    true
+  );
+}
+
+
+renderMultiplayerState = function () {
+  const result =
+    roadDiscoveryV101
+      .renderMultiplayerState();
+
+  rd101ApplyCustomConquestMinimum();
+
+  return result;
+};
+
+
+function rd101InitConquestMinimum() {
+  rd101InstallConquestSettingStyles();
+  rd101BindCustomConquestMinimum();
+  rd101ApplyCustomConquestMinimum();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd101InitConquestMinimum,
+    { once: true }
+  );
+} else {
+  rd101InitConquestMinimum();
 }
