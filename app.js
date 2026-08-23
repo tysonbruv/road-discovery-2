@@ -33484,3 +33484,282 @@ if (document.readyState === "loading") {
 } else {
   rd101InitConquestMinimum();
 }
+
+/* ================================================== */
+/* Road Discovery AU v102                             */
+/* Single Dark Centreline for Discovered Roads        */
+/* ================================================== */
+
+const RD102_TRAIL_CORE_COLOUR = "#050608";
+
+const roadDiscoveryV102 = {
+  drawSavedSegment,
+  drawSavedSegments,
+  resetDiscoveredRoads,
+  rd53ApplyRoadLayerVisibility,
+  rd53ApplySavedRoadZoomStyle
+};
+
+Object.assign(state, {
+  rd102TrailCoreGroup: null,
+  rd102TrailCoreBase: null,
+  rd102TrailCoreLive: null,
+  rd102TrailCoreKnownIds: new Set(),
+  rd102TrailCoreLiveCoords: [],
+  rd102TrailCoreBulkDraw: false
+});
+
+function rd102TrailCoreStyle() {
+  const zoom = Number(state.map?.getZoom?.());
+
+  if (!Number.isFinite(zoom) || zoom >= 14) {
+    return { weight: 1.45, opacity: 0.78 };
+  }
+
+  if (zoom >= 13) {
+    return { weight: 0.9, opacity: 0.72 };
+  }
+
+  if (zoom >= 12) {
+    return { weight: 0.62, opacity: 0.65 };
+  }
+
+  if (zoom >= 10) {
+    return { weight: 0.4, opacity: 0.58 };
+  }
+
+  if (zoom >= 8) {
+    return { weight: 0.3, opacity: 0.5 };
+  }
+
+  return { weight: 0.22, opacity: 0.44 };
+}
+
+function rd102CreateTrailCoreLayers() {
+  if (!window.L || !state.map) return false;
+
+  if (!state.rd102TrailCoreGroup) {
+    state.rd102TrailCoreGroup = L.layerGroup();
+  }
+
+  const options = {
+    color: RD102_TRAIL_CORE_COLOUR,
+    ...rd102TrailCoreStyle(),
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false
+  };
+
+  if (!state.rd102TrailCoreBase) {
+    state.rd102TrailCoreBase = L.polyline(
+      [],
+      options
+    ).addTo(state.rd102TrailCoreGroup);
+  }
+
+  if (!state.rd102TrailCoreLive) {
+    state.rd102TrailCoreLive = L.polyline(
+      [],
+      options
+    ).addTo(state.rd102TrailCoreGroup);
+  }
+
+  return true;
+}
+
+function rd102KeepCorrectLayerOrder() {
+  state.rd102TrailCoreBase?.bringToFront?.();
+  state.rd102TrailCoreLive?.bringToFront?.();
+
+  [
+    state.routeHalo,
+    state.routeLine,
+    state.hideSeek?.routeHalo,
+    state.hideSeek?.routeLine,
+    state.conquest?.routeHalo,
+    state.conquest?.routeLine
+  ].forEach((layer) => layer?.bringToFront?.());
+}
+
+function rd102HasTrailCoreRoads() {
+  return (
+    state.rd102TrailCoreKnownIds.size > 0 ||
+    state.rd102TrailCoreLiveCoords.length > 0
+  );
+}
+
+function rd102SyncTrailCoreVisibility() {
+  if (!rd102CreateTrailCoreLayers()) return;
+
+  const group = state.rd102TrailCoreGroup;
+  const visible = state.map.hasLayer(group);
+
+  const shouldShow = Boolean(
+    state.savedLayer &&
+    state.map.hasLayer(state.savedLayer) &&
+    rd102HasTrailCoreRoads()
+  );
+
+  if (shouldShow && !visible) {
+    group.addTo(state.map);
+    rd102KeepCorrectLayerOrder();
+  } else if (!shouldShow && visible) {
+    state.map.removeLayer(group);
+  }
+}
+
+function rd102ApplyTrailCoreStyle() {
+  if (!rd102CreateTrailCoreLayers()) return;
+
+  const style = {
+    color: RD102_TRAIL_CORE_COLOUR,
+    ...rd102TrailCoreStyle()
+  };
+
+  state.rd102TrailCoreBase.setStyle(style);
+  state.rd102TrailCoreLive.setStyle(style);
+}
+
+function rd102RebuildTrailCore() {
+  if (!rd102CreateTrailCoreLayers()) return;
+
+  const coordinates = [];
+  const knownIds = new Set();
+
+  Object.values(state.savedSegments || {}).forEach(
+    (segment) => {
+      if (
+        !segment?.id ||
+        !validCoords(segment.coords)
+      ) {
+        return;
+      }
+
+      knownIds.add(segment.id);
+      coordinates.push(segment.coords);
+    }
+  );
+
+  state.rd102TrailCoreKnownIds = knownIds;
+  state.rd102TrailCoreLiveCoords = [];
+
+  state.rd102TrailCoreBase.setLatLngs(
+    coordinates
+  );
+
+  state.rd102TrailCoreLive.setLatLngs([]);
+
+  rd102ApplyTrailCoreStyle();
+  rd102SyncTrailCoreVisibility();
+  rd102KeepCorrectLayerOrder();
+}
+
+function rd102AddTrailCoreSegment(segment) {
+  if (
+    !segment?.id ||
+    !validCoords(segment.coords) ||
+    state.rd102TrailCoreKnownIds.has(segment.id) ||
+    !rd102CreateTrailCoreLayers()
+  ) {
+    return;
+  }
+
+  state.rd102TrailCoreKnownIds.add(segment.id);
+
+  state.rd102TrailCoreLiveCoords.push(
+    segment.coords
+  );
+
+  /*
+    Only redraw roads unlocked during this session.
+    The full saved trail is not rebuilt after every
+    GPS update.
+  */
+  state.rd102TrailCoreLive.setLatLngs(
+    state.rd102TrailCoreLiveCoords
+  );
+
+  rd102ApplyTrailCoreStyle();
+  rd102SyncTrailCoreVisibility();
+  rd102KeepCorrectLayerOrder();
+}
+
+drawSavedSegment = function (segment) {
+  const wasDrawn = Boolean(
+    segment?.id &&
+    state.savedDrawnIds.has(segment.id)
+  );
+
+  const result =
+    roadDiscoveryV102.drawSavedSegment(segment);
+
+  if (
+    !state.rd102TrailCoreBulkDraw &&
+    !wasDrawn &&
+    segment?.id &&
+    state.savedDrawnIds.has(segment.id)
+  ) {
+    rd102AddTrailCoreSegment(segment);
+  }
+
+  return result;
+};
+
+drawSavedSegments = function () {
+  state.rd102TrailCoreBulkDraw = true;
+
+  try {
+    return roadDiscoveryV102.drawSavedSegments();
+  } finally {
+    state.rd102TrailCoreBulkDraw = false;
+    rd102RebuildTrailCore();
+  }
+};
+
+resetDiscoveredRoads = function () {
+  const result =
+    roadDiscoveryV102.resetDiscoveredRoads();
+
+  rd102RebuildTrailCore();
+
+  return result;
+};
+
+rd53ApplyRoadLayerVisibility = function () {
+  const result =
+    roadDiscoveryV102
+      .rd53ApplyRoadLayerVisibility();
+
+  rd102SyncTrailCoreVisibility();
+
+  return result;
+};
+
+rd53ApplySavedRoadZoomStyle = function () {
+  const result =
+    roadDiscoveryV102
+      .rd53ApplySavedRoadZoomStyle();
+
+  rd102ApplyTrailCoreStyle();
+
+  return result;
+};
+
+function rd102InitTrailCore() {
+  rd102RebuildTrailCore();
+
+  state.map?.on?.(
+    "zoomend",
+    rd102ApplyTrailCoreStyle
+  );
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd102InitTrailCore,
+    { once: true }
+  );
+} else {
+  rd102InitTrailCore();
+}
