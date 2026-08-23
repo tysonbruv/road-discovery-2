@@ -33763,3 +33763,179 @@ if (document.readyState === "loading") {
 } else {
   rd102InitTrailCore();
 }
+
+/* ================================================== */
+/* Road Discovery AU v103                             */
+/* Optional Discovered-Road Centreline Setting        */
+/* ================================================== */
+
+const RD103_TRAIL_CENTRELINE_KEY =
+  "roadDiscoveryAU.trailCentreline.v1";
+
+const roadDiscoveryV103 = {
+  rd102SyncTrailCoreVisibility
+};
+
+state.trailCentrelineVisible =
+  rd103LoadTrailCentrelinePreference();
+
+function rd103LoadTrailCentrelinePreference() {
+  try {
+    /* Enabled by default for existing and new users. */
+    return (
+      localStorage.getItem(
+        RD103_TRAIL_CENTRELINE_KEY
+      ) !== "false"
+    );
+  } catch (error) {
+    console.error(error);
+    return true;
+  }
+}
+
+function rd103SaveTrailCentrelinePreference() {
+  try {
+    localStorage.setItem(
+      RD103_TRAIL_CENTRELINE_KEY,
+      String(state.trailCentrelineVisible)
+    );
+  } catch (error) {
+    console.error(error);
+
+    showToast(
+      "Could not save trail centreline setting"
+    );
+  }
+}
+
+function rd103UpdateTrailCentrelineToggle() {
+  const toggle = document.getElementById(
+    "rd103TrailCentrelineToggle"
+  );
+
+  if (toggle) {
+    toggle.checked = Boolean(
+      state.trailCentrelineVisible
+    );
+  }
+}
+
+function rd103InsertTrailCentrelineSetting() {
+  if (
+    document.getElementById(
+      "rd103TrailCentrelineSetting"
+    )
+  ) {
+    rd103UpdateTrailCentrelineToggle();
+    return;
+  }
+
+  const trailColourSetting =
+    document.getElementById(
+      "trailColourSetting"
+    );
+
+  if (!trailColourSetting) return;
+
+  const setting =
+    document.createElement("label");
+
+  setting.id =
+    "rd103TrailCentrelineSetting";
+
+  setting.className = "toggle-row";
+
+  setting.htmlFor =
+    "rd103TrailCentrelineToggle";
+
+  setting.style.marginTop = "12px";
+
+  setting.innerHTML = `
+    <div class="toggle-text">
+      <strong>Dark trail centreline</strong>
+
+      <span>
+        Adds a thin black line through discovered roads
+        so dense areas remain separated when zoomed out.
+      </span>
+    </div>
+
+    <input
+      id="rd103TrailCentrelineToggle"
+      class="toggle-input"
+      type="checkbox"
+    />
+
+    <span
+      class="toggle-switch"
+      aria-hidden="true"
+    >
+      <span class="toggle-knob"></span>
+    </span>
+  `;
+
+  trailColourSetting.insertAdjacentElement(
+    "afterend",
+    setting
+  );
+
+  const toggle = document.getElementById(
+    "rd103TrailCentrelineToggle"
+  );
+
+  toggle.checked = Boolean(
+    state.trailCentrelineVisible
+  );
+
+  toggle.addEventListener(
+    "change",
+    (event) => {
+      state.trailCentrelineVisible = Boolean(
+        event.currentTarget.checked
+      );
+
+      rd103SaveTrailCentrelinePreference();
+      rd102SyncTrailCoreVisibility();
+
+      showToast(
+        state.trailCentrelineVisible
+          ? "Trail centreline on"
+          : "Trail centreline off"
+      );
+    }
+  );
+}
+
+rd102SyncTrailCoreVisibility = function () {
+  if (!state.trailCentrelineVisible) {
+    const group = state.rd102TrailCoreGroup;
+
+    if (
+      group &&
+      state.map?.hasLayer?.(group)
+    ) {
+      state.map.removeLayer(group);
+    }
+
+    return;
+  }
+
+  return roadDiscoveryV103
+    .rd102SyncTrailCoreVisibility();
+};
+
+function rd103InitTrailCentrelineSetting() {
+  rd103InsertTrailCentrelineSetting();
+  rd103UpdateTrailCentrelineToggle();
+  rd102SyncTrailCoreVisibility();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd103InitTrailCentrelineSetting,
+    { once: true }
+  );
+} else {
+  rd103InitTrailCentrelineSetting();
+}
