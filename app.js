@@ -32975,3 +32975,129 @@ if (document.readyState === "loading") {
 } else {
   rd98InitConquestDuration();
 }
+
+/* ================================================== */
+/* Road Discovery AU v99                              */
+/* One Multiplayer Safety Notice                      */
+/* ================================================== */
+
+const roadDiscoveryV99 = {
+  renderMultiplayerState
+};
+
+
+function rd99InstallMultiplayerSafetyStyles() {
+  if (
+    document.getElementById(
+      "rd99MultiplayerSafetyStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd99MultiplayerSafetyStyles";
+
+  style.textContent = `
+    .rd99-multiplayer-safety-note {
+      margin: 18px 0 12px;
+    }
+
+    .rd99-multiplayer-safety-note strong {
+      color: #ffd7ab;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd99MoveMultiplayerSafetyNotice() {
+  rd99InstallMultiplayerSafetyStyles();
+
+  /* Remove the duplicate Hide & Seek menu notice. */
+  document.querySelectorAll(
+    "#hideSeekSetupBox .hide-seek-safety-note"
+  ).forEach((notice) => notice.remove());
+
+  /* Remove the duplicate Conquest menu notice. */
+  document.querySelectorAll(
+    "#conquestSetupBox .conquest-safety-note"
+  ).forEach((notice) => notice.remove());
+
+  const leaveButton =
+    document.getElementById(
+      "leaveMultiplayerRoomBtn"
+    );
+
+  if (!leaveButton?.parentNode) {
+    return;
+  }
+
+  let notice =
+    document.getElementById(
+      "rd99MultiplayerSafetyNotice"
+    );
+
+  if (!notice) {
+    notice =
+      document.createElement("div");
+
+    notice.id =
+      "rd99MultiplayerSafetyNotice";
+
+    notice.className =
+      "conquest-safety-note " +
+      "rd99-multiplayer-safety-note";
+
+    notice.innerHTML = `
+      <strong>Play safely.</strong>
+      Follow all road rules. Do not speed. Do not stop
+      somewhere dangerous. Set up the game before moving
+      and never interact with the phone while riding or
+      driving.
+    `;
+  }
+
+  if (
+    notice.parentNode !==
+      leaveButton.parentNode ||
+    notice.nextElementSibling !==
+      leaveButton
+  ) {
+    leaveButton.parentNode.insertBefore(
+      notice,
+      leaveButton
+    );
+  }
+}
+
+
+renderMultiplayerState = function () {
+  const result =
+    roadDiscoveryV99
+      .renderMultiplayerState();
+
+  rd99MoveMultiplayerSafetyNotice();
+
+  return result;
+};
+
+
+function rd99InitMultiplayerSafetyNotice() {
+  rd99MoveMultiplayerSafetyNotice();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd99InitMultiplayerSafetyNotice,
+    { once: true }
+  );
+} else {
+  rd99InitMultiplayerSafetyNotice();
+}
