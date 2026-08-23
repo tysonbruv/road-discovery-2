@@ -36390,3 +36390,1208 @@ function () {
     RD86_CONQUEST_MAX_CANDIDATES
   );
 };
+
+/* ================================================== */
+/* Road Discovery AU v112                             */
+/* Full visibility, waypoints and Legendary event     */
+/* ================================================== */
+
+const roadDiscoveryV112 = {
+  pollConquestState:
+    rd86PollConquestState,
+
+  drawDeploymentStart:
+    rd86DrawDeploymentStart,
+
+  maybeSendConquestLocation:
+    rd86MaybeSendConquestLocation,
+
+  resetConquestState:
+    rd86ResetConquestState
+};
+
+state.conquest.personalWaypoint = null;
+state.conquest.personalWaypointKey = "";
+state.conquest.liveOverlayPolling = false;
+state.conquest.legendarySpawnAt = null;
+state.conquest.legendaryEventKey = "";
+state.conquest.legendaryRevealKey = "";
+state.conquest.legendaryTimer = null;
+
+
+function rd112InstallStyles() {
+  if (
+    document.getElementById(
+      "rd112ConquestStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id = "rd112ConquestStyles";
+
+  style.textContent = `
+    .rd112-legendary-event {
+      position: fixed;
+      top: max(
+        18px,
+        env(safe-area-inset-top)
+      );
+      left: 50%;
+      z-index: 10050;
+      min-width: min(
+        420px,
+        calc(100vw - 32px)
+      );
+      padding: 16px 22px;
+      border: 2px solid
+        rgba(255, 205, 67, 0.92);
+      border-radius: 18px;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(54, 35, 3, 0.97),
+          rgba(13, 17, 24, 0.98)
+        );
+      box-shadow:
+        0 0 0 5px
+          rgba(255, 190, 33, 0.1),
+        0 18px 60px
+          rgba(0, 0, 0, 0.58),
+        0 0 38px
+          rgba(255, 186, 31, 0.3);
+      color: #fff0b3;
+      text-align: center;
+      transform:
+        translate(-50%, -18px)
+        scale(0.96);
+      opacity: 0;
+      pointer-events: none;
+      transition:
+        opacity 160ms ease,
+        transform 160ms ease;
+    }
+
+    .rd112-legendary-event.show {
+      transform:
+        translate(-50%, 0)
+        scale(1);
+      opacity: 1;
+    }
+
+    .rd112-legendary-event strong {
+      display: block;
+      font-size:
+        clamp(
+          1rem,
+          3.4vw,
+          1.34rem
+        );
+      font-weight: 1000;
+      letter-spacing: 0.035em;
+      text-transform: uppercase;
+    }
+
+    .rd112-legendary-event span {
+      display: block;
+      margin-top: 4px;
+      color: #ffd75e;
+      font-size:
+        clamp(
+          1.7rem,
+          7vw,
+          2.7rem
+        );
+      line-height: 1;
+      font-weight: 1000;
+    }
+
+    .rd112-legendary-event.reveal {
+      animation:
+        rd112LegendaryPulse
+        720ms ease-out 2;
+    }
+
+    @keyframes rd112LegendaryPulse {
+      0% {
+        box-shadow:
+          0 0 0 0
+            rgba(
+              255,
+              204,
+              64,
+              0.76
+            ),
+          0 18px 60px
+            rgba(0, 0, 0, 0.58);
+      }
+
+      100% {
+        box-shadow:
+          0 0 0 30px
+            rgba(
+              255,
+              204,
+              64,
+              0
+            ),
+          0 18px 60px
+            rgba(0, 0, 0, 0.58);
+      }
+    }
+
+    .conquest-focus-btn
+      .rd112-waypoint-selected {
+      outline: 2px solid #f8fbff;
+      outline-offset: 2px;
+    }
+
+    .conquest-focus-btn.rd112-waypoint-selected {
+      outline: 2px solid #f8fbff;
+      outline-offset: 2px;
+      box-shadow:
+        0 0 0 5px
+          rgba(104, 195, 255, 0.16),
+        0 0 24px
+          rgba(104, 195, 255, 0.32);
+    }
+
+    .conquest-focus-btn.cache.legendary.rd112-waypoint-selected {
+      box-shadow:
+        0 0 0 5px
+          rgba(255, 199, 51, 0.18),
+        0 0 26px
+          rgba(255, 199, 51, 0.45);
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd112LegendaryElement() {
+  let element =
+    document.getElementById(
+      "rd112LegendaryEvent"
+    );
+
+  if (!element) {
+    element =
+      document.createElement("div");
+
+    element.id =
+      "rd112LegendaryEvent";
+
+    element.className =
+      "rd112-legendary-event";
+
+    element.setAttribute(
+      "role",
+      "status"
+    );
+
+    element.setAttribute(
+      "aria-live",
+      "assertive"
+    );
+
+    element.innerHTML = `
+      <strong>
+        Legendary Cache In
+      </strong>
+
+      <span>3</span>
+    `;
+
+    document.body.appendChild(
+      element
+    );
+  }
+
+  return element;
+}
+
+
+function rd112HideLegendaryEvent() {
+  const element =
+    document.getElementById(
+      "rd112LegendaryEvent"
+    );
+
+  element?.classList.remove(
+    "show",
+    "reveal"
+  );
+}
+
+
+function rd112StopLegendaryTimer() {
+  if (
+    state.conquest.legendaryTimer !==
+      null
+  ) {
+    window.clearInterval(
+      state.conquest.legendaryTimer
+    );
+
+    state.conquest.legendaryTimer =
+      null;
+  }
+
+  rd112HideLegendaryEvent();
+}
+
+
+function rd112LegendaryServerNow() {
+  return (
+    Date.now() +
+    Number(
+      state.conquest.serverOffsetMs ||
+        0
+    )
+  );
+}
+
+
+function rd112RenderLegendaryCountdown() {
+  const spawnMs = Date.parse(
+    state.conquest.legendarySpawnAt ||
+      ""
+  );
+
+  if (
+    !Number.isFinite(spawnMs) ||
+    ![
+      "active",
+      "overtime"
+    ].includes(
+      state.conquest.phase
+    )
+  ) {
+    rd112HideLegendaryEvent();
+    return;
+  }
+
+  const eventKey =
+    `${state.conquest.roundId}:` +
+    `${state.conquest.legendarySpawnAt}`;
+
+  const remainingMs =
+    spawnMs -
+    rd112LegendaryServerNow();
+
+  const element =
+    rd112LegendaryElement();
+
+  if (
+    remainingMs > 0 &&
+    remainingMs <= 3000
+  ) {
+    const count = Math.max(
+      1,
+      Math.ceil(
+        remainingMs / 1000
+      )
+    );
+
+    element.classList.remove(
+      "reveal"
+    );
+
+    element.querySelector(
+      "strong"
+    ).textContent =
+      "Legendary Cache In";
+
+    element.querySelector(
+      "span"
+    ).textContent =
+      String(count);
+
+    element.classList.add(
+      "show"
+    );
+
+    state.conquest.legendaryEventKey =
+      eventKey;
+
+    return;
+  }
+
+  if (
+    remainingMs <= 0 &&
+    remainingMs > -5000 &&
+    state.conquest
+      .legendaryRevealKey !==
+        eventKey
+  ) {
+    state.conquest
+      .legendaryRevealKey =
+        eventKey;
+
+    element.querySelector(
+      "strong"
+    ).textContent =
+      "Legendary Cache";
+
+    element.querySelector(
+      "span"
+    ).textContent =
+      "+150";
+
+    element.classList.add(
+      "show",
+      "reveal"
+    );
+
+    showToast(
+      "Legendary Cache appeared • +150"
+    );
+
+    void rd112PollLiveOverlay();
+
+    window.setTimeout(() => {
+      if (
+        state.conquest
+          .legendaryRevealKey ===
+            eventKey
+      ) {
+        rd112HideLegendaryEvent();
+      }
+    }, 2600);
+
+    return;
+  }
+
+  if (
+    remainingMs > 3000 ||
+    remainingMs <= -5000
+  ) {
+    rd112HideLegendaryEvent();
+  }
+}
+
+
+function rd112EnsureLegendaryTimer() {
+  if (
+    state.conquest.legendaryTimer ===
+      null
+  ) {
+    state.conquest.legendaryTimer =
+      window.setInterval(
+        rd112RenderLegendaryCountdown,
+        100
+      );
+  }
+
+  rd112RenderLegendaryCountdown();
+}
+
+function rd112MergeVisiblePlayers(
+  players
+) {
+  if (!Array.isArray(players)) {
+    return;
+  }
+
+  const existingById =
+    new Map(
+      state.conquest.players.map(
+        (player) => [
+          String(
+            player?.user_id || ""
+          ),
+          player
+        ]
+      )
+    );
+
+  state.conquest.players =
+    players.map((player) => {
+      const id = String(
+        player?.user_id || ""
+      );
+
+      return {
+        ...(
+          existingById.get(id) ||
+          {}
+        ),
+
+        ...player
+      };
+    });
+}
+
+
+async function rd112PollLiveOverlay() {
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.conquest.roundId ||
+    state.conquest
+      .liveOverlayPolling ||
+    !navigator.onLine
+  ) {
+    return;
+  }
+
+  state.conquest
+    .liveOverlayPolling = true;
+
+  try {
+    const { data, error } =
+      await state.auth.client.rpc(
+        "get_conquest_live_overlay",
+        {
+          p_room_id:
+            state.multiplayer.roomId
+        }
+      );
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const overlay =
+      Array.isArray(data)
+        ? data[0] || null
+        : data || null;
+
+    if (
+      !overlay ||
+      String(
+        overlay.round_id || ""
+      ) !==
+        String(
+          state.conquest.roundId ||
+            ""
+        )
+    ) {
+      return;
+    }
+
+    const serverNowMs =
+      Date.parse(
+        overlay.server_now || ""
+      );
+
+    if (
+      Number.isFinite(serverNowMs)
+    ) {
+      state.conquest.serverOffsetMs =
+        serverNowMs -
+        Date.now();
+    }
+
+    state.conquest
+      .legendarySpawnAt =
+        overlay
+          .legendary_spawn_at ||
+        null;
+
+    rd112MergeVisiblePlayers(
+      rd86NormaliseJsonArray(
+        overlay.players
+      )
+    );
+
+    rd86DrawConquestMap();
+    rd86RenderConquestPlayers();
+    rd112EnsureLegendaryTimer();
+
+  } finally {
+    state.conquest
+      .liveOverlayPolling = false;
+  }
+}
+
+
+rd86PollConquestState =
+async function (
+  options = {}
+) {
+  await roadDiscoveryV112
+    .pollConquestState(options);
+
+  await rd112PollLiveOverlay();
+};
+
+
+function rd112ParticipantIcon(
+  team,
+  isBot
+) {
+  return rd87ConquestParticipantIcon(
+    team,
+    isBot
+  );
+}
+
+
+rd86DrawTeammates =
+function () {
+  rd86EnsureConquestLayer();
+
+  const seen = new Set();
+
+  for (
+    const player of
+    state.conquest.players
+  ) {
+    const participantId =
+      String(
+        player?.user_id || ""
+      );
+
+    const isBot =
+      Boolean(player?.is_bot);
+
+    if (
+      !participantId ||
+      player?.is_me ||
+      player?.player_status !==
+        "active"
+    ) {
+      continue;
+    }
+
+    const position = isBot
+      ? rd87VisibleBotPosition(
+          player
+        )
+      : {
+          lat: Number(
+            player?.lat
+          ),
+
+          lng: Number(
+            player?.lng
+          )
+        };
+
+    if (
+      !Number.isFinite(
+        position.lat
+      ) ||
+      !Number.isFinite(
+        position.lng
+      )
+    ) {
+      continue;
+    }
+
+    seen.add(participantId);
+
+    const team =
+      player?.team === "red"
+        ? "red"
+        : "blue";
+
+    const targetText =
+      isBot &&
+      player?.target_label
+        ? ` • ${
+            player.target_label
+          }`
+        : "";
+
+    const tooltip =
+      `${escapeHtml(
+        player?.display_name ||
+          (
+            isBot
+              ? "Road Bot"
+              : "Rider"
+          )
+      )} • ${
+        rd86TeamLabel(team)
+      }${
+        escapeHtml(targetText)
+      }`;
+
+    let marker =
+      state.conquest
+        .teammateMarkers.get(
+          participantId
+        );
+
+    if (marker) {
+      marker.setLatLng([
+        position.lat,
+        position.lng
+      ]);
+
+      marker.setIcon(
+        rd112ParticipantIcon(
+          team,
+          isBot
+        )
+      );
+
+      marker.setTooltipContent(
+        tooltip
+      );
+
+    } else {
+      marker = L.marker(
+        [
+          position.lat,
+          position.lng
+        ],
+        {
+          icon:
+            rd112ParticipantIcon(
+              team,
+              isBot
+            ),
+
+          pane:
+            "multiplayerPane",
+
+          interactive: isBot,
+          keyboard: false
+        }
+      ).addTo(
+        state.conquest.layer
+      );
+
+      marker.bindTooltip(
+        tooltip,
+        {
+          sticky: true
+        }
+      );
+
+      if (isBot) {
+        marker.on(
+          "click",
+          () => {
+            const latestPlayer =
+              marker.rd87Player;
+
+            const latestPosition =
+              rd87VisibleBotPosition(
+                latestPlayer
+              );
+
+            state.customConquest
+              .followBotId =
+                participantId;
+
+            state.followUser =
+              false;
+
+            rd86FocusPoint(
+              latestPosition
+            );
+
+            showToast(
+              `Following ${
+                latestPlayer
+                  ?.display_name ||
+                "Road Bot"
+              } • tap My Location to return`
+            );
+          }
+        );
+      }
+
+      state.conquest
+        .teammateMarkers.set(
+          participantId,
+          marker
+        );
+    }
+
+    marker.rd87Player =
+      player;
+  }
+
+  for (
+    const [
+      participantId,
+      marker
+    ] of
+    state.conquest
+      .teammateMarkers.entries()
+  ) {
+    if (
+      !seen.has(participantId)
+    ) {
+      rd86ClearLayerItem(
+        marker
+      );
+
+      state.conquest
+        .teammateMarkers.delete(
+          participantId
+        );
+    }
+  }
+
+  rd87EnsureBotAnimation();
+};
+
+
+rd86DrawDeploymentStart =
+function () {
+  if (
+    state.conquest.phase ===
+      "deployment"
+  ) {
+    return roadDiscoveryV112
+      .drawDeploymentStart();
+  }
+
+  rd86ClearLayerItem(
+    state.conquest.startCircle
+  );
+
+  rd86ClearLayerItem(
+    state.conquest.startMarker
+  );
+
+  state.conquest.startCircle =
+    null;
+
+  state.conquest.startMarker =
+    null;
+};
+
+
+function rd112WaypointButtonState() {
+  if (
+    !els.conquestFocusStrip
+  ) {
+    return;
+  }
+
+  for (
+    const button of
+    els.conquestFocusStrip
+      .querySelectorAll(
+        "[data-conquest-kind]"
+      )
+  ) {
+    const key =
+      `${
+        button.dataset
+          .conquestKind
+      }:` +
+      `${
+        button.dataset
+          .conquestId
+      }`;
+
+    button.classList.toggle(
+      "rd112-waypoint-selected",
+
+      key ===
+        state.conquest
+          .personalWaypointKey
+    );
+  }
+}
+
+
+function rd112ClearPersonalWaypoint(
+  options = {}
+) {
+  state.conquest
+    .personalWaypoint = null;
+
+  state.conquest
+    .personalWaypointKey = "";
+
+  rd86ClearConquestRoute();
+  rd112WaypointButtonState();
+
+  if (
+    options.toast !== false
+  ) {
+    showToast(
+      "Conquest waypoint cleared"
+    );
+  }
+}
+
+async function rd112DrawPersonalWaypoint(
+  options = {}
+) {
+  const waypoint =
+    state.conquest
+      .personalWaypoint;
+
+  if (
+    !waypoint ||
+    state.conquest
+      .viewerIsSpectator ||
+    ![
+      "active",
+      "overtime"
+    ].includes(
+      state.conquest.phase
+    )
+  ) {
+    return;
+  }
+
+  const start =
+    options.start ||
+    state.currentPoint ||
+    await getFreshRouteStartPoint();
+
+  if (!start) {
+    showToast(
+      "Waiting for your location"
+    );
+
+    return;
+  }
+
+  const requestId =
+    ++state.conquest
+      .routeRequestId;
+
+  state.conquest
+    .routeLoading = true;
+
+  try {
+    const route =
+      await fetchRoadRoute(
+        start,
+        waypoint
+      );
+
+    if (
+      requestId !==
+        state.conquest
+          .routeRequestId ||
+      !state.conquest
+        .personalWaypoint
+    ) {
+      return;
+    }
+
+    rd86ClearConquestRoute({
+      keepRequest: true
+    });
+
+    if (
+      !Array.isArray(
+        route?.coords
+      ) ||
+      route.coords.length < 2
+    ) {
+      showToast(
+        "Could not find a public-road route"
+      );
+
+      return;
+    }
+
+    const colour =
+      rd86TeamColour(
+        state.conquest
+          .viewerTeam
+      );
+
+    state.conquest.routeHalo =
+      L.polyline(
+        route.coords,
+        {
+          color: "#eef7ff",
+          weight: 9,
+          opacity: 0.68,
+          lineCap: "round",
+          lineJoin: "round",
+          interactive: false
+        }
+      ).addTo(
+        state.conquest.layer
+      );
+
+    state.conquest.routeLine =
+      L.polyline(
+        route.coords,
+        {
+          color: colour,
+          weight: 5,
+          opacity: 1,
+          lineCap: "round",
+          lineJoin: "round",
+          interactive: false
+        }
+      ).addTo(
+        state.conquest.layer
+      );
+
+    state.conquest.routeKey =
+      state.conquest
+        .personalWaypointKey;
+
+    state.conquest
+      .lastRouteStartPoint = {
+        lat: Number(start.lat),
+        lng: Number(start.lng)
+      };
+
+    state.conquest.lastRouteAt =
+      Date.now();
+
+    rd112WaypointButtonState();
+
+  } catch (error) {
+    console.error(error);
+
+    showToast(
+      "Could not load the Conquest waypoint"
+    );
+
+  } finally {
+    if (
+      requestId ===
+        state.conquest
+          .routeRequestId
+    ) {
+      state.conquest
+        .routeLoading = false;
+    }
+  }
+}
+
+
+function rd112SelectWaypoint(
+  kind,
+  id,
+  target
+) {
+  const key =
+    `${kind}:${id}`;
+
+  if (
+    state.conquest
+      .personalWaypointKey ===
+        key
+  ) {
+    rd112ClearPersonalWaypoint();
+
+    state.followUser = true;
+
+    return;
+  }
+
+  state.conquest
+    .personalWaypointKey =
+      key;
+
+  state.conquest
+    .personalWaypoint = {
+      lat: Number(target.lat),
+      lng: Number(target.lng),
+      kind,
+      id: String(id)
+    };
+
+  state.customConquest
+    .followBotId = null;
+
+  state.followUser = false;
+
+  rd86FocusPoint(target);
+  rd112WaypointButtonState();
+
+  void rd112DrawPersonalWaypoint();
+
+  const label =
+    kind === "objective"
+      ? `Objective ${id}`
+      : Number(
+          target?.reward
+        ) === 150
+        ? "Legendary Cache"
+        : "Road Cache";
+
+  showToast(
+    `${label} waypoint set`
+  );
+}
+
+
+function rd112HandleFocusClick(
+  event
+) {
+  const button =
+    event.target.closest?.(
+      "#conquestFocusStrip " +
+      "[data-conquest-kind]"
+    );
+
+  if (!button) return;
+
+  const kind =
+    button.dataset
+      .conquestKind;
+
+  const id =
+    button.dataset
+      .conquestId;
+
+  const target =
+    rd86FocusTarget(
+      kind,
+      id
+    );
+
+  if (!target) return;
+
+  event.preventDefault();
+
+  event.stopImmediatePropagation();
+
+  if (
+    state.conquest
+      .viewerIsSpectator ||
+    ![
+      "active",
+      "overtime"
+    ].includes(
+      state.conquest.phase
+    )
+  ) {
+    rd86FocusPoint(target);
+
+    return;
+  }
+
+  rd112SelectWaypoint(
+    kind,
+    id,
+    target
+  );
+}
+
+
+document.addEventListener(
+  "click",
+  rd112HandleFocusClick,
+  true
+);
+
+
+const rd112OriginalRenderFocusStrip =
+  rd86RenderFocusStrip;
+
+
+rd86RenderFocusStrip =
+function () {
+  const result =
+    rd112OriginalRenderFocusStrip();
+
+  rd112WaypointButtonState();
+
+  return result;
+};
+
+
+rd86MaybeSendConquestLocation =
+async function (
+  point,
+  options = {}
+) {
+  const result =
+    await roadDiscoveryV112
+      .maybeSendConquestLocation(
+        point,
+        options
+      );
+
+  if (
+    state.conquest
+      .personalWaypoint &&
+    state.conquest.routeLine &&
+    !state.conquest
+      .routeLoading &&
+    Number(point?.accuracy) <=
+      MAX_GPS_ACCURACY_M &&
+    Date.now() -
+      state.conquest
+        .lastRouteAt >=
+          RD86_CONQUEST_ROUTE_REROUTE_MS &&
+    state.conquest
+      .lastRouteStartPoint &&
+    haversine(
+      point,
+      state.conquest
+        .lastRouteStartPoint
+    ) >=
+      RD86_CONQUEST_ROUTE_REROUTE_M
+  ) {
+    void rd112DrawPersonalWaypoint({
+      start: point
+    });
+  }
+
+  return result;
+};
+
+
+rd86ResetConquestState =
+function (
+  options = {}
+) {
+  rd112StopLegendaryTimer();
+
+  state.conquest
+    .personalWaypoint = null;
+
+  state.conquest
+    .personalWaypointKey = "";
+
+  state.conquest
+    .legendarySpawnAt = null;
+
+  state.conquest
+    .legendaryEventKey = "";
+
+  state.conquest
+    .legendaryRevealKey = "";
+
+  return roadDiscoveryV112
+    .resetConquestState(
+      options
+    );
+};
+
+
+function rd112Init() {
+  rd112InstallStyles();
+
+  if (
+    rd86HasConquestRound()
+  ) {
+    void rd112PollLiveOverlay();
+  }
+}
+
+
+if (
+  document.readyState ===
+    "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd112Init,
+    {
+      once: true
+    }
+  );
+
+} else {
+  rd112Init();
+}
