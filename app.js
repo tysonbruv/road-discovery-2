@@ -36155,3 +36155,51 @@ if (
 } else {
   rd109InitRallyPlacement();
 }
+
+/* ================================================== */
+/* Road Discovery AU v110                             */
+/* 900-metre middle arena placement guide             */
+/* ================================================== */
+
+const roadDiscoveryV110 = {
+  rd94DrawArenaCentre
+};
+
+
+state.conquestArena.middleCircle =
+  null;
+
+
+rd94DrawArenaCentre = function () {
+  const result =
+    roadDiscoveryV110
+      .rd94DrawArenaCentre();
+
+  const centre =
+    state.conquestArena.centre;
+
+  if (
+    !centre ||
+    !state.conquestArena.layer
+  ) {
+    return result;
+  }
+
+  state.conquestArena.middleCircle =
+    L.circle(
+      [centre.lat, centre.lng],
+      {
+        radius: 900,
+        color: "#b9cbe1",
+        weight: 1.5,
+        opacity: 0.52,
+        fillOpacity: 0,
+        dashArray: "7 9",
+        interactive: false
+      }
+    ).addTo(
+      state.conquestArena.layer
+    );
+
+  return result;
+};
