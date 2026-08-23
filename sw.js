@@ -1,18 +1,16 @@
 "use strict";
 
 /*
-  Road Discovery AU v113 service worker
+  Road Discovery AU v114
+  service worker
 
-  Direct host-placed Conquest arena with
-  team starts approximately 500 m from Rally.
-
-  Expected frontend versions:
-  - app.js?v=111
+  Expected frontend:
+  - app.js?v=112
   - style.css?v=65
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v113";
+  "road-discovery-au-v114";
 
 const CORE_APP_SHELL = [
   "./",
@@ -23,19 +21,14 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=112",
+
+  /*
+    Recent deployment fallbacks.
+  */
   "./app.js?v=111",
   "./app.js?v=110",
   "./app.js?v=109",
-  "./app.js?v=108",
-  "./app.js?v=107",
-  "./app.js?v=106",
-  "./app.js?v=105",
-  "./app.js?v=104",
-  "./app.js?v=103",
-  "./app.js?v=102",
-  "./app.js?v=101",
-  "./app.js?v=100",
-  "./app.js?v=99",
   "./style.css?v=64",
   "./style.css?v=63"
 ];
@@ -64,7 +57,7 @@ self.addEventListener(
 
                 } catch (error) {
                   console.warn(
-                    `Could not pre-cache ${file}. It will be cached when available.`,
+                    `Could not pre-cache ${file}.`,
                     error
                   );
                 }
@@ -123,9 +116,12 @@ self.addEventListener(
 self.addEventListener(
   "fetch",
   (event) => {
-    const request = event.request;
+    const request =
+      event.request;
 
-    if (request.method !== "GET") {
+    if (
+      request.method !== "GET"
+    ) {
       return;
     }
 
@@ -133,14 +129,14 @@ self.addEventListener(
       new URL(request.url);
 
     /*
-      External requests are not intercepted.
+      External services are not intercepted.
 
       This includes Leaflet, Supabase,
       map tiles, Overpass and OSRM.
     */
     if (
       url.origin !==
-      self.location.origin
+        self.location.origin
     ) {
       return;
     }
@@ -188,7 +184,8 @@ self.addEventListener(
                 await caches.match(
                   "./"
                 )
-              )
+              ) ||
+              Response.error()
             );
           })
       );
@@ -227,10 +224,45 @@ self.addEventListener(
         )
         .catch(async () => {
           const exactCachedResponse =
-            await caches.match(request);
+            await caches.match(
+              request
+            );
 
-          if (exactCachedResponse) {
+          if (
+            exactCachedResponse
+          ) {
             return exactCachedResponse;
+          }
+
+
+          if (
+            url.pathname.endsWith(
+              "/app.js"
+            )
+          ) {
+            return (
+              (
+                await caches.match(
+                  "./app.js?v=112"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=111"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=110"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=109"
+                )
+              ) ||
+              Response.error()
+            );
           }
 
 
@@ -253,82 +285,6 @@ self.addEventListener(
               (
                 await caches.match(
                   "./style.css?v=63"
-                )
-              ) ||
-              Response.error()
-            );
-          }
-
-
-          if (
-            url.pathname.endsWith(
-              "/app.js"
-            )
-          ) {
-            return (
-              (
-                await caches.match(
-                  "./app.js?v=111"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=110"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=109"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=108"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=107"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=106"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=105"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=104"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=103"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=102"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=101"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=100"
-                )
-              ) ||
-              (
-                await caches.match(
-                  "./app.js?v=99"
                 )
               ) ||
               Response.error()
