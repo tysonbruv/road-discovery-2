@@ -1,16 +1,16 @@
 "use strict";
 
 /*
-  Road Discovery AU v104 service worker
+  Road Discovery AU v105 service worker
 
-  Optional dark centreline setting for discovered-road trails.
+  Three-dot General Menu button on the main map.
 
   Expected frontend versions:
   - app.js?v=103
   - style.css?v=65
 */
 
-const CACHE_NAME = "road-discovery-au-v104";
+const CACHE_NAME = "road-discovery-au-v105";
 
 const CORE_APP_SHELL = [
   "./",
