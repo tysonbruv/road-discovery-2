@@ -1,15 +1,15 @@
 "use strict";
 
 /*
-  Road Discovery AU v117 service worker
+  Road Discovery AU v118 service worker
 
   Expected frontend versions:
-  - app.js?v=115
+  - app.js?v=116
   - style.css?v=65
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v117";
+  "road-discovery-au-v118";
 
 const CORE_APP_SHELL = [
   "./",
@@ -20,11 +20,14 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=116",
   "./app.js?v=115",
   "./app.js?v=114",
   "./app.js?v=113",
 
-  /* Recent deployment fallbacks. */
+  /*
+    Recent deployment fallbacks.
+  */
   "./app.js?v=112",
   "./app.js?v=111",
   "./app.js?v=110",
@@ -105,12 +108,14 @@ self.addEventListener(
       return;
     }
 
-    const url = new URL(request.url);
+    const url =
+      new URL(request.url);
 
     /*
-      Leaflet, Supabase, map tiles, Overpass,
-      OSRM and other external requests remain
-      controlled by their own network services.
+      Leaflet, Supabase, map tiles,
+      Overpass, OSRM and other external
+      requests remain controlled by
+      their own network services.
     */
     if (
       url.origin !==
@@ -120,7 +125,14 @@ self.addEventListener(
     }
 
 
-    if (request.mode === "navigate") {
+    /*
+      Page navigation:
+      try the network first and use the
+      saved application page when offline.
+    */
+    if (
+      request.mode === "navigate"
+    ) {
       event.respondWith(
         fetch(request)
           .then((networkResponse) => {
@@ -160,6 +172,11 @@ self.addEventListener(
     }
 
 
+    /*
+      Local application files:
+      network first, exact cached version
+      second, recent compatible fallback last.
+    */
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
@@ -186,7 +203,9 @@ self.addEventListener(
           const exact =
             await caches.match(request);
 
-          if (exact) return exact;
+          if (exact) {
+            return exact;
+          }
 
 
           if (
@@ -195,6 +214,11 @@ self.addEventListener(
             )
           ) {
             return (
+              await caches.match(
+                "./app.js?v=116"
+              )
+            ) ||
+            (
               await caches.match(
                 "./app.js?v=115"
               )
