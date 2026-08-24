@@ -42794,3 +42794,420 @@ if (
 } else {
   rd118InitStablePanel();
 }
+
+/* ================================================== */
+/* Road Discovery AU v119                             */
+/* Resilient basemap tiles + post-Conquest recovery   */
+/* ================================================== */
+
+const roadDiscoveryV119 = {
+  applyDaylightMap:
+    rd83ApplyDaylightMap,
+
+  resetConquestState:
+    rd86ResetConquestState
+};
+
+
+state.rd119TileRepair = {
+  layer: null,
+  failures: [],
+  redrawTimer: null,
+  checkTimer: null,
+  lastRedrawAt: 0,
+  mapEventsBound: false,
+  pageEventsBound: false
+};
+
+
+const RD119_FAILURE_WINDOW_MS = 12000;
+const RD119_REDRAW_COOLDOWN_MS = 15000;
+const RD119_MAX_TILE_RETRIES = 2;
+
+
+function rd119BaseTileLayer() {
+  if (
+    state.rd83BaseTileLayer &&
+    state.map?.hasLayer?.(
+      state.rd83BaseTileLayer
+    )
+  ) {
+    return state.rd83BaseTileLayer;
+  }
+
+  let result = null;
+
+  state.map?.eachLayer?.((layer) => {
+    if (
+      !result &&
+      layer instanceof L.TileLayer &&
+      rd83IsRoadDiscoveryBaseTile(layer)
+    ) {
+      result = layer;
+    }
+  });
+
+  return result;
+}
+
+
+function rd119AlternateTileUrl(
+  source,
+  attempt
+) {
+  try {
+    const url = new URL(source);
+    const hosts = ["a", "b", "c", "d"];
+
+    const match = url.hostname.match(
+      /^([a-d])\.basemaps\.cartocdn\.com$/
+    );
+
+    if (match) {
+      const currentIndex =
+        hosts.indexOf(match[1]);
+
+      const nextIndex =
+        (currentIndex + attempt + 1) %
+        hosts.length;
+
+      url.hostname =
+        `${hosts[nextIndex]}.basemaps.cartocdn.com`;
+    }
+
+    url.searchParams.set(
+      "rd_retry",
+      `${attempt}-${Date.now()}`
+    );
+
+    return url.href;
+
+  } catch (error) {
+    return source;
+  }
+}
+
+
+function rd119RememberTileFailure() {
+  const now = Date.now();
+
+  state.rd119TileRepair.failures =
+    state.rd119TileRepair.failures
+      .filter(
+        (time) =>
+          now - time <
+            RD119_FAILURE_WINDOW_MS
+      );
+
+  state.rd119TileRepair.failures.push(now);
+
+  if (
+    state.rd119TileRepair.failures.length >= 4
+  ) {
+    rd119ScheduleBaseMapRedraw(
+      2600,
+      "tile-failure-burst"
+    );
+  }
+}
+
+
+function rd119RetryTile(event) {
+  const tile = event?.tile;
+
+  if (!tile) return;
+
+  rd119RememberTileFailure();
+
+  const attempt = Number(
+    tile.dataset.rd119Retry || 0
+  );
+
+  if (attempt >= RD119_MAX_TILE_RETRIES) {
+    return;
+  }
+
+  const nextAttempt = attempt + 1;
+
+  const failedUrl = String(
+    tile.currentSrc || tile.src || ""
+  );
+
+  tile.dataset.rd119Retry =
+    String(nextAttempt);
+
+  window.setTimeout(() => {
+    if (!tile.isConnected) return;
+
+    tile.addEventListener(
+      "load",
+      () => {
+        tile.classList.add(
+          "leaflet-tile-loaded"
+        );
+
+        delete tile.dataset
+          .rd119Retry;
+      },
+      { once: true }
+    );
+
+    tile.src = rd119AlternateTileUrl(
+      failedUrl,
+      nextAttempt
+    );
+  }, 350 * nextAttempt);
+}
+
+
+function rd119BindBaseTileLayer() {
+  const repair =
+    state.rd119TileRepair;
+
+  const layer =
+    rd119BaseTileLayer();
+
+  if (
+    !layer ||
+    repair.layer === layer
+  ) {
+    return layer;
+  }
+
+  repair.layer?.off?.(
+    "tileerror",
+    rd119RetryTile
+  );
+
+  repair.layer = layer;
+
+  layer.on(
+    "tileerror",
+    rd119RetryTile
+  );
+
+  layer.on(
+    "tileload",
+    (event) => {
+      if (event?.tile) {
+        delete event.tile.dataset
+          .rd119Retry;
+      }
+    }
+  );
+
+  return layer;
+}
+
+
+function rd119RedrawBaseMap(
+  reason = "repair"
+) {
+  const repair =
+    state.rd119TileRepair;
+
+  const now = Date.now();
+
+  if (
+    now - repair.lastRedrawAt <
+      RD119_REDRAW_COOLDOWN_MS
+  ) {
+    return false;
+  }
+
+  const layer =
+    rd119BindBaseTileLayer();
+
+  if (!state.map || !layer) {
+    return false;
+  }
+
+  repair.lastRedrawAt = now;
+  repair.failures = [];
+
+  state.map.invalidateSize?.({
+    animate: false,
+    pan: false
+  });
+
+  layer.redraw?.();
+  layer.bringToBack?.();
+
+  return true;
+}
+
+
+function rd119ScheduleBaseMapRedraw(
+  delay = 0,
+  reason = "repair"
+) {
+  const repair =
+    state.rd119TileRepair;
+
+  if (repair.redrawTimer !== null) {
+    window.clearTimeout(
+      repair.redrawTimer
+    );
+  }
+
+  repair.redrawTimer =
+    window.setTimeout(() => {
+      repair.redrawTimer = null;
+
+      rd119RedrawBaseMap(reason);
+    }, delay);
+}
+
+
+function rd119CheckVisibleTiles() {
+  const container =
+    state.map?.getContainer?.();
+
+  if (!container) return;
+
+  const brokenTiles = Array.from(
+    container.querySelectorAll(
+      ".leaflet-tile-pane img.leaflet-tile"
+    )
+  ).filter((tile) => {
+    return (
+      tile.isConnected &&
+      tile.complete &&
+      tile.naturalWidth === 0
+    );
+  });
+
+  if (brokenTiles.length > 0) {
+    rd119ScheduleBaseMapRedraw(
+      250,
+      "visible-blank-tiles"
+    );
+  }
+}
+
+
+function rd119ScheduleTileCheck(
+  delay = 900
+) {
+  const repair =
+    state.rd119TileRepair;
+
+  if (repair.checkTimer !== null) {
+    window.clearTimeout(
+      repair.checkTimer
+    );
+  }
+
+  repair.checkTimer =
+    window.setTimeout(() => {
+      repair.checkTimer = null;
+
+      rd119CheckVisibleTiles();
+    }, delay);
+}
+
+
+function rd119BindMapRepairEvents() {
+  const repair =
+    state.rd119TileRepair;
+
+  if (
+    state.map &&
+    !repair.mapEventsBound
+  ) {
+    repair.mapEventsBound = true;
+
+    state.map.on(
+      "moveend zoomend resize",
+      () => rd119ScheduleTileCheck()
+    );
+  }
+
+  if (!repair.pageEventsBound) {
+    repair.pageEventsBound = true;
+
+    window.addEventListener(
+      "online",
+      () => {
+        rd119ScheduleBaseMapRedraw(
+          150,
+          "connection-restored"
+        );
+      }
+    );
+
+    window.addEventListener(
+      "pageshow",
+      () => {
+        rd119ScheduleTileCheck(300);
+      }
+    );
+
+    document.addEventListener(
+      "visibilitychange",
+      () => {
+        if (!document.hidden) {
+          rd119ScheduleTileCheck(350);
+        }
+      }
+    );
+  }
+}
+
+
+function rd119StartMapTileRepair() {
+  rd119BindBaseTileLayer();
+  rd119BindMapRepairEvents();
+  rd119ScheduleTileCheck(1200);
+}
+
+
+rd83ApplyDaylightMap = function () {
+  const result =
+    roadDiscoveryV119
+      .applyDaylightMap();
+
+  rd119StartMapTileRepair();
+
+  return result;
+};
+
+
+rd86ResetConquestState = function (
+  options = {}
+) {
+  const hadRound = Boolean(
+    state.conquest.roundId ||
+    state.conquest.phase
+  );
+
+  const result =
+    roadDiscoveryV119
+      .resetConquestState(options);
+
+  if (
+    hadRound &&
+    options.clearRound !== false
+  ) {
+    rd119ScheduleBaseMapRedraw(
+      120,
+      "conquest-cleanup"
+    );
+  }
+
+  return result;
+};
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd119StartMapTileRepair,
+    { once: true }
+  );
+
+} else {
+  rd119StartMapTileRepair();
+}
