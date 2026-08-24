@@ -43211,3 +43211,1685 @@ if (
 } else {
   rd119StartMapTileRepair();
 }
+
+/* ================================================== */
+/* Road Discovery AU v120                             */
+/* Three-route choice + direction-aware rerouting     */
+/* ================================================== */
+
+const roadDiscoveryV120 = {
+  routeToWaypoint,
+  clearWaypoint,
+  startDrive,
+  clearPersonalWaypoint:
+    rd112ClearPersonalWaypoint,
+  drawPersonalWaypoint:
+    rd112DrawPersonalWaypoint,
+  maybeSendConquestLocation:
+    rd86MaybeSendConquestLocation,
+  resetConquestState:
+    rd86ResetConquestState
+};
+
+
+const RD120_ROUTE_CHOICE_LIMIT = 3;
+const RD120_OFF_ROUTE_DISTANCE_M = 50;
+const RD120_OFF_ROUTE_CONFIRMATIONS = 3;
+const RD120_REROUTE_COOLDOWN_MS = 15000;
+
+
+state.rd120RouteChoice = {
+  context: "",
+  label: "",
+  routes: [],
+  selectedIndex: 0,
+  start: null,
+  destination: null,
+  fit: false,
+  lineLayers: [],
+  haloLayer: null,
+  requestToken: 0,
+  normalOffRouteCount: 0,
+  conquestOffRouteCount: 0,
+  conquestReroutePending: false,
+  mapEventsBound: false
+};
+
+
+function rd120NormaliseRoute(route) {
+  const coordinates =
+    route?.geometry?.coordinates;
+
+  if (
+    !Array.isArray(coordinates) ||
+    coordinates.length < 2
+  ) {
+    return null;
+  }
+
+  const coords = coordinates
+    .map((coordinate) => [
+      Number(coordinate?.[1]),
+      Number(coordinate?.[0])
+    ])
+    .filter(
+      (coordinate) =>
+        Number.isFinite(coordinate[0]) &&
+        Number.isFinite(coordinate[1])
+    );
+
+  if (coords.length < 2) {
+    return null;
+  }
+
+  return {
+    distanceM:
+      Number(route?.distance) || 0,
+
+    durationS:
+      Number(route?.duration) || 0,
+
+    coords
+  };
+}
+
+
+function rd120CurrentTravelHeading() {
+  const selected =
+    typeof hs48SelectedHeading ===
+      "function"
+      ? hs48SelectedHeading()
+      : state.userHeadingDegrees;
+
+  const heading = Number(selected);
+
+  return Number.isFinite(heading)
+    ? Math.round(
+        ((heading % 360) + 360) % 360
+      )
+    : null;
+}
+
+
+async function rd120FetchRoadRoutes(
+  start,
+  destination,
+  options = {}
+) {
+  const routeCount = Math.max(
+    1,
+    Math.min(
+      RD120_ROUTE_CHOICE_LIMIT,
+      Number(options.routeCount) || 1
+    )
+  );
+
+  const heading =
+    options.followHeading === true
+      ? rd120CurrentTravelHeading()
+      : null;
+
+  async function request(
+    includeHeading
+  ) {
+    const coordinates =
+      `${Number(start.lng)},` +
+      `${Number(start.lat)};` +
+      `${Number(destination.lng)},` +
+      `${Number(destination.lat)}`;
+
+    const parameters =
+      new URLSearchParams({
+        overview: "full",
+        geometries: "geojson",
+        steps: "false",
+        alternatives:
+          routeCount > 1
+            ? "2"
+            : "false"
+      });
+
+    if (
+      includeHeading &&
+      heading !== null
+    ) {
+      /*
+        A wide tolerance guides the new route in the
+        rider's current direction without trapping it
+        when GPS or compass direction is imperfect.
+      */
+      parameters.set(
+        "bearings",
+        `${heading},110;`
+      );
+    }
+
+    const response = await fetch(
+      "https://router.project-osrm.org/" +
+      `route/v1/driving/${coordinates}?` +
+      parameters.toString()
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Routing returned ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+
+    if (
+      data?.code !== "Ok" ||
+      !Array.isArray(data?.routes) ||
+      data.routes.length === 0
+    ) {
+      throw new Error(
+        data?.message || "No route found"
+      );
+    }
+
+    return data.routes
+      .map(rd120NormaliseRoute)
+      .filter(Boolean)
+      .sort(
+        (first, second) =>
+          first.durationS -
+          second.durationS
+      )
+      .slice(0, routeCount);
+  }
+
+  try {
+    return await request(
+      heading !== null
+    );
+
+  } catch (error) {
+    if (heading === null) {
+      throw error;
+    }
+
+    /*
+      If the road nearest the GPS point cannot satisfy
+      the heading constraint, retry without it instead
+      of leaving the rider without navigation.
+    */
+    return request(false);
+  }
+}
+
+
+function rd120RouteMinutes(route) {
+  return Math.max(
+    1,
+    Math.round(
+      Number(route?.durationS || 0) /
+      60
+    )
+  );
+}
+
+
+function rd120RouteDistanceLabel(route) {
+  const metres = Number(
+    route?.distanceM || 0
+  );
+
+  if (metres < 1000) {
+    return `${Math.max(
+      10,
+      Math.round(metres / 10) * 10
+    )} m`;
+  }
+
+  return `${(
+    metres / 1000
+  ).toFixed(
+    metres < 10000 ? 1 : 0
+  )} km`;
+}
+
+
+function rd120InstallRouteChoiceStyles() {
+  if (
+    document.getElementById(
+      "rd120RouteChoiceStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd120RouteChoiceStyles";
+
+  style.textContent = `
+    .rd120-route-chooser {
+      position: fixed;
+      left: 50%;
+      bottom:
+        max(88px, calc(74px + env(safe-area-inset-bottom)));
+      z-index: 10030;
+      width: min(560px, calc(100vw - 24px));
+      padding: 13px;
+      border: 1px solid
+        rgba(130, 184, 235, 0.42);
+      border-radius: 18px;
+      background:
+        linear-gradient(
+          145deg,
+          rgba(13, 20, 30, 0.97),
+          rgba(7, 12, 19, 0.98)
+        );
+      box-shadow:
+        0 20px 65px rgba(0, 0, 0, 0.62),
+        0 0 0 1px rgba(255, 255, 255, 0.025);
+      color: #f6f9ff;
+      transform: translateX(-50%);
+    }
+
+    .rd120-route-chooser[hidden] {
+      display: none;
+    }
+
+    .rd120-route-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      padding: 2px 3px 10px;
+    }
+
+    .rd120-route-heading strong,
+    .rd120-route-heading span {
+      display: block;
+    }
+
+    .rd120-route-heading strong {
+      font-size: 0.86rem;
+      font-weight: 1000;
+    }
+
+    .rd120-route-heading span {
+      margin-top: 3px;
+      color: #aebacd;
+      font-size: 0.67rem;
+      line-height: 1.35;
+    }
+
+    .rd120-route-count {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: rgba(72, 167, 237, 0.13);
+      color: #80cfff;
+      font-size: 0.6rem;
+      font-weight: 1000;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .rd120-route-options {
+      display: grid;
+      grid-template-columns:
+        repeat(3, minmax(0, 1fr));
+      gap: 7px;
+    }
+
+    .rd120-route-option {
+      min-width: 0;
+      min-height: 64px;
+      padding: 9px 8px;
+      border: 1px solid
+        rgba(137, 160, 191, 0.28);
+      border-radius: 12px;
+      background: rgba(30, 40, 55, 0.82);
+      color: #c4cedd;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .rd120-route-option.selected {
+      border-color: rgba(89, 190, 255, 0.94);
+      background:
+        linear-gradient(
+          140deg,
+          rgba(27, 104, 157, 0.94),
+          rgba(21, 65, 105, 0.96)
+        );
+      box-shadow:
+        0 0 0 2px rgba(75, 179, 255, 0.16),
+        0 8px 24px rgba(18, 115, 179, 0.25);
+      color: #fff;
+    }
+
+    .rd120-route-option small,
+    .rd120-route-option strong,
+    .rd120-route-option span {
+      display: block;
+    }
+
+    .rd120-route-option small {
+      overflow: hidden;
+      color: #8fb9d6;
+      font-size: 0.55rem;
+      font-weight: 1000;
+      letter-spacing: 0.055em;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .rd120-route-option.selected small {
+      color: #c9edff;
+    }
+
+    .rd120-route-option strong {
+      margin-top: 3px;
+      font-size: 1rem;
+      line-height: 1;
+    }
+
+    .rd120-route-option span {
+      margin-top: 4px;
+      font-size: 0.63rem;
+      font-weight: 800;
+    }
+
+    .rd120-route-actions {
+      display: grid;
+      grid-template-columns: 0.68fr 1.32fr;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .rd120-route-action {
+      min-height: 44px;
+      border: 1px solid
+        rgba(137, 160, 191, 0.3);
+      border-radius: 12px;
+      background: rgba(31, 42, 58, 0.94);
+      color: #f5f8fe;
+      font: inherit;
+      font-size: 0.73rem;
+      font-weight: 1000;
+      cursor: pointer;
+    }
+
+    .rd120-route-action.use {
+      border-color: rgba(78, 188, 255, 0.74);
+      background:
+        linear-gradient(
+          105deg,
+          #176fa8,
+          #275989
+        );
+    }
+
+    @media (max-width: 430px) {
+      .rd120-route-chooser {
+        bottom:
+          max(78px, calc(66px + env(safe-area-inset-bottom)));
+        width: calc(100vw - 16px);
+        padding: 11px;
+      }
+
+      .rd120-route-options {
+        gap: 5px;
+      }
+
+      .rd120-route-option {
+        min-height: 61px;
+        padding: 8px 6px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd120RouteChooserElement() {
+  let element =
+    document.getElementById(
+      "rd120RouteChooser"
+    );
+
+  if (!element) {
+    element =
+      document.createElement("section");
+
+    element.id =
+      "rd120RouteChooser";
+
+    element.className =
+      "rd120-route-chooser";
+
+    element.hidden = true;
+
+    element.setAttribute(
+      "aria-label",
+      "Choose a road route"
+    );
+
+    element.addEventListener(
+      "click",
+      (event) => {
+        const routeButton =
+          event.target.closest(
+            "[data-rd120-route-index]"
+          );
+
+        if (routeButton) {
+          rd120SelectRouteChoice(
+            Number(
+              routeButton.dataset
+                .rd120RouteIndex
+            )
+          );
+
+          return;
+        }
+
+        if (
+          event.target.closest(
+            "#rd120UseRouteBtn"
+          )
+        ) {
+          rd120ConfirmRouteChoice();
+          return;
+        }
+
+        if (
+          event.target.closest(
+            "#rd120CancelRouteBtn"
+          )
+        ) {
+          rd120CancelRouteChoice();
+        }
+      }
+    );
+
+    document.body.appendChild(element);
+  }
+
+  return element;
+}
+
+
+function rd120RouteOptionHtml(
+  route,
+  index,
+  fastestMinutes
+) {
+  const minutes =
+    rd120RouteMinutes(route);
+
+  const difference = Math.max(
+    0,
+    minutes - fastestMinutes
+  );
+
+  const descriptor =
+    index === 0
+      ? "Fastest"
+      : difference > 0
+        ? `+${difference} min`
+        : "Similar time";
+
+  return `
+    <button
+      class="rd120-route-option ${
+        index ===
+          state.rd120RouteChoice
+            .selectedIndex
+          ? "selected"
+          : ""
+      }"
+      type="button"
+      data-rd120-route-index="${index}"
+      aria-pressed="${
+        index ===
+          state.rd120RouteChoice
+            .selectedIndex
+          ? "true"
+          : "false"
+      }"
+    >
+      <small>${descriptor}</small>
+      <strong>${minutes} min</strong>
+      <span>
+        ${rd120RouteDistanceLabel(route)}
+      </span>
+    </button>
+  `;
+}
+
+
+function rd120RenderRouteChooser() {
+  const choice =
+    state.rd120RouteChoice;
+
+  const element =
+    rd120RouteChooserElement();
+
+  if (
+    !choice.context ||
+    choice.routes.length < 2
+  ) {
+    element.hidden = true;
+    element.innerHTML = "";
+    return;
+  }
+
+  const fastestMinutes =
+    rd120RouteMinutes(
+      choice.routes[0]
+    );
+
+  element.innerHTML = `
+    <div class="rd120-route-heading">
+      <div>
+        <strong>
+          ${escapeHtml(
+            choice.label ||
+              "Choose a route"
+          )}
+        </strong>
+
+        <span>
+          Tap a route on the map or choose an option below.
+        </span>
+      </div>
+
+      <span class="rd120-route-count">
+        ${choice.routes.length} routes
+      </span>
+    </div>
+
+    <div class="rd120-route-options">
+      ${choice.routes
+        .map((route, index) =>
+          rd120RouteOptionHtml(
+            route,
+            index,
+            fastestMinutes
+          )
+        )
+        .join("")}
+    </div>
+
+    <div class="rd120-route-actions">
+      <button
+        id="rd120CancelRouteBtn"
+        class="rd120-route-action"
+        type="button"
+      >
+        Cancel
+      </button>
+
+      <button
+        id="rd120UseRouteBtn"
+        class="rd120-route-action use"
+        type="button"
+      >
+        Use Selected Route
+      </button>
+    </div>
+  `;
+
+  element.hidden = false;
+}
+
+function rd120ChoiceOwner() {
+  return state.rd120RouteChoice.context ===
+    "conquest"
+    ? state.conquest.layer
+    : state.routeLayer;
+}
+
+
+function rd120ChoiceColour() {
+  return state.rd120RouteChoice.context ===
+    "conquest"
+    ? rd86TeamColour(
+        state.conquest.viewerTeam
+      )
+    : ROUTE_BLUE;
+}
+
+
+function rd120ClearRouteChoiceLayers() {
+  const choice =
+    state.rd120RouteChoice;
+
+  const owner = rd120ChoiceOwner();
+
+  if (owner) {
+    for (
+      const line of choice.lineLayers
+    ) {
+      owner.removeLayer(line);
+    }
+
+    if (choice.haloLayer) {
+      owner.removeLayer(
+        choice.haloLayer
+      );
+    }
+  }
+
+  choice.lineLayers = [];
+  choice.haloLayer = null;
+}
+
+
+function rd120DrawRouteChoices() {
+  const choice =
+    state.rd120RouteChoice;
+
+  const owner = rd120ChoiceOwner();
+
+  rd120ClearRouteChoiceLayers();
+
+  if (
+    !owner ||
+    choice.routes.length < 2
+  ) {
+    return;
+  }
+
+  const colour =
+    rd120ChoiceColour();
+
+  const renderer =
+    state.navigationSvgRenderer ||
+    undefined;
+
+  const selectedRoute =
+    choice.routes[
+      choice.selectedIndex
+    ];
+
+  choice.haloLayer =
+    L.polyline(
+      selectedRoute.coords,
+      {
+        renderer,
+        color: "#eef7ff",
+        weight: 10,
+        opacity: 0.7,
+        lineCap: "round",
+        lineJoin: "round",
+        interactive: false
+      }
+    ).addTo(owner);
+
+  choice.lineLayers =
+    choice.routes.map(
+      (route, index) => {
+        const selected =
+          index ===
+          choice.selectedIndex;
+
+        const line = L.polyline(
+          route.coords,
+          {
+            renderer,
+            color: colour,
+            weight: selected ? 6 : 5,
+            opacity: selected ? 1 : 0.3,
+            lineCap: "round",
+            lineJoin: "round",
+            interactive: true,
+            bubblingMouseEvents: false
+          }
+        ).addTo(owner);
+
+        line.on("click", (event) => {
+          L.DomEvent.stop(
+            event.originalEvent
+          );
+
+          rd120SelectRouteChoice(
+            index
+          );
+        });
+
+        return line;
+      }
+    );
+
+  choice.lineLayers[
+    choice.selectedIndex
+  ]?.bringToFront?.();
+
+  state.waypointMarker
+    ?.bringToFront?.();
+
+  hs49ScheduleNavigationRedraw?.();
+}
+
+
+function rd120SelectRouteChoice(index) {
+  const choice =
+    state.rd120RouteChoice;
+
+  if (
+    !Number.isInteger(index) ||
+    index < 0 ||
+    index >= choice.routes.length ||
+    index === choice.selectedIndex
+  ) {
+    return;
+  }
+
+  choice.selectedIndex = index;
+
+  rd120DrawRouteChoices();
+  rd120RenderRouteChooser();
+}
+
+
+function rd120CloseRouteChoice() {
+  const choice =
+    state.rd120RouteChoice;
+
+  rd120ClearRouteChoiceLayers();
+
+  choice.context = "";
+  choice.label = "";
+  choice.routes = [];
+  choice.selectedIndex = 0;
+  choice.start = null;
+  choice.destination = null;
+  choice.fit = false;
+
+  const element =
+    document.getElementById(
+      "rd120RouteChooser"
+    );
+
+  if (element) {
+    element.hidden = true;
+    element.innerHTML = "";
+  }
+}
+
+
+function rd120FitRouteChoices() {
+  const routes =
+    state.rd120RouteChoice.routes;
+
+  if (
+    !state.map ||
+    routes.length === 0
+  ) {
+    return;
+  }
+
+  const coordinates = routes.flatMap(
+    (route) => route.coords
+  );
+
+  if (coordinates.length < 2) {
+    return;
+  }
+
+  state.map.fitBounds(
+    L.latLngBounds(coordinates),
+    {
+      paddingTopLeft: [48, 130],
+      paddingBottomRight: [48, 260],
+      maxZoom: 16,
+      animate: true
+    }
+  );
+
+  state.followUser = false;
+}
+
+
+function rd120OpenRouteChoice({
+  context,
+  label,
+  routes,
+  start,
+  destination,
+  fit = true
+}) {
+  rd120CloseRouteChoice();
+
+  if (context === "conquest") {
+    rd86ClearConquestRoute({
+      keepRequest: true
+    });
+  } else {
+    clearRouteLine();
+  }
+
+  Object.assign(
+    state.rd120RouteChoice,
+    {
+      context,
+      label,
+      routes,
+      selectedIndex: 0,
+
+      start: {
+        lat: Number(start.lat),
+        lng: Number(start.lng)
+      },
+
+      destination: {
+        lat: Number(destination.lat),
+        lng: Number(destination.lng)
+      },
+
+      fit
+    }
+  );
+
+  rd120DrawRouteChoices();
+  rd120RenderRouteChooser();
+
+  if (fit) {
+    rd120FitRouteChoices();
+  }
+
+  if (context === "normal") {
+    setDriveStatus(
+      "Choose a road route"
+    );
+  }
+
+  showToast(
+    `${routes.length} road routes found`
+  );
+}
+
+
+function rd120CommitNormalRoute(
+  route,
+  start,
+  options = {}
+) {
+  if (
+    !route ||
+    !state.waypointPoint
+  ) {
+    return;
+  }
+
+  drawRouteLine(route.coords);
+
+  state.routeDistanceM =
+    route.distanceM;
+
+  state.routeDurationS =
+    route.durationS;
+
+  state.lastRouteStartPoint = {
+    lat: Number(start.lat),
+    lng: Number(start.lng)
+  };
+
+  state.lastRouteAt = Date.now();
+
+  state.rd120RouteChoice
+    .normalOffRouteCount = 0;
+
+  if (
+    options.fit === true &&
+    route.coords.length > 1
+  ) {
+    state.map?.fitBounds(
+      L.latLngBounds(route.coords),
+      {
+        padding: [70, 120],
+        maxZoom: 16
+      }
+    );
+
+    state.followUser = false;
+  }
+
+  setDriveStatus(
+    state.isRecording
+      ? `Driving • waypoint ${metersToKm(
+          route.distanceM
+        )} km`
+      : `Waypoint ${metersToKm(
+          route.distanceM
+        )} km away`
+  );
+
+  updateWaypointButtons();
+}
+
+
+function rd120CommitConquestRoute(
+  route,
+  start
+) {
+  if (
+    !route ||
+    !state.conquest.personalWaypoint ||
+    !state.conquest.layer
+  ) {
+    return;
+  }
+
+  rd86ClearConquestRoute({
+    keepRequest: true
+  });
+
+  const colour =
+    rd86TeamColour(
+      state.conquest.viewerTeam
+    );
+
+  const renderer =
+    state.navigationSvgRenderer ||
+    undefined;
+
+  state.conquest.routeHalo =
+    L.polyline(
+      route.coords,
+      {
+        renderer,
+        color: "#eef7ff",
+        weight: 9,
+        opacity: 0.68,
+        lineCap: "round",
+        lineJoin: "round",
+        interactive: false
+      }
+    ).addTo(state.conquest.layer);
+
+  state.conquest.routeLine =
+    L.polyline(
+      route.coords,
+      {
+        renderer,
+        color: colour,
+        weight: 5,
+        opacity: 1,
+        lineCap: "round",
+        lineJoin: "round",
+        interactive: false
+      }
+    ).addTo(state.conquest.layer);
+
+  state.conquest.routeKey =
+    state.conquest
+      .personalWaypointKey;
+
+  state.conquest.lastRouteStartPoint = {
+    lat: Number(start.lat),
+    lng: Number(start.lng)
+  };
+
+  state.conquest.lastRouteAt =
+    Date.now();
+
+  state.rd120RouteChoice
+    .conquestOffRouteCount = 0;
+
+  rd112WaypointButtonState();
+  hs49ScheduleNavigationRedraw?.();
+}
+
+
+function rd120ConfirmRouteChoice() {
+  const choice =
+    state.rd120RouteChoice;
+
+  const context = choice.context;
+
+  const route =
+    choice.routes[
+      choice.selectedIndex
+    ];
+
+  const start = choice.start;
+
+  if (
+    !context ||
+    !route ||
+    !start
+  ) {
+    return;
+  }
+
+  rd120CloseRouteChoice();
+
+  if (context === "conquest") {
+    rd120CommitConquestRoute(
+      route,
+      start
+    );
+  } else {
+    rd120CommitNormalRoute(
+      route,
+      start,
+      { fit: false }
+    );
+  }
+
+  showToast(
+    `Route selected • ${
+      rd120RouteMinutes(route)
+    } min • ${
+      rd120RouteDistanceLabel(route)
+    }`
+  );
+}
+
+
+function rd120CancelRouteChoice() {
+  const context =
+    state.rd120RouteChoice.context;
+
+  if (!context) {
+    return;
+  }
+
+  rd120CloseRouteChoice();
+
+  if (context === "conquest") {
+    roadDiscoveryV120
+      .clearPersonalWaypoint({
+        toast: false
+      });
+  } else {
+    roadDiscoveryV120
+      .clearWaypoint(false);
+  }
+
+  if (context === "normal") {
+    setDriveStatus(
+      state.isRecording
+        ? "Driving"
+        : "Ready to drive"
+    );
+  }
+
+  showToast("Route choice cancelled");
+}
+
+
+/* -------------------------------------------------- */
+/* Normal waypoint routing                            */
+/* -------------------------------------------------- */
+
+routeToWaypoint = async function (
+  options = {}
+) {
+  const fit = options.fit === true;
+  const silent = options.silent === true;
+
+  const chooseAlternatives =
+    options.alternatives !== false &&
+    fit &&
+    !silent;
+
+  if (
+    !state.waypointPoint ||
+    state.isRouting
+  ) {
+    return;
+  }
+
+  if (
+    chooseAlternatives &&
+    state.rd120RouteChoice.context ===
+      "normal"
+  ) {
+    rd120CloseRouteChoice();
+  }
+
+  const destination = {
+    lat: Number(
+      state.waypointPoint.lat
+    ),
+    lng: Number(
+      state.waypointPoint.lng
+    )
+  };
+
+  const start =
+    options.start ||
+    await getFreshRouteStartPoint();
+
+  if (!start) {
+    showToast(
+      "Need GPS before routing to waypoint"
+    );
+    return;
+  }
+
+  const requestId =
+    ++state.routeRequestId;
+
+  state.isRouting = true;
+
+  if (!silent) {
+    setDriveStatus(
+      chooseAlternatives
+        ? "Finding route choices"
+        : "Updating waypoint route"
+    );
+  }
+
+  try {
+    const routes =
+      await rd120FetchRoadRoutes(
+        start,
+        destination,
+        {
+          routeCount:
+            chooseAlternatives
+              ? RD120_ROUTE_CHOICE_LIMIT
+              : 1,
+
+          followHeading:
+            options.followHeading ===
+              true ||
+            silent
+        }
+      );
+
+    if (
+      requestId !==
+        state.routeRequestId ||
+      !state.waypointPoint ||
+      Number(
+        state.waypointPoint.lat
+      ) !== destination.lat ||
+      Number(
+        state.waypointPoint.lng
+      ) !== destination.lng
+    ) {
+      return;
+    }
+
+    if (
+      chooseAlternatives &&
+      routes.length > 1
+    ) {
+      rd120OpenRouteChoice({
+        context: "normal",
+        label: "Choose waypoint route",
+        routes,
+        start,
+        destination,
+        fit: true
+      });
+    } else {
+      rd120CommitNormalRoute(
+        routes[0],
+        start,
+        { fit }
+      );
+
+      if (silent) {
+        showToast("Route updated");
+      }
+    }
+
+  } catch (error) {
+    console.error(error);
+
+    state.lastRouteAt = Date.now();
+
+    showToast(
+      "Could not find a road route to that waypoint"
+    );
+
+    setDriveStatus(
+      state.isRecording
+        ? "Driving"
+        : "Ready to drive"
+    );
+  } finally {
+    if (
+      requestId ===
+        state.routeRequestId
+    ) {
+      state.isRouting = false;
+    }
+
+    updateWaypointButtons();
+  }
+};
+
+
+clearWaypoint = function (
+  showMessage = true
+) {
+  if (
+    state.rd120RouteChoice.context ===
+      "normal"
+  ) {
+    rd120CloseRouteChoice();
+  }
+
+  state.rd120RouteChoice
+    .normalOffRouteCount = 0;
+
+  return roadDiscoveryV120
+    .clearWaypoint(showMessage);
+};
+
+
+startDrive = async function () {
+  if (
+    state.rd120RouteChoice.context ===
+      "normal"
+  ) {
+    rd120ConfirmRouteChoice();
+  }
+
+  return roadDiscoveryV120
+    .startDrive();
+};
+
+
+maybeUpdateWaypointRoute = function (
+  point
+) {
+  if (!state.waypointPoint) return;
+
+  if (
+    haversine(
+      point,
+      state.waypointPoint
+    ) <= ROUTE_ARRIVAL_RADIUS_M
+  ) {
+    clearWaypoint(false);
+    showToast("Waypoint reached");
+    return;
+  }
+
+  const choice =
+    state.rd120RouteChoice;
+
+  const accuracy =
+    Number(point?.accuracy);
+
+  if (
+    choice.context === "normal" ||
+    state.isRouting ||
+    state.hs50WaypointReroutePending ||
+    !state.routeLine ||
+    !Number.isFinite(accuracy) ||
+    accuracy > MAX_GPS_ACCURACY_M
+  ) {
+    return;
+  }
+
+  const offRoute =
+    hs50DistanceFromRouteM(
+      point,
+      state.routeLine
+    ) >= RD120_OFF_ROUTE_DISTANCE_M;
+
+  choice.normalOffRouteCount =
+    offRoute
+      ? choice.normalOffRouteCount + 1
+      : 0;
+
+  if (
+    choice.normalOffRouteCount <
+      RD120_OFF_ROUTE_CONFIRMATIONS ||
+    Date.now() -
+      Number(state.lastRouteAt || 0) <
+      RD120_REROUTE_COOLDOWN_MS
+  ) {
+    return;
+  }
+
+  choice.normalOffRouteCount = 0;
+  state.hs50WaypointReroutePending = true;
+
+  void routeToWaypoint({
+    fit: false,
+    silent: true,
+    alternatives: false,
+    followHeading: true,
+    start: point
+  }).finally(() => {
+    state.hs50WaypointReroutePending =
+      false;
+  });
+};
+
+
+/* -------------------------------------------------- */
+/* Conquest private waypoint routing                  */
+/* -------------------------------------------------- */
+
+rd112DrawPersonalWaypoint =
+async function (
+  options = {}
+) {
+  const waypoint =
+    state.conquest.personalWaypoint;
+
+  if (
+    !waypoint ||
+    state.conquest.viewerIsSpectator ||
+    ![
+      "active",
+      "overtime"
+    ].includes(state.conquest.phase)
+  ) {
+    return;
+  }
+
+  const initialChoice =
+    options.alternatives !== false &&
+    !options.start;
+
+  if (
+    initialChoice &&
+    state.rd120RouteChoice.context ===
+      "conquest"
+  ) {
+    rd120CloseRouteChoice();
+  }
+
+  const start =
+    options.start ||
+    state.currentPoint ||
+    await getFreshRouteStartPoint();
+
+  if (!start) {
+    showToast(
+      "Waiting for your location"
+    );
+    return;
+  }
+
+  const waypointKey =
+    state.conquest
+      .personalWaypointKey;
+
+  const requestId =
+    ++state.conquest.routeRequestId;
+
+  state.conquest.routeLoading = true;
+
+  try {
+    const routes =
+      await rd120FetchRoadRoutes(
+        start,
+        waypoint,
+        {
+          routeCount:
+            initialChoice
+              ? RD120_ROUTE_CHOICE_LIMIT
+              : 1,
+
+          followHeading:
+            options.followHeading ===
+              true ||
+            !initialChoice
+        }
+      );
+
+    if (
+      requestId !==
+        state.conquest.routeRequestId ||
+      !state.conquest.personalWaypoint ||
+      state.conquest
+        .personalWaypointKey !==
+        waypointKey
+    ) {
+      return;
+    }
+
+    if (
+      initialChoice &&
+      routes.length > 1
+    ) {
+      const label =
+        waypoint.kind === "objective"
+          ? `Choose route to Objective ${
+              waypoint.id
+            }`
+          : Number(waypoint.reward) ===
+              150
+            ? "Choose route to Legendary Cache"
+            : "Choose route to Road Cache";
+
+      rd120OpenRouteChoice({
+        context: "conquest",
+        label,
+        routes,
+        start,
+        destination: waypoint,
+        fit: true
+      });
+    } else {
+      rd120CommitConquestRoute(
+        routes[0],
+        start
+      );
+
+      if (!initialChoice) {
+        showToast("Route updated");
+      }
+    }
+
+  } catch (error) {
+    console.error(error);
+
+    state.conquest.lastRouteAt =
+      Date.now();
+
+    showToast(
+      "Could not load the Conquest waypoint"
+    );
+  } finally {
+    if (
+      requestId ===
+        state.conquest.routeRequestId
+    ) {
+      state.conquest.routeLoading =
+        false;
+    }
+  }
+};
+
+
+rd112ClearPersonalWaypoint = function (
+  options = {}
+) {
+  if (
+    state.rd120RouteChoice.context ===
+      "conquest"
+  ) {
+    rd120CloseRouteChoice();
+  }
+
+  state.rd120RouteChoice
+    .conquestOffRouteCount = 0;
+
+  return roadDiscoveryV120
+    .clearPersonalWaypoint(options);
+};
+
+
+rd86MaybeSendConquestLocation =
+async function (
+  point,
+  options = {}
+) {
+  const hasPersonalRoute = Boolean(
+    state.conquest.personalWaypoint &&
+    state.conquest.routeLine
+  );
+
+  const previousRouteAt =
+    state.conquest.lastRouteAt;
+
+  const guardRouteAt = Date.now();
+
+  /*
+    Stop the older distance-only refresh from replacing
+    a valid route every 140 metres. v120 reroutes only
+    after three consecutive off-route GPS readings.
+  */
+  if (hasPersonalRoute) {
+    state.conquest.lastRouteAt =
+      guardRouteAt;
+  }
+
+  const result =
+    await roadDiscoveryV120
+      .maybeSendConquestLocation(
+        point,
+        options
+      );
+
+  if (
+    hasPersonalRoute &&
+    state.conquest.lastRouteAt ===
+      guardRouteAt
+  ) {
+    state.conquest.lastRouteAt =
+      previousRouteAt;
+  }
+
+  const choice =
+    state.rd120RouteChoice;
+
+  const accuracy =
+    Number(point?.accuracy);
+
+  if (
+    !state.conquest.personalWaypoint ||
+    !state.conquest.routeLine ||
+    state.conquest.routeLoading ||
+    choice.context === "conquest" ||
+    choice.conquestReroutePending ||
+    !Number.isFinite(accuracy) ||
+    accuracy > MAX_GPS_ACCURACY_M ||
+    ![
+      "active",
+      "overtime"
+    ].includes(state.conquest.phase)
+  ) {
+    return result;
+  }
+
+  const offRoute =
+    hs50DistanceFromRouteM(
+      point,
+      state.conquest.routeLine
+    ) >= RD120_OFF_ROUTE_DISTANCE_M;
+
+  choice.conquestOffRouteCount =
+    offRoute
+      ? choice.conquestOffRouteCount + 1
+      : 0;
+
+  if (
+    choice.conquestOffRouteCount <
+      RD120_OFF_ROUTE_CONFIRMATIONS ||
+    Date.now() -
+      Number(
+        state.conquest.lastRouteAt || 0
+      ) < RD120_REROUTE_COOLDOWN_MS
+  ) {
+    return result;
+  }
+
+  choice.conquestOffRouteCount = 0;
+  choice.conquestReroutePending = true;
+
+  void rd112DrawPersonalWaypoint({
+    start: point,
+    alternatives: false,
+    followHeading: true
+  }).finally(() => {
+    choice.conquestReroutePending =
+      false;
+  });
+
+  return result;
+};
+
+
+rd86ResetConquestState = function (
+  options = {}
+) {
+  if (
+    state.rd120RouteChoice.context ===
+      "conquest"
+  ) {
+    rd120CloseRouteChoice();
+  }
+
+  state.rd120RouteChoice
+    .conquestOffRouteCount = 0;
+
+  state.rd120RouteChoice
+    .conquestReroutePending = false;
+
+  return roadDiscoveryV120
+    .resetConquestState(options);
+};
+
+
+function rd120RedrawChoicePaths() {
+  const choice =
+    state.rd120RouteChoice;
+
+  choice.haloLayer?.redraw?.();
+
+  for (
+    const line of choice.lineLayers
+  ) {
+    line?.redraw?.();
+  }
+}
+
+
+function rd120InitRouteChoices() {
+  rd120InstallRouteChoiceStyles();
+  rd120RouteChooserElement();
+
+  if (
+    state.map &&
+    !state.rd120RouteChoice
+      .mapEventsBound
+  ) {
+    state.rd120RouteChoice
+      .mapEventsBound = true;
+
+    state.map.on(
+      "rotate move zoomend resize",
+      rd120RedrawChoicePaths
+    );
+  }
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd120InitRouteChoices,
+    { once: true }
+  );
+
+} else {
+  rd120InitRouteChoices();
+}
