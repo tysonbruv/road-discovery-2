@@ -40499,3 +40499,330 @@ if (
 } else {
   rd114InitSavedMaps();
 }
+
+/* ================================================== */
+/* Road Discovery AU v115                             */
+/* Compact Legendary Cache countdown                  */
+/* ================================================== */
+
+const roadDiscoveryV115 = {
+  ensureLegendaryTimer:
+    rd112EnsureLegendaryTimer,
+
+  resetConquestState:
+    rd86ResetConquestState
+};
+
+
+state.conquest.legendaryCornerTimer =
+  null;
+
+
+function rd115InstallLegendaryClockStyles() {
+  if (
+    document.getElementById(
+      "rd115LegendaryClockStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd115LegendaryClockStyles";
+
+  style.textContent = `
+    .rd115-legendary-clock {
+      position: fixed;
+      right: max(
+        14px,
+        env(safe-area-inset-right)
+      );
+      bottom: max(
+        92px,
+        calc(
+          env(safe-area-inset-bottom) +
+          82px
+        )
+      );
+      z-index: 6350;
+      min-width: 108px;
+      padding: 8px 11px;
+      border: 1px solid
+        rgba(255, 205, 67, 0.66);
+      border-radius: 13px;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(50, 34, 5, 0.92),
+          rgba(13, 18, 27, 0.94)
+        );
+      box-shadow:
+        0 8px 24px
+          rgba(0, 0, 0, 0.38),
+        0 0 18px
+          rgba(255, 188, 32, 0.13);
+      color: #fff0ad;
+      text-align: center;
+      pointer-events: none;
+      backdrop-filter: blur(10px);
+    }
+
+    .rd115-legendary-clock[hidden] {
+      display: none;
+    }
+
+    .rd115-legendary-clock strong {
+      display: block;
+      color: #e6c65f;
+      font-size: 0.58rem;
+      font-weight: 1000;
+      letter-spacing: 0.08em;
+      line-height: 1.1;
+      text-transform: uppercase;
+    }
+
+    .rd115-legendary-clock span {
+      display: block;
+      margin-top: 3px;
+      color: #fff5c8;
+      font-size: 1rem;
+      font-variant-numeric:
+        tabular-nums;
+      font-weight: 1000;
+      line-height: 1;
+    }
+
+    @media (max-width: 520px) {
+      .rd115-legendary-clock {
+        right: max(
+          10px,
+          env(safe-area-inset-right)
+        );
+        bottom: max(
+          82px,
+          calc(
+            env(safe-area-inset-bottom) +
+            72px
+          )
+        );
+        min-width: 98px;
+        padding: 7px 9px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd115LegendaryClockElement() {
+  let element =
+    document.getElementById(
+      "rd115LegendaryClock"
+    );
+
+  if (!element) {
+    element =
+      document.createElement("div");
+
+    element.id =
+      "rd115LegendaryClock";
+
+    element.className =
+      "rd115-legendary-clock";
+
+    element.hidden = true;
+
+    element.setAttribute(
+      "role",
+      "timer"
+    );
+
+    element.setAttribute(
+      "aria-live",
+      "polite"
+    );
+
+    element.innerHTML = `
+      <strong>Legendary In</strong>
+      <span>--:--</span>
+    `;
+
+    document.body.appendChild(element);
+  }
+
+  return element;
+}
+
+
+function rd115HideLegendaryClock() {
+  const element =
+    document.getElementById(
+      "rd115LegendaryClock"
+    );
+
+  if (element) {
+    element.hidden = true;
+  }
+}
+
+
+function rd115LegendaryClockText(
+  remainingMs
+) {
+  const totalSeconds = Math.max(
+    0,
+    Math.ceil(remainingMs / 1000)
+  );
+
+  const minutes = Math.floor(
+    totalSeconds / 60
+  );
+
+  const seconds =
+    totalSeconds % 60;
+
+  return (
+    `${minutes}:` +
+    String(seconds).padStart(2, "0")
+  );
+}
+
+
+function rd115RenderLegendaryClock() {
+  const spawnMs = Date.parse(
+    state.conquest.legendarySpawnAt ||
+      ""
+  );
+
+  const matchStartsMs = Date.parse(
+    state.conquest.matchStartsAt || ""
+  );
+
+  if (
+    !Number.isFinite(spawnMs) ||
+    !Number.isFinite(matchStartsMs) ||
+    ![
+      "active",
+      "overtime"
+    ].includes(state.conquest.phase)
+  ) {
+    rd115HideLegendaryClock();
+    return;
+  }
+
+  const serverNow =
+    rd112LegendaryServerNow();
+
+  const firstRegularWaveAt =
+    matchStartsMs +
+    3 * 60 * 1000;
+
+  const remainingMs =
+    spawnMs - serverNow;
+
+  if (
+    serverNow < firstRegularWaveAt ||
+    remainingMs <= 3000
+  ) {
+    rd115HideLegendaryClock();
+    return;
+  }
+
+  const element =
+    rd115LegendaryClockElement();
+
+  const value =
+    element.querySelector("span");
+
+  if (value) {
+    value.textContent =
+      rd115LegendaryClockText(
+        remainingMs
+      );
+  }
+
+  element.hidden = false;
+}
+
+
+function rd115EnsureLegendaryClockTimer() {
+  if (
+    state.conquest
+      .legendaryCornerTimer === null
+  ) {
+    state.conquest
+      .legendaryCornerTimer =
+        window.setInterval(
+          rd115RenderLegendaryClock,
+          250
+        );
+  }
+
+  rd115RenderLegendaryClock();
+}
+
+
+function rd115StopLegendaryClockTimer() {
+  if (
+    state.conquest
+      .legendaryCornerTimer !== null
+  ) {
+    window.clearInterval(
+      state.conquest
+        .legendaryCornerTimer
+    );
+
+    state.conquest
+      .legendaryCornerTimer = null;
+  }
+
+  rd115HideLegendaryClock();
+}
+
+
+rd112EnsureLegendaryTimer =
+function () {
+  const result =
+    roadDiscoveryV115
+      .ensureLegendaryTimer();
+
+  rd115EnsureLegendaryClockTimer();
+
+  return result;
+};
+
+
+rd86ResetConquestState =
+function (options = {}) {
+  rd115StopLegendaryClockTimer();
+
+  return roadDiscoveryV115
+    .resetConquestState(options);
+};
+
+
+function rd115InitLegendaryClock() {
+  rd115InstallLegendaryClockStyles();
+
+  if (rd86HasConquestRound()) {
+    rd115EnsureLegendaryClockTimer();
+  }
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd115InitLegendaryClock,
+    { once: true }
+  );
+
+} else {
+  rd115InitLegendaryClock();
+}
