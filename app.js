@@ -38585,3 +38585,1917 @@ if (
 } else {
   rd113Init();
 }
+
+/* ================================================== */
+/* Road Discovery AU v114                             */
+/* Private saved Custom Conquest maps                 */
+/* ================================================== */
+
+const roadDiscoveryV114 = {
+  renderSettings:
+    rd95RenderConquestSettings,
+
+  renderPlacement:
+    rd94RenderPlacementOverlay,
+
+  buildCandidates:
+    rd94BuildCustomArenaCandidates,
+
+  beginPlacement:
+    rd94BeginArenaPlacement,
+
+  cancelPlacement:
+    rd94CancelArenaPlacement,
+
+  renderMultiplayerState
+};
+
+
+state.customConquest.savedMaps = [];
+
+state.customConquest.savedMapsLoaded =
+  false;
+
+state.customConquest.savedMapsLoading =
+  false;
+
+state.customConquest.savedMapsError =
+  "";
+
+state.customConquest.savedMapsOwnerId =
+  "";
+
+state.conquestArena.savedMapId =
+  null;
+
+state.conquestArena.savedMapSnapshot =
+  null;
+
+state.conquestArena.savedRoadCandidates =
+  [];
+
+
+function rd114ClearActiveSavedMap() {
+  state.conquestArena.savedMapId =
+    null;
+
+  state.conquestArena.savedMapSnapshot =
+    null;
+
+  state.conquestArena
+    .savedRoadCandidates = [];
+}
+
+
+function rd114NormaliseSavedMap(
+  row
+) {
+  const objectiveCount =
+    rd113SafeObjectiveCount(
+      row?.objective_count
+    );
+
+  const rally = {
+    lat: Number(row?.rally_lat),
+    lng: Number(row?.rally_lng),
+    accuracy: 0,
+    highway: "saved",
+    road_name: "Saved Rally"
+  };
+
+  const objectives =
+    rd86NormaliseJsonArray(
+      row?.objectives
+    )
+      .map((objective) => ({
+        code: String(
+          objective?.code || ""
+        ).toUpperCase(),
+
+        lat: Number(
+          objective?.lat
+        ),
+
+        lng: Number(
+          objective?.lng
+        ),
+
+        highway: "saved",
+
+        road_name:
+          "Saved objective"
+      }))
+      .filter(
+        (objective) =>
+          /^[A-G]$/.test(
+            objective.code
+          ) &&
+          Number.isFinite(
+            objective.lat
+          ) &&
+          Number.isFinite(
+            objective.lng
+          )
+      )
+      .sort(
+        (first, second) =>
+          first.code.localeCompare(
+            second.code
+          )
+      )
+      .slice(
+        0,
+        objectiveCount
+      );
+
+  const roadCandidates =
+    rd86NormaliseJsonArray(
+      row?.road_candidates
+    )
+      .map((candidate) => ({
+        lat: Number(
+          candidate?.lat
+        ),
+
+        lng: Number(
+          candidate?.lng
+        ),
+
+        road_count: Math.max(
+          1,
+
+          Number(
+            candidate?.road_count
+          ) || 1
+        ),
+
+        routeable: true
+      }))
+      .filter(
+        (candidate) =>
+          Number.isFinite(
+            candidate.lat
+          ) &&
+          Number.isFinite(
+            candidate.lng
+          )
+      )
+      .slice(
+        0,
+        RD86_CONQUEST_MAX_CANDIDATES
+      );
+
+  if (
+    !row?.id ||
+    !Number.isFinite(
+      rally.lat
+    ) ||
+    !Number.isFinite(
+      rally.lng
+    ) ||
+    objectives.length !==
+      objectiveCount
+  ) {
+    return null;
+  }
+
+  return {
+    id: String(row.id),
+
+    mapName:
+      String(
+        row.map_name ||
+          "Saved Map"
+      ).trim() ||
+      "Saved Map",
+
+    objectiveCount,
+    rally,
+    objectives,
+    roadCandidates,
+
+    createdAt:
+      row.created_at || null,
+
+    updatedAt:
+      row.updated_at || null
+  };
+}
+
+
+function rd114SavedMapById(
+  mapId
+) {
+  return (
+    state.customConquest
+      .savedMaps
+      .find(
+        (savedMap) =>
+          String(savedMap.id) ===
+            String(mapId || "")
+      ) ||
+    null
+  );
+}
+
+
+function rd114MapPointClose(
+  first,
+  second
+) {
+  return Boolean(
+    first &&
+    second &&
+
+    Math.abs(
+      Number(first.lat) -
+        Number(second.lat)
+    ) < 0.000002 &&
+
+    Math.abs(
+      Number(first.lng) -
+        Number(second.lng)
+    ) < 0.000002
+  );
+}
+
+
+function rd114CurrentArenaMatchesSavedMap() {
+  const saved =
+    state.conquestArena
+      .savedMapSnapshot;
+
+  if (
+    !saved ||
+
+    !rd114MapPointClose(
+      saved.rally,
+      state.conquestArena.centre
+    ) ||
+
+    saved.objectives.length !==
+      state.conquestArena
+        .objectives.length
+  ) {
+    return false;
+  }
+
+  return saved.objectives.every(
+    (objective) => {
+      const current =
+        state.conquestArena
+          .objectives
+          .find(
+            (item) =>
+              item.code ===
+                objective.code
+          );
+
+      return rd114MapPointClose(
+        objective,
+        current
+      );
+    }
+  );
+}
+
+function rd114InstallSavedMapStyles() {
+  if (
+    document.getElementById(
+      "rd114SavedMapStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd114SavedMapStyles";
+
+  style.textContent = `
+    .rd114-saved-maps {
+      display: grid;
+      gap: 10px;
+      margin: 14px 0;
+      padding: 12px;
+      border: 1px solid
+        rgba(143, 164, 196, 0.24);
+      border-radius: 16px;
+      background:
+        rgba(12, 19, 31, 0.58);
+    }
+
+    .rd114-saved-maps[hidden] {
+      display: none;
+    }
+
+    .rd114-saved-maps-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .rd114-saved-maps-heading strong {
+      color: #dce9ff;
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .rd114-saved-count {
+      flex: 0 0 auto;
+      padding: 4px 7px;
+      border: 1px solid
+        rgba(182, 134, 255, 0.34);
+      border-radius: 999px;
+      background:
+        rgba(118, 65, 190, 0.2);
+      color: #e3cdff;
+      font-size: 0.68rem;
+      font-weight: 900;
+    }
+
+    .rd114-saved-note {
+      margin: 0;
+      color: #9fb2cc;
+      font-size: 0.72rem;
+      line-height: 1.4;
+    }
+
+    .rd114-new-map-btn {
+      min-height: 43px;
+      border: 1px solid
+        rgba(93, 194, 139, 0.42);
+      border-radius: 12px;
+      background:
+        rgba(24, 142, 83, 0.25);
+      color: #dfffee;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd114-new-map-btn:disabled,
+    .rd114-map-action:disabled {
+      opacity: 0.43;
+      cursor: default;
+    }
+
+    .rd114-saved-map-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .rd114-saved-map-card {
+      overflow: hidden;
+      border: 1px solid
+        rgba(148, 170, 202, 0.25);
+      border-radius: 14px;
+      background:
+        rgba(21, 31, 47, 0.9);
+    }
+
+    .rd114-map-preview {
+      display: block;
+      width: 100%;
+      height: 112px;
+      background: #09101a;
+    }
+
+    .rd114-map-card-body {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+    }
+
+    .rd114-map-card-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .rd114-map-card-title strong {
+      min-width: 0;
+      overflow: hidden;
+      color: #f5f9ff;
+      font-size: 0.82rem;
+      font-weight: 900;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rd114-map-card-title span {
+      flex: 0 0 auto;
+      color: #f5d670;
+      font-size: 0.68rem;
+      font-weight: 900;
+    }
+
+    .rd114-map-actions {
+      display: grid;
+      grid-template-columns:
+        1.3fr 0.85fr 0.85fr;
+      gap: 6px;
+    }
+
+    .rd114-map-action {
+      min-height: 38px;
+      padding: 7px 8px;
+      border: 1px solid
+        rgba(151, 170, 199, 0.3);
+      border-radius: 10px;
+      background:
+        rgba(31, 43, 61, 0.9);
+      color: #f5f9ff;
+      font: inherit;
+      font-size: 0.72rem;
+      font-weight: 850;
+      cursor: pointer;
+    }
+
+    .rd114-map-action.use {
+      border-color:
+        rgba(93, 194, 139, 0.48);
+      background:
+        rgba(24, 142, 83, 0.28);
+    }
+
+    .rd114-map-action.delete {
+      color: #ffc4c0;
+    }
+
+    .rd114-saved-empty {
+      padding: 12px;
+      border: 1px dashed
+        rgba(151, 170, 199, 0.25);
+      border-radius: 12px;
+      color: #94a7c0;
+      font-size: 0.73rem;
+      line-height: 1.42;
+      text-align: center;
+    }
+
+    #rd114SaveArenaBtn {
+      border-color:
+        rgba(182, 134, 255, 0.45);
+      background:
+        rgba(118, 65, 190, 0.28);
+    }
+
+    .rd94-arena-actions.rd114-has-save {
+      grid-template-columns:
+        auto auto auto 1fr;
+    }
+
+    @media (max-width: 520px) {
+      .rd94-arena-actions.rd114-has-save {
+        grid-template-columns:
+          1fr 1fr;
+      }
+
+      .rd94-arena-actions.rd114-has-save
+      .rd94-arena-action.confirm {
+        grid-column: auto;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd114SavedMapPreviewSvg(
+  savedMap
+) {
+  const points = [
+    savedMap.rally,
+    ...savedMap.objectives
+  ];
+
+  const meanLatitude =
+    points.reduce(
+      (total, point) =>
+        total +
+        Number(point.lat),
+      0
+    ) / points.length;
+
+  const longitudeScale =
+    Math.max(
+      0.2,
+
+      Math.cos(
+        meanLatitude *
+          Math.PI /
+          180
+      )
+    );
+
+  const projected =
+    points.map(
+      (point) => ({
+        ...point,
+
+        mapX:
+          Number(point.lng) *
+            longitudeScale,
+
+        mapY:
+          Number(point.lat)
+      })
+    );
+
+  const minX =
+    Math.min(
+      ...projected.map(
+        (point) => point.mapX
+      )
+    );
+
+  const maxX =
+    Math.max(
+      ...projected.map(
+        (point) => point.mapX
+      )
+    );
+
+  const minY =
+    Math.min(
+      ...projected.map(
+        (point) => point.mapY
+      )
+    );
+
+  const maxY =
+    Math.max(
+      ...projected.map(
+        (point) => point.mapY
+      )
+    );
+
+  const rangeX =
+    Math.max(
+      maxX - minX,
+      0.0001
+    );
+
+  const rangeY =
+    Math.max(
+      maxY - minY,
+      0.0001
+    );
+
+  const project =
+    (point) => {
+      const mapX =
+        Number(point.lng) *
+          longitudeScale;
+
+      return {
+        x:
+          18 +
+          (
+            (
+              mapX - minX
+            ) /
+            rangeX
+          ) *
+            204,
+
+        y:
+          94 -
+          (
+            (
+              Number(point.lat) -
+                minY
+            ) /
+            rangeY
+          ) *
+            78
+      };
+    };
+
+  const objectiveDots =
+    savedMap.objectives
+      .map(
+        (objective) => {
+          const position =
+            project(objective);
+
+          return `
+            <circle
+              cx="${
+                position.x.toFixed(2)
+              }"
+              cy="${
+                position.y.toFixed(2)
+              }"
+              r="8"
+              fill="#202738"
+              stroke="#f4cf58"
+              stroke-width="2"
+            />
+
+            <text
+              x="${
+                position.x.toFixed(2)
+              }"
+              y="${
+                (
+                  position.y + 3
+                ).toFixed(2)
+              }"
+              fill="#ffe886"
+              font-size="8"
+              font-weight="900"
+              text-anchor="middle"
+            >
+              ${objective.code}
+            </text>
+          `;
+        }
+      )
+      .join("");
+
+  const rallyPosition =
+    project(savedMap.rally);
+
+  return `
+    <svg
+      class="rd114-map-preview"
+      viewBox="0 0 240 112"
+      role="img"
+      aria-label="Preview of ${
+        escapeHtml(
+          savedMap.mapName
+        )
+      }"
+    >
+      <rect
+        width="240"
+        height="112"
+        fill="#09101a"
+      />
+
+      <path
+        d="M0 28 H240 M0 56 H240 M0 84 H240 M48 0 V112 M96 0 V112 M144 0 V112 M192 0 V112"
+        fill="none"
+        stroke="#1c2a3a"
+        stroke-width="1"
+      />
+
+      ${objectiveDots}
+
+      <circle
+        cx="${
+          rallyPosition.x.toFixed(2)
+        }"
+        cy="${
+          rallyPosition.y.toFixed(2)
+        }"
+        r="7"
+        fill="#243346"
+        stroke="#e5f1ff"
+        stroke-width="2"
+      />
+
+      <text
+        x="${
+          rallyPosition.x.toFixed(2)
+        }"
+        y="${
+          (
+            rallyPosition.y + 2.8
+          ).toFixed(2)
+        }"
+        fill="#ffffff"
+        font-size="6"
+        font-weight="900"
+        text-anchor="middle"
+      >
+        R
+      </text>
+    </svg>
+  `;
+}
+
+function rd114SavedMapCardHtml(
+  savedMap
+) {
+  const disabled = Boolean(
+    state.customConquest.starting ||
+    hasActiveConquestRound() ||
+    hasActiveHideSeekRound()
+  );
+
+  const id =
+    escapeHtml(savedMap.id);
+
+  return `
+    <article
+      class="rd114-saved-map-card"
+    >
+      ${
+        rd114SavedMapPreviewSvg(
+          savedMap
+        )
+      }
+
+      <div
+        class="rd114-map-card-body"
+      >
+        <div
+          class="rd114-map-card-title"
+        >
+          <strong>
+            ${
+              escapeHtml(
+                savedMap.mapName
+              )
+            }
+          </strong>
+
+          <span>
+            ${savedMap.objectiveCount}
+            •
+            ${
+              savedMap.objectiveCount ===
+                7
+                ? "A–G"
+                : "A–E"
+            }
+          </span>
+        </div>
+
+        <div
+          class="rd114-map-actions"
+        >
+          <button
+            class="rd114-map-action use"
+            type="button"
+            data-rd114-use-map="${id}"
+            ${
+              disabled
+                ? "disabled"
+                : ""
+            }
+          >
+            Use Map
+          </button>
+
+          <button
+            class="rd114-map-action"
+            type="button"
+            data-rd114-rename-map="${id}"
+            ${
+              disabled
+                ? "disabled"
+                : ""
+            }
+          >
+            Rename
+          </button>
+
+          <button
+            class="rd114-map-action delete"
+            type="button"
+            data-rd114-delete-map="${id}"
+            ${
+              disabled
+                ? "disabled"
+                : ""
+            }
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+
+function rd114EnsureSavedMapsUi() {
+  rd114InstallSavedMapStyles();
+
+  const customBox =
+    document.getElementById(
+      "customConquestBox"
+    );
+
+  if (!customBox) return;
+
+  let section =
+    document.getElementById(
+      "rd114SavedMaps"
+    );
+
+  if (!section) {
+    section =
+      document.createElement(
+        "section"
+      );
+
+    section.id =
+      "rd114SavedMaps";
+
+    section.className =
+      "rd114-saved-maps";
+
+    section.innerHTML = `
+      <div
+        class="rd114-saved-maps-heading"
+      >
+        <strong>
+          Saved Maps
+        </strong>
+
+        <span
+          id="rd114SavedMapCount"
+          class="rd114-saved-count"
+        >
+          0 / 10
+        </span>
+      </div>
+
+      <p class="rd114-saved-note">
+        Private to your Road Profile. Load a tested arena without placing Rally and every objective again.
+      </p>
+
+      <button
+        id="rd114NewCustomMapBtn"
+        class="rd114-new-map-btn"
+        type="button"
+      >
+        Create New Custom Map
+      </button>
+
+      <div
+        id="rd114SavedMapList"
+        class="rd114-saved-map-list"
+      ></div>
+    `;
+
+    section.addEventListener(
+      "click",
+      (event) => {
+        const newButton =
+          event.target.closest(
+            "#rd114NewCustomMapBtn"
+          );
+
+        if (newButton) {
+          void rd94BeginArenaPlacement(
+            "custom"
+          );
+
+          return;
+        }
+
+        const useButton =
+          event.target.closest(
+            "[data-rd114-use-map]"
+          );
+
+        if (useButton) {
+          void rd114UseSavedMap(
+            useButton.dataset
+              .rd114UseMap
+          );
+
+          return;
+        }
+
+        const renameButton =
+          event.target.closest(
+            "[data-rd114-rename-map]"
+          );
+
+        if (renameButton) {
+          void rd114RenameSavedMap(
+            renameButton.dataset
+              .rd114RenameMap
+          );
+
+          return;
+        }
+
+        const deleteButton =
+          event.target.closest(
+            "[data-rd114-delete-map]"
+          );
+
+        if (deleteButton) {
+          void rd114DeleteSavedMap(
+            deleteButton.dataset
+              .rd114DeleteMap
+          );
+        }
+      }
+    );
+
+    const optionsBox =
+      document.getElementById(
+        "rd113ConquestOptions"
+      );
+
+    if (optionsBox) {
+      optionsBox
+        .insertAdjacentElement(
+          "afterend",
+          section
+        );
+
+    } else {
+      customBox.insertBefore(
+        section,
+
+        document.getElementById(
+          "startCustomConquestBtn"
+        ) ||
+          null
+      );
+    }
+  }
+
+  rd114RenderSavedMapsUi();
+}
+
+
+function rd114RenderSavedMapsUi() {
+  const section =
+    document.getElementById(
+      "rd114SavedMaps"
+    );
+
+  const list =
+    document.getElementById(
+      "rd114SavedMapList"
+    );
+
+  const count =
+    document.getElementById(
+      "rd114SavedMapCount"
+    );
+
+  const newButton =
+    document.getElementById(
+      "rd114NewCustomMapBtn"
+    );
+
+  if (
+    !section ||
+    !list ||
+    !count
+  ) {
+    return;
+  }
+
+  const isHost =
+    rd87IsRoomCreator();
+
+  section.hidden = !isHost;
+
+  if (!isHost) return;
+
+  const maps =
+    state.customConquest.savedMaps;
+
+  count.textContent =
+    `${maps.length} / 10`;
+
+  if (newButton) {
+    newButton.disabled =
+      Boolean(
+        state.customConquest
+          .starting ||
+        hasActiveConquestRound() ||
+        hasActiveHideSeekRound()
+      );
+  }
+
+  if (
+    state.customConquest
+      .savedMapsLoading
+  ) {
+    list.innerHTML = `
+      <div
+        class="rd114-saved-empty"
+      >
+        Loading your saved maps...
+      </div>
+    `;
+
+    return;
+  }
+
+  if (
+    state.customConquest
+      .savedMapsError
+  ) {
+    list.innerHTML = `
+      <div
+        class="rd114-saved-empty"
+      >
+        ${
+          escapeHtml(
+            state.customConquest
+              .savedMapsError
+          )
+        }
+      </div>
+    `;
+
+    return;
+  }
+
+  list.innerHTML =
+    maps.length
+      ? maps
+          .map(
+            rd114SavedMapCardHtml
+          )
+          .join("")
+      : `
+          <div
+            class="rd114-saved-empty"
+          >
+            No saved maps yet. Create a custom arena, place Rally and the objectives, then press Save Map.
+          </div>
+        `;
+}
+
+async function rd114LoadSavedMaps(
+  force = false
+) {
+  const userId =
+    String(
+      state.auth.user?.id || ""
+    );
+
+  if (
+    !userId ||
+    !state.auth.client ||
+    !rd87IsRoomCreator()
+  ) {
+    return;
+  }
+
+  if (
+    state.customConquest
+      .savedMapsOwnerId !==
+        userId
+  ) {
+    state.customConquest.savedMaps =
+      [];
+
+    state.customConquest
+      .savedMapsLoaded = false;
+
+    state.customConquest
+      .savedMapsOwnerId = userId;
+  }
+
+  if (
+    state.customConquest
+      .savedMapsLoading ||
+    (
+      state.customConquest
+        .savedMapsLoaded &&
+      !force
+    )
+  ) {
+    return;
+  }
+
+  state.customConquest
+    .savedMapsLoading = true;
+
+  state.customConquest
+    .savedMapsError = "";
+
+  rd114RenderSavedMapsUi();
+
+  try {
+    const { data, error } =
+      await state.auth.client.rpc(
+        "get_my_conquest_saved_maps"
+      );
+
+    if (error) {
+      throw error;
+    }
+
+    state.customConquest.savedMaps =
+      (
+        Array.isArray(data)
+          ? data
+          : []
+      )
+        .map(
+          rd114NormaliseSavedMap
+        )
+        .filter(Boolean)
+        .slice(0, 10);
+
+    state.customConquest
+      .savedMapsLoaded = true;
+
+  } catch (error) {
+    console.error(error);
+
+    state.customConquest
+      .savedMapsError =
+        rd86ConquestErrorMessage(
+          error
+        );
+
+  } finally {
+    state.customConquest
+      .savedMapsLoading = false;
+
+    rd114RenderSavedMapsUi();
+  }
+}
+
+
+async function rd114UseSavedMap(
+  mapId
+) {
+  const savedMap =
+    rd114SavedMapById(mapId);
+
+  if (
+    !savedMap ||
+    !rd87IsRoomCreator() ||
+    !hasActiveMultiplayerRoom() ||
+    hasActiveConquestRound() ||
+    hasActiveHideSeekRound() ||
+    state.customConquest.starting
+  ) {
+    return;
+  }
+
+  const roster =
+    rd87CustomRoster();
+
+  if (!roster.valid) {
+    showToast(
+      roster.errors[0] ||
+        "Choose a valid Red and Blue roster."
+    );
+
+    return;
+  }
+
+  state.customConquest
+    .objectiveCount =
+      savedMap.objectiveCount;
+
+  rd113ApplyObjectiveCodes();
+
+  state.conquestArena.mode =
+    "custom";
+
+  state.conquestArena.startKind =
+    "custom";
+
+  state.conquestArena.centre = {
+    ...savedMap.rally
+  };
+
+  state.conquestArena.objectives =
+    savedMap.objectives.map(
+      (objective) => ({
+        ...objective
+      })
+    );
+
+  state.conquestArena.savedMapId =
+    savedMap.id;
+
+  state.conquestArena
+    .savedMapSnapshot =
+      savedMap;
+
+  state.conquestArena
+    .savedRoadCandidates =
+      savedMap.roadCandidates.map(
+        (candidate) => ({
+          ...candidate
+        })
+      );
+
+  state.conquestArena.active =
+    true;
+
+  state.conquestArena.busy =
+    true;
+
+  closePanels();
+
+  state.awaitingWaypointClick =
+    false;
+
+  state.followUser = false;
+
+  rd94ClearPlacementLayers();
+
+  rd94RenderPlacementOverlay(
+    `Loading ${
+      savedMap.mapName
+    }...`
+  );
+
+  try {
+    await ensureRoadsNearPoint(
+      savedMap.rally,
+      {
+        replaceIfFar: true,
+        quiet: true
+      }
+    );
+
+  } catch (error) {
+    console.warn(
+      "Saved arena road preview could not refresh.",
+      error
+    );
+  }
+
+  state.conquestArena.busy =
+    false;
+
+  rd94ClearPlacementLayers();
+  rd94DrawArenaCentre();
+  rd94BindArenaMapClick();
+
+  const boundsPoints = [
+    savedMap.rally,
+    ...savedMap.objectives
+  ].map(
+    (point) => [
+      point.lat,
+      point.lng
+    ]
+  );
+
+  if (
+    state.map &&
+    boundsPoints.length > 1
+  ) {
+    state.map.fitBounds(
+      boundsPoints,
+      {
+        paddingTopLeft:
+          [25, 235],
+
+        paddingBottomRight:
+          [25, 70],
+
+        maxZoom: 14,
+        animate: true
+      }
+    );
+  }
+
+  rd94RenderPlacementOverlay();
+
+  showToast(
+    `${
+      savedMap.mapName
+    } loaded • review and confirm`
+  );
+}
+
+
+async function rd114RenameSavedMap(
+  mapId
+) {
+  const savedMap =
+    rd114SavedMapById(mapId);
+
+  if (
+    !savedMap ||
+    !state.auth.client
+  ) {
+    return;
+  }
+
+  const nextName =
+    window.prompt(
+      "Rename this saved Conquest map:",
+      savedMap.mapName
+    );
+
+  if (nextName === null) {
+    return;
+  }
+
+  const cleanName =
+    nextName.trim();
+
+  if (
+    cleanName.length < 1 ||
+    cleanName.length > 40
+  ) {
+    showToast(
+      "Map names must contain 1–40 characters"
+    );
+
+    return;
+  }
+
+  const { error } =
+    await state.auth.client.rpc(
+      "rename_my_conquest_saved_map",
+      {
+        p_map_id:
+          savedMap.id,
+
+        p_map_name:
+          cleanName
+      }
+    );
+
+  if (error) {
+    showToast(
+      rd86ConquestErrorMessage(
+        error
+      )
+    );
+
+    return;
+  }
+
+  await rd114LoadSavedMaps(
+    true
+  );
+
+  showToast(
+    "Saved map renamed"
+  );
+}
+
+
+async function rd114DeleteSavedMap(
+  mapId
+) {
+  const savedMap =
+    rd114SavedMapById(mapId);
+
+  if (
+    !savedMap ||
+    !state.auth.client
+  ) {
+    return;
+  }
+
+  const accepted =
+    window.confirm(
+      `Delete “${
+        savedMap.mapName
+      }” from your Road Profile?`
+    );
+
+  if (!accepted) return;
+
+  const { error } =
+    await state.auth.client.rpc(
+      "delete_my_conquest_saved_map",
+      {
+        p_map_id:
+          savedMap.id
+      }
+    );
+
+  if (error) {
+    showToast(
+      rd86ConquestErrorMessage(
+        error
+      )
+    );
+
+    return;
+  }
+
+  if (
+    String(
+      state.conquestArena
+        .savedMapId ||
+        ""
+    ) ===
+      String(savedMap.id)
+  ) {
+    rd114ClearActiveSavedMap();
+  }
+
+  await rd114LoadSavedMaps(
+    true
+  );
+
+  showToast(
+    "Saved map deleted"
+  );
+}
+
+function rd114EnsurePlacementSaveButton() {
+  const actions =
+    document.querySelector(
+      ".rd94-arena-actions"
+    );
+
+  const confirmButton =
+    document.getElementById(
+      "rd94ArenaConfirmBtn"
+    );
+
+  if (
+    !actions ||
+    !confirmButton
+  ) {
+    return null;
+  }
+
+  let saveButton =
+    document.getElementById(
+      "rd114SaveArenaBtn"
+    );
+
+  if (!saveButton) {
+    saveButton =
+      document.createElement(
+        "button"
+      );
+
+    saveButton.id =
+      "rd114SaveArenaBtn";
+
+    saveButton.className =
+      "rd94-arena-action";
+
+    saveButton.type =
+      "button";
+
+    saveButton.textContent =
+      "Save Map";
+
+    saveButton.addEventListener(
+      "click",
+      () => {
+        void rd114SaveCurrentArena();
+      }
+    );
+
+    actions.insertBefore(
+      saveButton,
+      confirmButton
+    );
+
+    actions.classList.add(
+      "rd114-has-save"
+    );
+  }
+
+  return saveButton;
+}
+
+
+function rd114RenderPlacementSaveButton() {
+  const saveButton =
+    rd114EnsurePlacementSaveButton();
+
+  if (!saveButton) return;
+
+  const validation =
+    rd94ArenaValidation();
+
+  const updating =
+    Boolean(
+      state.conquestArena
+        .savedMapId
+    );
+
+  const mapLimitReached =
+    state.customConquest
+      .savedMaps.length >= 10;
+
+  saveButton.hidden =
+    !state.conquestArena.active;
+
+  saveButton.disabled =
+    Boolean(
+      state.conquestArena.busy ||
+      !validation.valid ||
+      !rd94IsArenaHost() ||
+      (
+        !updating &&
+        mapLimitReached
+      )
+    );
+
+  saveButton.textContent =
+    state.conquestArena.busy
+      ? "Checking..."
+      : updating
+        ? "Update Map"
+        : "Save Map";
+}
+
+
+async function rd114SaveCurrentArena() {
+  const validation =
+    rd94ArenaValidation();
+
+  if (
+    !validation.valid ||
+    state.conquestArena.busy ||
+    !state.auth.client ||
+    !rd94IsArenaHost()
+  ) {
+    return;
+  }
+
+  const existingMap =
+    rd114SavedMapById(
+      state.conquestArena
+        .savedMapId
+    );
+
+  if (
+    !existingMap &&
+    state.customConquest
+      .savedMaps.length >= 10
+  ) {
+    showToast(
+      "Delete a saved map before creating another • 10 / 10"
+    );
+
+    return;
+  }
+
+  const suggestedName =
+    existingMap?.mapName ||
+    `Conquest Map ${
+      state.customConquest
+        .savedMaps.length + 1
+    }`;
+
+  const suppliedName =
+    window.prompt(
+      existingMap
+        ? "Update this saved map and its name:"
+        : "Name this Conquest map:",
+
+      suggestedName
+    );
+
+  if (
+    suppliedName === null
+  ) {
+    return;
+  }
+
+  const mapName =
+    suppliedName.trim();
+
+  if (
+    mapName.length < 1 ||
+    mapName.length > 40
+  ) {
+    showToast(
+      "Map names must contain 1–40 characters"
+    );
+
+    return;
+  }
+
+  const label =
+    rd113ObjectiveRangeLabel();
+
+  const safetyAccepted =
+    window.confirm(
+      `Save “${mapName}” to your Road Profile?\n\nI confirm Rally and ${label} are safe, public and legally accessible locations. None require stopping on a motorway, freeway, tunnel or dangerous roadside.`
+    );
+
+  if (!safetyAccepted) {
+    return;
+  }
+
+  state.conquestArena.busy =
+    true;
+
+  rd94RenderPlacementOverlay(
+    "Checking routes before saving this map..."
+  );
+
+  try {
+    await rd94ValidateObjectiveRoutes();
+
+    const candidates =
+      rd94BuildCustomArenaCandidates();
+
+    if (
+      candidates.length <
+        RD86_CONQUEST_MIN_CANDIDATES
+    ) {
+      throw new Error(
+        "Not enough suitable cache and team-start roads exist inside this arena."
+      );
+    }
+
+    rd94RenderPlacementOverlay(
+      "Verifying saved cache and team-start roads..."
+    );
+
+    const routeable =
+      await rd86FilterRouteableCandidates(
+        state.conquestArena.centre,
+        candidates
+      );
+
+    if (
+      routeable.length <
+        RD86_CONQUEST_MIN_CANDIDATES
+    ) {
+      throw new Error(
+        "Not enough reachable roads exist inside this saved arena."
+      );
+    }
+
+    const { data, error } =
+      await state.auth.client.rpc(
+        "save_my_conquest_map",
+        {
+          p_map_id:
+            existingMap?.id ||
+            null,
+
+          p_map_name:
+            mapName,
+
+          p_objective_count:
+            rd113SafeObjectiveCount(
+              state.customConquest
+                .objectiveCount
+            ),
+
+          p_rally_lat:
+            Number(
+              state.conquestArena
+                .centre.lat
+            ),
+
+          p_rally_lng:
+            Number(
+              state.conquestArena
+                .centre.lng
+            ),
+
+          p_objectives:
+            rd94CustomObjectivePayload(),
+
+          p_road_candidates:
+            routeable.map(
+              (candidate) => ({
+                lat: Number(
+                  Number(
+                    candidate.lat
+                  ).toFixed(6)
+                ),
+
+                lng: Number(
+                  Number(
+                    candidate.lng
+                  ).toFixed(6)
+                ),
+
+                road_count:
+                  Math.max(
+                    1,
+
+                    Number(
+                      candidate
+                        .road_count
+                    ) || 1
+                  )
+              })
+            )
+        }
+      );
+
+    if (error) {
+      throw error;
+    }
+
+    const savedId =
+      Array.isArray(data)
+        ? data[0]
+        : data;
+
+    state.conquestArena
+      .savedMapId =
+        String(
+          savedId ||
+          existingMap?.id
+        );
+
+    state.conquestArena
+      .savedRoadCandidates =
+        routeable.map(
+          (candidate) => ({
+            ...candidate,
+            routeable: true
+          })
+        );
+
+    await rd114LoadSavedMaps(
+      true
+    );
+
+    const refreshed =
+      rd114SavedMapById(
+        state.conquestArena
+          .savedMapId
+      );
+
+    state.conquestArena
+      .savedMapSnapshot =
+        refreshed || {
+          rally: {
+            ...state.conquestArena
+              .centre
+          },
+
+          objectives:
+            state.conquestArena
+              .objectives
+              .map(
+                (objective) => ({
+                  ...objective
+                })
+              )
+        };
+
+    showToast(
+      existingMap
+        ? `${mapName} updated`
+        : `${mapName} saved • ${
+            state.customConquest
+              .savedMaps.length
+          } / 10`
+    );
+
+  } catch (error) {
+    console.error(error);
+
+    showToast(
+      rd86ConquestErrorMessage(
+        error
+      )
+    );
+
+  } finally {
+    state.conquestArena.busy =
+      false;
+
+    state.conquestArena.active =
+      true;
+
+    rd94BindArenaMapClick();
+    rd94RenderPlacementOverlay();
+  }
+}
+
+
+rd94BuildCustomArenaCandidates =
+function () {
+  if (
+    rd114CurrentArenaMatchesSavedMap() &&
+    state.conquestArena
+      .savedRoadCandidates
+      .length >=
+        RD86_CONQUEST_MIN_CANDIDATES
+  ) {
+    return (
+      state.conquestArena
+        .savedRoadCandidates
+        .map(
+          (candidate) => ({
+            ...candidate
+          })
+        )
+    );
+  }
+
+  return (
+    roadDiscoveryV114
+      .buildCandidates()
+  );
+};
+
+
+rd94RenderPlacementOverlay =
+function (
+  overrideMessage = ""
+) {
+  const result =
+    roadDiscoveryV114
+      .renderPlacement(
+        overrideMessage
+      );
+
+  rd114RenderPlacementSaveButton();
+
+  return result;
+};
+
+
+rd94BeginArenaPlacement =
+async function (
+  startKind
+) {
+  rd114ClearActiveSavedMap();
+
+  return (
+    roadDiscoveryV114
+      .beginPlacement(
+        startKind
+      )
+  );
+};
+
+
+rd94CancelArenaPlacement =
+function (
+  showMessage = true
+) {
+  rd114ClearActiveSavedMap();
+
+  return (
+    roadDiscoveryV114
+      .cancelPlacement(
+        showMessage
+      )
+  );
+};
+
+
+rd95RenderConquestSettings =
+function () {
+  const result =
+    roadDiscoveryV114
+      .renderSettings();
+
+  rd114EnsureSavedMapsUi();
+
+  void rd114LoadSavedMaps();
+
+  return result;
+};
+
+
+renderMultiplayerState =
+function () {
+  const result =
+    roadDiscoveryV114
+      .renderMultiplayerState();
+
+  rd114EnsureSavedMapsUi();
+
+  void rd114LoadSavedMaps();
+
+  return result;
+};
+
+
+function rd114InitSavedMaps() {
+  rd114InstallSavedMapStyles();
+
+  rd114EnsurePlacementSaveButton();
+
+  rd114EnsureSavedMapsUi();
+
+  void rd114LoadSavedMaps();
+}
+
+
+if (
+  document.readyState ===
+    "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd114InitSavedMaps,
+    { once: true }
+  );
+
+} else {
+  rd114InitSavedMaps();
+}
