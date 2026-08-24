@@ -42289,3 +42289,169 @@ if (
 } else {
   rd116InitMatchSummary();
 }
+
+/* ================================================== */
+/* Road Discovery AU v117                             */
+/* Saved Conquest maps restore and launch correctly   */
+/* ================================================== */
+
+const roadDiscoveryV117 = {
+  useSavedMap:
+    rd114UseSavedMap,
+
+  renderPlacement:
+    rd94RenderPlacementOverlay
+};
+
+
+function rd117LoadedSavedMap() {
+  const mapId = String(
+    state.conquestArena.savedMapId || ""
+  );
+
+  if (!mapId) return null;
+
+  return (
+    rd114SavedMapById(mapId) ||
+    state.conquestArena
+      .savedMapSnapshot ||
+    null
+  );
+}
+
+
+function rd117SavedMapReady() {
+  return Boolean(
+    state.conquestArena.active &&
+    rd117LoadedSavedMap() &&
+    rd114CurrentArenaMatchesSavedMap() &&
+    rd94ArenaValidation().valid
+  );
+}
+
+
+function rd117CloseConquestSettings() {
+  state.conquestSettings.open = false;
+
+  rd95RenderConquestSettings();
+  closePanels();
+}
+
+
+rd114UseSavedMap = async function (
+  mapId
+) {
+  /*
+    Saved Maps is displayed inside the
+    separate Conquest Settings overlay.
+
+    Close that overlay before loading so
+    the restored Rally and objectives become
+    the active visible screen.
+  */
+  rd117CloseConquestSettings();
+
+  const result =
+    await roadDiscoveryV117
+      .useSavedMap(mapId);
+
+  if (rd117SavedMapReady()) {
+    rd117CloseConquestSettings();
+
+    /*
+      Redraw every stored location after
+      the road refresh has completed.
+    */
+    rd94ClearPlacementLayers();
+    rd94DrawArenaCentre();
+    rd94BindArenaMapClick();
+    rd94RenderPlacementOverlay();
+
+    const savedMap =
+      rd117LoadedSavedMap();
+
+    showToast(
+      `${
+        savedMap?.mapName ||
+        "Saved map"
+      } ready • Rally and objectives restored`
+    );
+  }
+
+  return result;
+};
+
+
+rd94RenderPlacementOverlay = function (
+  overrideMessage = ""
+) {
+  const result =
+    roadDiscoveryV117
+      .renderPlacement(
+        overrideMessage
+      );
+
+  if (!rd117SavedMapReady()) {
+    return result;
+  }
+
+  const savedMap =
+    rd117LoadedSavedMap();
+
+  const label =
+    rd113ObjectiveRangeLabel();
+
+  const heading =
+    document.querySelector(
+      ".rd94-arena-heading strong"
+    );
+
+  const subtitle =
+    document.querySelector(
+      ".rd94-arena-heading span"
+    );
+
+  const status =
+    document.getElementById(
+      "rd94ArenaStatus"
+    );
+
+  const confirmButton =
+    document.getElementById(
+      "rd94ArenaConfirmBtn"
+    );
+
+  if (heading) {
+    heading.textContent =
+      savedMap?.mapName ||
+      "Saved Conquest Map";
+  }
+
+  if (subtitle) {
+    subtitle.textContent =
+      `Saved Rally and ${label} restored. Drag a marker to adjust it, or start the match now.`;
+  }
+
+  if (
+    status &&
+    !overrideMessage
+  ) {
+    status.textContent =
+      `Saved map ready • Rally and ${label} are already placed.`;
+
+    status.classList.remove("bad");
+    status.classList.add("good");
+  }
+
+  if (
+    confirmButton &&
+    !state.conquestArena.busy
+  ) {
+    confirmButton.disabled = false;
+
+    confirmButton.textContent =
+      "Start Saved Map";
+  }
+
+  return result;
+};
