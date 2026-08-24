@@ -37595,3 +37595,993 @@ if (
 } else {
   rd112Init();
 }
+
+/* ================================================== */
+/* Road Discovery AU v113                             */
+/* Enemy Visibility + 5/7 Objective Zones             */
+/* ================================================== */
+
+const roadDiscoveryV113 = {
+  ensureSettings:
+    rd95EnsureConquestSettings,
+
+  renderSettings:
+    rd95RenderConquestSettings,
+
+  applyPlaceUi:
+    rd107ApplyPlaceOnlyUi,
+
+  renderPlacement:
+    rd94RenderPlacementOverlay,
+
+  buildCandidates:
+    rd94BuildCustomArenaCandidates,
+
+  reviewHtml:
+    rd106ReviewHtml,
+
+  pollLiveOverlay:
+    rd112PollLiveOverlay,
+
+  renderMultiplayerState
+};
+
+
+state.customConquest.enemyVisibility =
+  "visible";
+
+state.customConquest.objectiveCount = 5;
+
+
+function rd113SafeEnemyVisibility(
+  value
+) {
+  return value === "hidden"
+    ? "hidden"
+    : "visible";
+}
+
+
+function rd113SafeObjectiveCount(
+  value
+) {
+  return Number(value) === 7
+    ? 7
+    : 5;
+}
+
+
+function rd113ObjectiveCodes() {
+  return (
+    rd113SafeObjectiveCount(
+      state.customConquest
+        .objectiveCount
+    ) === 7
+      ? [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E",
+          "F",
+          "G"
+        ]
+      : [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+  );
+}
+
+
+function rd113ObjectiveRangeLabel() {
+  return rd113SafeObjectiveCount(
+    state.customConquest.objectiveCount
+  ) === 7
+    ? "A–G"
+    : "A–E";
+}
+
+
+function rd113ApplyObjectiveCodes() {
+  const codes =
+    rd113ObjectiveCodes();
+
+  RD94_ARENA_OBJECTIVE_CODES.splice(
+    0,
+    RD94_ARENA_OBJECTIVE_CODES.length,
+    ...codes
+  );
+
+  if (
+    state.conquestArena.objectives
+      .length > codes.length
+  ) {
+    state.conquestArena.objectives =
+      state.conquestArena.objectives
+        .slice(0, codes.length);
+  }
+}
+
+
+function rd113InstallStyles() {
+  if (
+    document.getElementById(
+      "rd113ConquestOptionStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd113ConquestOptionStyles";
+
+  style.textContent = `
+    .rd113-conquest-options {
+      display: grid;
+      gap: 11px;
+      margin: 14px 0;
+    }
+
+    .rd113-conquest-option {
+      display: grid;
+      gap: 9px;
+      padding: 12px;
+      border: 1px solid
+        rgba(143, 164, 196, 0.24);
+      border-radius: 16px;
+      background:
+        rgba(12, 19, 31, 0.58);
+    }
+
+    .rd113-conquest-option-title {
+      color: #dce9ff;
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .rd113-conquest-option-buttons {
+      display: grid;
+      grid-template-columns:
+        1fr 1fr;
+      gap: 7px;
+    }
+
+    .rd113-conquest-option-btn {
+      min-height: 44px;
+      padding: 8px 7px;
+      border: 1px solid
+        rgba(156, 177, 210, 0.28);
+      border-radius: 12px;
+      background:
+        rgba(27, 38, 56, 0.86);
+      color: #f5f9ff;
+      font: inherit;
+      font-size: 0.79rem;
+      font-weight: 850;
+      cursor: pointer;
+    }
+
+    .rd113-conquest-option-btn.active {
+      border-color: #b686ff;
+      background:
+        rgba(118, 65, 190, 0.38);
+      box-shadow:
+        0 0 0 1px
+          rgba(182, 134, 255, 0.28)
+          inset;
+    }
+
+    .rd113-conquest-option-btn:disabled {
+      opacity: 0.44;
+      cursor: default;
+    }
+
+    .rd113-conquest-option-note {
+      margin: 0;
+      color: #9fb2cc;
+      font-size: 0.72rem;
+      line-height: 1.38;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd113EnsureSettingsFields() {
+  rd113InstallStyles();
+
+  const customBox =
+    document.getElementById(
+      "customConquestBox"
+    );
+
+  if (!customBox) return;
+
+  let optionsBox =
+    document.getElementById(
+      "rd113ConquestOptions"
+    );
+
+  if (!optionsBox) {
+    optionsBox =
+      document.createElement(
+        "section"
+      );
+
+    optionsBox.id =
+      "rd113ConquestOptions";
+
+    optionsBox.className =
+      "rd113-conquest-options";
+
+    optionsBox.innerHTML = `
+      <section
+        class="rd113-conquest-option"
+      >
+        <div
+          class="rd113-conquest-option-title"
+        >
+          Enemy Visibility
+        </div>
+
+        <div
+          class="rd113-conquest-option-buttons"
+        >
+          <button
+            class="rd113-conquest-option-btn"
+            type="button"
+            data-rd113-visibility="visible"
+          >
+            Visible
+          </button>
+
+          <button
+            class="rd113-conquest-option-btn"
+            type="button"
+            data-rd113-visibility="hidden"
+          >
+            Hidden
+          </button>
+        </div>
+
+        <p
+          class="rd113-conquest-option-note"
+        >
+          Visible shows both teams. Hidden only shows friendly riders and bots. Spectators always see everyone.
+        </p>
+      </section>
+
+      <section
+        class="rd113-conquest-option"
+      >
+        <div
+          class="rd113-conquest-option-title"
+        >
+          Objective Zones
+        </div>
+
+        <div
+          class="rd113-conquest-option-buttons"
+        >
+          <button
+            class="rd113-conquest-option-btn"
+            type="button"
+            data-rd113-objectives="5"
+          >
+            5 • A–E
+          </button>
+
+          <button
+            class="rd113-conquest-option-btn"
+            type="button"
+            data-rd113-objectives="7"
+          >
+            7 • A–G
+          </button>
+        </div>
+
+        <p
+          class="rd113-conquest-option-note"
+        >
+          Seven zones use F and G normally for capture, scoring, bot targets and cache boundaries.
+        </p>
+      </section>
+    `;
+
+    optionsBox.addEventListener(
+      "click",
+      (event) => {
+        if (
+          !rd87IsRoomCreator() ||
+          state.customConquest.starting ||
+          hasActiveConquestRound()
+        ) {
+          return;
+        }
+
+        const visibilityButton =
+          event.target.closest(
+            "[data-rd113-visibility]"
+          );
+
+        if (visibilityButton) {
+          state.customConquest
+            .enemyVisibility =
+              rd113SafeEnemyVisibility(
+                visibilityButton.dataset
+                  .rd113Visibility
+              );
+
+          rd113RenderSettingsFields();
+          return;
+        }
+
+        const objectiveButton =
+          event.target.closest(
+            "[data-rd113-objectives]"
+          );
+
+        if (objectiveButton) {
+          state.customConquest
+            .objectiveCount =
+              rd113SafeObjectiveCount(
+                objectiveButton.dataset
+                  .rd113Objectives
+              );
+
+          rd113ApplyObjectiveCodes();
+          rd113RenderSettingsFields();
+          rd107ApplyPlaceOnlyUi();
+        }
+      }
+    );
+
+    const durationBox =
+      document.getElementById(
+        "rd98ConquestDuration"
+      );
+
+    customBox.insertBefore(
+      optionsBox,
+      durationBox ||
+        document.getElementById(
+          "startCustomConquestBtn"
+        ) ||
+        null
+    );
+  }
+
+  rd113RenderSettingsFields();
+}
+
+function rd113RenderSettingsFields() {
+  const visibility =
+    rd113SafeEnemyVisibility(
+      state.customConquest
+        .enemyVisibility
+    );
+
+  const objectiveCount =
+    rd113SafeObjectiveCount(
+      state.customConquest
+        .objectiveCount
+    );
+
+  const disabled = Boolean(
+    !rd87IsRoomCreator() ||
+    state.customConquest.starting ||
+    hasActiveConquestRound() ||
+    hasActiveHideSeekRound()
+  );
+
+  for (
+    const button of
+    document.querySelectorAll(
+      "[data-rd113-visibility]"
+    )
+  ) {
+    const active =
+      button.dataset
+        .rd113Visibility ===
+          visibility;
+
+    button.classList.toggle(
+      "active",
+      active
+    );
+
+    button.disabled = disabled;
+
+    button.setAttribute(
+      "aria-pressed",
+      active ? "true" : "false"
+    );
+  }
+
+  for (
+    const button of
+    document.querySelectorAll(
+      "[data-rd113-objectives]"
+    )
+  ) {
+    const active =
+      Number(
+        button.dataset
+          .rd113Objectives
+      ) === objectiveCount;
+
+    button.classList.toggle(
+      "active",
+      active
+    );
+
+    button.disabled = disabled;
+
+    button.setAttribute(
+      "aria-pressed",
+      active ? "true" : "false"
+    );
+  }
+}
+
+
+rd95EnsureConquestSettings =
+function () {
+  const result =
+    roadDiscoveryV113
+      .ensureSettings();
+
+  rd113EnsureSettingsFields();
+
+  return result;
+};
+
+
+rd95RenderConquestSettings =
+function () {
+  const result =
+    roadDiscoveryV113
+      .renderSettings();
+
+  rd113EnsureSettingsFields();
+
+  return result;
+};
+
+
+rd107ApplyPlaceOnlyUi =
+function () {
+  const result =
+    roadDiscoveryV113
+      .applyPlaceUi();
+
+  rd113ApplyObjectiveCodes();
+
+  const label =
+    rd113ObjectiveRangeLabel();
+
+  for (
+    const placeButton of
+    document.querySelectorAll(
+      '[data-rd94-arena-mode="custom"]'
+    )
+  ) {
+    placeButton.textContent =
+      `Place ${label}`;
+  }
+
+  for (
+    const note of
+    document.querySelectorAll(
+      ".rd94-arena-choice-note"
+    )
+  ) {
+    note.textContent =
+      rd94IsArenaHost()
+        ? `Place ${
+            RD94_ARENA_OBJECTIVE_CODES
+              .length
+          } safe objectives after confirming the Conquest settings.`
+        : `The room creator places objectives ${label}.`;
+  }
+
+  return result;
+};
+
+
+rd94RenderPlacementOverlay =
+function (
+  overrideMessage = ""
+) {
+  rd113ApplyObjectiveCodes();
+
+  const result =
+    roadDiscoveryV113
+      .renderPlacement(
+        overrideMessage
+      );
+
+  const count =
+    RD94_ARENA_OBJECTIVE_CODES
+      .length;
+
+  const label =
+    rd113ObjectiveRangeLabel();
+
+  const progress =
+    document.getElementById(
+      "rd94ArenaProgress"
+    );
+
+  if (progress) {
+    progress.style
+      .gridTemplateColumns =
+        `repeat(${
+          count + 1
+        }, minmax(0, 1fr))`;
+  }
+
+  const heading =
+    document.querySelector(
+      ".rd94-arena-heading strong"
+    );
+
+  const subtitle =
+    document.querySelector(
+      ".rd94-arena-heading span"
+    );
+
+  const status =
+    document.getElementById(
+      "rd94ArenaStatus"
+    );
+
+  const confirmButton =
+    document.getElementById(
+      "rd94ArenaConfirmBtn"
+    );
+
+  if (heading) {
+    heading.textContent =
+      `Place Rally and Conquest ${label}`;
+  }
+
+  if (subtitle) {
+    subtitle.textContent =
+      `Place Rally first, then ${label}. Drag Rally or any letter to move it before confirming.`;
+  }
+
+  if (
+    status &&
+    !overrideMessage
+  ) {
+    status.textContent =
+      status.textContent
+        .replace(
+          /\/5 placed/g,
+          `/${count} placed`
+        )
+        .replace(
+          /A–E/g,
+          label
+        )
+        .replace(
+          /A-E/g,
+          label
+        );
+  }
+
+  if (
+    confirmButton &&
+    !state.conquestArena.busy
+  ) {
+    confirmButton.textContent =
+      `Confirm ${label}`;
+  }
+
+  return result;
+};
+
+rd94BuildCustomArenaCandidates =
+function () {
+  const existing =
+    roadDiscoveryV111
+      .rd94BuildCustomArenaCandidates();
+
+  const centre =
+    state.conquestArena.centre;
+
+  const objectives =
+    state.conquestArena.objectives;
+
+  const objectiveCount =
+    rd113SafeObjectiveCount(
+      state.customConquest
+        .objectiveCount
+    );
+
+  if (
+    !centre ||
+    objectives.length !==
+      objectiveCount
+  ) {
+    return existing;
+  }
+
+  const hull =
+    rd94ConvexHull(objectives);
+
+  const objectiveCandidates =
+    existing
+      .filter(
+        (candidate) =>
+          Number(
+            candidate.road_count
+          ) >= 100000
+      )
+      .slice(
+        0,
+        objectiveCount
+      );
+
+  const outerCandidates =
+    existing
+      .filter(
+        (candidate) =>
+          Number(
+            candidate.road_count
+          ) < 100000
+      )
+      .slice(
+        0,
+        RD111_OUTER_CANDIDATE_LIMIT
+      );
+
+  const roadPoints =
+    state.roadSegments
+      .filter((segment) =>
+        rd94SafeHighwayType(
+          segment?.highway
+        )
+      )
+      .map((segment) => ({
+        ...roadSegmentMidpoint(
+          segment
+        ),
+
+        highway: String(
+          segment.highway || "road"
+        )
+      }))
+      .filter(
+        (point) =>
+          Number.isFinite(
+            Number(point?.lat)
+          ) &&
+          Number.isFinite(
+            Number(point?.lng)
+          )
+      )
+      .filter((point) => {
+        const rallyDistance =
+          haversine(
+            centre,
+            point
+          );
+
+        return Boolean(
+          rallyDistance >=
+            RD111_TEAM_START_MIN_M &&
+          rallyDistance <=
+            RD111_TEAM_START_MAX_M &&
+          rd94PointInPolygon(
+            point,
+            hull
+          )
+        );
+      });
+
+  shuffleHideSeekArray(
+    roadPoints
+  );
+
+  const innerCandidates = [];
+
+  for (
+    const point of roadPoints
+  ) {
+    if (
+      innerCandidates.some(
+        (candidate) =>
+          haversine(
+            candidate,
+            point
+          ) <
+            RD93_CONQUEST_CANDIDATE_SPACING_M
+      )
+    ) {
+      continue;
+    }
+
+    let roadCount = 0;
+
+    for (
+      const roadPoint of roadPoints
+    ) {
+      if (
+        haversine(
+          point,
+          roadPoint
+        ) <=
+          RD86_CONQUEST_ROAD_DENSITY_RADIUS_M
+      ) {
+        roadCount += 1;
+      }
+    }
+
+    if (
+      roadCount <
+        RD86_CONQUEST_MIN_ROAD_COUNT
+    ) {
+      continue;
+    }
+
+    innerCandidates.push({
+      lat: Number(
+        Number(
+          point.lat
+        ).toFixed(6)
+      ),
+
+      lng: Number(
+        Number(
+          point.lng
+        ).toFixed(6)
+      ),
+
+      road_count: roadCount,
+      routeable: false
+    });
+
+    if (
+      innerCandidates.length >=
+        RD111_TEAM_START_LIMIT
+    ) {
+      break;
+    }
+  }
+
+  return [
+    ...innerCandidates,
+    ...outerCandidates,
+    ...objectiveCandidates
+  ].slice(
+    0,
+    RD86_CONQUEST_MAX_CANDIDATES
+  );
+};
+
+
+rd106ReviewHtml =
+function (roster) {
+  const html =
+    roadDiscoveryV113
+      .reviewHtml(roster);
+
+  const label =
+    rd113ObjectiveRangeLabel();
+
+  return html
+    .replace(
+      /Host-placed A–E/g,
+      `Host-placed ${label}`
+    )
+    .replace(
+      /Host-placed A-E/g,
+      `Host-placed ${label}`
+    );
+};
+
+
+function rd113InstallRpcBridge() {
+  const client =
+    state.auth.client;
+
+  if (
+    !client ||
+    client
+      .rd113OptionsBridgeInstalled
+  ) {
+    return;
+  }
+
+  const originalRpc =
+    client.rpc.bind(client);
+
+  client.rpc = function (
+    functionName,
+    parameters = {},
+    options
+  ) {
+    let nextFunctionName =
+      functionName;
+
+    if (
+      functionName ===
+        "start_custom_conquest_round_custom_arena"
+    ) {
+      nextFunctionName =
+        "start_custom_conquest_round_custom_arena_with_options";
+
+      parameters = {
+        ...parameters,
+
+        p_match_duration_minutes:
+          rd98SafeConquestDuration(
+            state.customConquest
+              .matchDurationMinutes
+          ),
+
+        p_bot_difficulties:
+          rd106BotDifficultyPayload(),
+
+        p_enemy_visibility:
+          rd113SafeEnemyVisibility(
+            state.customConquest
+              .enemyVisibility
+          ),
+
+        p_objective_count:
+          rd113SafeObjectiveCount(
+            state.customConquest
+              .objectiveCount
+          )
+      };
+    }
+
+    return originalRpc(
+      nextFunctionName,
+      parameters,
+      options
+    );
+  };
+
+  client.rd113OptionsBridgeInstalled =
+    true;
+}
+
+
+rd112PollLiveOverlay =
+async function () {
+  if (
+    !hasActiveMultiplayerRoom() ||
+    !state.auth.client ||
+    !state.conquest.roundId ||
+    state.conquest
+      .liveOverlayPolling ||
+    !navigator.onLine
+  ) {
+    return;
+  }
+
+  state.conquest
+    .liveOverlayPolling = true;
+
+  try {
+    const { data, error } =
+      await state.auth.client.rpc(
+        "get_conquest_live_overlay_v2",
+        {
+          p_room_id:
+            state.multiplayer.roomId
+        }
+      );
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const overlay =
+      Array.isArray(data)
+        ? data[0] || null
+        : data || null;
+
+    if (
+      !overlay ||
+      String(
+        overlay.round_id || ""
+      ) !==
+        String(
+          state.conquest.roundId || ""
+        )
+    ) {
+      return;
+    }
+
+    const serverNowMs =
+      Date.parse(
+        overlay.server_now || ""
+      );
+
+    if (
+      Number.isFinite(
+        serverNowMs
+      )
+    ) {
+      state.conquest
+        .serverOffsetMs =
+          serverNowMs -
+          Date.now();
+    }
+
+    state.conquest
+      .legendarySpawnAt =
+        overlay
+          .legendary_spawn_at ||
+        null;
+
+    rd112MergeVisiblePlayers(
+      rd86NormaliseJsonArray(
+        overlay.players
+      )
+    );
+
+    rd86DrawConquestMap();
+    rd86RenderConquestPlayers();
+    rd112EnsureLegendaryTimer();
+
+  } finally {
+    state.conquest
+      .liveOverlayPolling = false;
+  }
+};
+
+
+renderMultiplayerState =
+function () {
+  rd113InstallRpcBridge();
+
+  const result =
+    roadDiscoveryV113
+      .renderMultiplayerState();
+
+  rd113EnsureSettingsFields();
+  rd113RenderSettingsFields();
+
+  return result;
+};
+
+
+function rd113Init() {
+  rd113ApplyObjectiveCodes();
+  rd113InstallStyles();
+  rd113InstallRpcBridge();
+  rd113EnsureSettingsFields();
+  rd107ApplyPlaceOnlyUi();
+}
+
+
+if (
+  document.readyState ===
+    "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd113Init,
+    { once: true }
+  );
+
+} else {
+  rd113Init();
+}
