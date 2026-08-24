@@ -1,15 +1,15 @@
 "use strict";
 
 /*
-  Road Discovery AU v120 service worker
+  Road Discovery AU v121 service worker
 
   Expected frontend versions:
-  - app.js?v=118
+  - app.js?v=119
   - style.css?v=65
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v120";
+  "road-discovery-au-v121";
 
 const CORE_APP_SHELL = [
   "./",
@@ -20,6 +20,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=119",
   "./app.js?v=118",
   "./app.js?v=117",
   "./app.js?v=116",
@@ -37,6 +38,10 @@ const VERSIONED_APP_FILES = [
   "./style.css?v=63"
 ];
 
+
+/* -------------------------------------------------- */
+/* Install                                            */
+/* -------------------------------------------------- */
 
 self.addEventListener(
   "install",
@@ -73,25 +78,34 @@ self.addEventListener(
 );
 
 
+/* -------------------------------------------------- */
+/* Activate                                           */
+/* -------------------------------------------------- */
+
 self.addEventListener(
   "activate",
   (event) => {
     event.waitUntil(
       caches
         .keys()
-        .then((cacheNames) =>
-          Promise.all(
+        .then((cacheNames) => {
+          return Promise.all(
             cacheNames
               .filter(
-                (cacheName) =>
-                  cacheName !==
+                (cacheName) => {
+                  return (
+                    cacheName !==
                     CACHE_NAME
+                  );
+                }
               )
-              .map((cacheName) =>
-                caches.delete(cacheName)
-              )
-          )
-        )
+              .map((cacheName) => {
+                return caches.delete(
+                  cacheName
+                );
+              })
+          );
+        })
         .then(() =>
           self.clients.claim()
         )
@@ -99,6 +113,10 @@ self.addEventListener(
   }
 );
 
+
+/* -------------------------------------------------- */
+/* Fetch                                              */
+/* -------------------------------------------------- */
 
 self.addEventListener(
   "fetch",
@@ -113,26 +131,77 @@ self.addEventListener(
       new URL(request.url);
 
     /*
-      External map, routing and database
-      requests are not intercepted.
+      Leaflet, Supabase, map tiles,
+      Overpass, OSRM and other external
+      requests remain controlled by their
+      own network services.
     */
     if (
       url.origin !==
-        self.location.origin
+      self.location.origin
     ) {
       return;
     }
 
 
-    /*
-      Page navigation.
-    */
+    /* ---------------------------------------------- */
+    /* Page navigation                                */
+    /* ---------------------------------------------- */
+
     if (
       request.mode === "navigate"
     ) {
       event.respondWith(
         fetch(request)
-          .then((networkResponse) => {
+          .then(
+            (networkResponse) => {
+              if (
+                networkResponse &&
+                networkResponse.ok
+              ) {
+                const responseCopy =
+                  networkResponse.clone();
+
+                void caches
+                  .open(CACHE_NAME)
+                  .then((cache) => {
+                    return cache.put(
+                      "./index.html",
+                      responseCopy
+                    );
+                  });
+              }
+
+              return networkResponse;
+            }
+          )
+          .catch(async () => {
+            return (
+              (
+                await caches.match(
+                  "./index.html"
+                )
+              ) ||
+              (
+                await caches.match("./")
+              ) ||
+              Response.error()
+            );
+          })
+      );
+
+      return;
+    }
+
+
+    /* ---------------------------------------------- */
+    /* Local application files                        */
+    /* ---------------------------------------------- */
+
+    event.respondWith(
+      fetch(request)
+        .then(
+          (networkResponse) => {
             if (
               networkResponse &&
               networkResponse.ok
@@ -142,58 +211,17 @@ self.addEventListener(
 
               void caches
                 .open(CACHE_NAME)
-                .then((cache) =>
-                  cache.put(
-                    "./index.html",
+                .then((cache) => {
+                  return cache.put(
+                    request,
                     responseCopy
-                  )
-                );
+                  );
+                });
             }
 
             return networkResponse;
-          })
-          .catch(async () =>
-            (
-              await caches.match(
-                "./index.html"
-              )
-            ) ||
-            (
-              await caches.match("./")
-            ) ||
-            Response.error()
-          )
-      );
-
-      return;
-    }
-
-
-    /*
-      Local application files.
-    */
-    event.respondWith(
-      fetch(request)
-        .then((networkResponse) => {
-          if (
-            networkResponse &&
-            networkResponse.ok
-          ) {
-            const responseCopy =
-              networkResponse.clone();
-
-            void caches
-              .open(CACHE_NAME)
-              .then((cache) =>
-                cache.put(
-                  request,
-                  responseCopy
-                )
-              );
           }
-
-          return networkResponse;
-        })
+        )
         .catch(async () => {
           const exact =
             await caches.match(request);
@@ -209,51 +237,58 @@ self.addEventListener(
             )
           ) {
             return (
-              await caches.match(
-                "./app.js?v=118"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=117"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=116"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=115"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=114"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=113"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=112"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=111"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=110"
-              )
-            ) ||
-            Response.error();
+              (
+                await caches.match(
+                  "./app.js?v=119"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=118"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=117"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=116"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=115"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=114"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=113"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=112"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=111"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=110"
+                )
+              ) ||
+              Response.error()
+            );
           }
 
 
@@ -263,21 +298,23 @@ self.addEventListener(
             )
           ) {
             return (
-              await caches.match(
-                "./style.css?v=65"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./style.css?v=64"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./style.css?v=63"
-              )
-            ) ||
-            Response.error();
+              (
+                await caches.match(
+                  "./style.css?v=65"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./style.css?v=64"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./style.css?v=63"
+                )
+              ) ||
+              Response.error()
+            );
           }
 
 
@@ -287,11 +324,13 @@ self.addEventListener(
             )
           ) {
             return (
-              await caches.match(
-                "./manifest.json"
-              )
-            ) ||
-            Response.error();
+              (
+                await caches.match(
+                  "./manifest.json"
+                )
+              ) ||
+              Response.error()
+            );
           }
 
 
@@ -301,11 +340,13 @@ self.addEventListener(
             )
           ) {
             return (
-              await caches.match(
-                "./icon.svg"
-              )
-            ) ||
-            Response.error();
+              (
+                await caches.match(
+                  "./icon.svg"
+                )
+              ) ||
+              Response.error()
+            );
           }
 
 
