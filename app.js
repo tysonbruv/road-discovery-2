@@ -42455,3 +42455,342 @@ rd94RenderPlacementOverlay = function (
 
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v118                             */
+/* Stable Multiplayer panel during five-second polls  */
+/* ================================================== */
+
+const roadDiscoveryV118 = {
+  renderMultiplayerState,
+  renderMultiplayerMembers
+};
+
+
+let rd118MemberRenderKey = "";
+
+
+function rd118MemberHasDot(member) {
+  return Boolean(
+    member?.lat !== null &&
+    member?.lat !== undefined &&
+    member?.lng !== null &&
+    member?.lng !== undefined &&
+    Number.isFinite(
+      Number(member.lat)
+    ) &&
+    Number.isFinite(
+      Number(member.lng)
+    )
+  );
+}
+
+
+function rd118MemberSubText(member) {
+  const isMe = Boolean(
+    member?.is_me
+  );
+
+  const hasDot =
+    rd118MemberHasDot(member);
+
+  if (hasActiveHideSeekRound()) {
+    return isMe
+      ? "You • Hide & Seek"
+      : "Hide & Seek";
+  }
+
+  if (isMe) {
+    return "You";
+  }
+
+  return hasDot
+    ? `Dot updated ${
+        formatMultiplayerAge(
+          member?.updated_at
+        )
+      }`
+    : "Waiting for location";
+}
+
+
+function rd118UpdateMemberRowText() {
+  const list =
+    els.multiplayerMembersList;
+
+  if (!list) return;
+
+  const members = Array.isArray(
+    state.multiplayer.members
+  )
+    ? state.multiplayer.members
+    : [];
+
+  const rows = Array.from(
+    list.querySelectorAll(
+      ".multiplayer-member-row"
+    )
+  );
+
+  if (
+    rows.length !== members.length
+  ) {
+    return;
+  }
+
+  const hideSeek =
+    hasActiveHideSeekRound();
+
+  members.forEach(
+    (member, index) => {
+      const row = rows[index];
+
+      const sub = row.querySelector(
+        ".multiplayer-member-sub"
+      );
+
+      const pill = row.querySelector(
+        ".multiplayer-member-pill"
+      );
+
+      const hasDot =
+        rd118MemberHasDot(member);
+
+      if (sub) {
+        const nextText =
+          rd118MemberSubText(member);
+
+        if (
+          sub.textContent !== nextText
+        ) {
+          sub.textContent = nextText;
+        }
+      }
+
+      if (pill) {
+        const nextText = hideSeek
+          ? "Game"
+          : hasDot
+            ? "Live"
+            : "Wait";
+
+        if (
+          pill.textContent !== nextText
+        ) {
+          pill.textContent = nextText;
+        }
+
+        pill.classList.toggle(
+          "online",
+          hideSeek || hasDot
+        );
+      }
+    }
+  );
+}
+
+
+renderMultiplayerMembers = function () {
+  const members = Array.isArray(
+    state.multiplayer.members
+  )
+    ? state.multiplayer.members
+    : [];
+
+  const key = rd116StableKey({
+    roomActive:
+      hasActiveMultiplayerRoom(),
+
+    hideSeek:
+      hasActiveHideSeekRound(),
+
+    members: members.map(
+      (member) => [
+        member?.user_id,
+        member?.display_name,
+        member?.dot_colour,
+        Boolean(member?.is_me),
+        rd118MemberHasDot(member)
+      ]
+    )
+  });
+
+  const list =
+    els.multiplayerMembersList;
+
+  const rowCount =
+    list?.querySelectorAll(
+      ".multiplayer-member-row"
+    ).length || 0;
+
+  const reusable = Boolean(
+    list &&
+    key === rd118MemberRenderKey &&
+    (
+      members.length === 0
+        ? list.hasChildNodes()
+        : rowCount === members.length
+    )
+  );
+
+  if (reusable) {
+    rd118UpdateMemberRowText();
+    return;
+  }
+
+  rd118MemberRenderKey = key;
+
+  const result =
+    roadDiscoveryV118
+      .renderMultiplayerMembers();
+
+  rd118UpdateMemberRowText();
+
+  return result;
+};
+
+function rd118MultiplayerScroller() {
+  const panel =
+    els.multiplayerPanel ||
+    document.getElementById(
+      "multiplayerPanel"
+    );
+
+  return panel?.querySelector(
+    ".panel-content"
+  ) || null;
+}
+
+
+function rd118VisibleConquestCard() {
+  const card =
+    document.getElementById(
+      "conquestGameBox"
+    );
+
+  return (
+    card &&
+    !card.classList.contains("hidden")
+      ? card
+      : null
+  );
+}
+
+
+renderMultiplayerState = function () {
+  const panel =
+    els.multiplayerPanel ||
+    document.getElementById(
+      "multiplayerPanel"
+    );
+
+  const scroller =
+    rd118MultiplayerScroller();
+
+  const panelVisible = Boolean(
+    panel &&
+    !panel.classList.contains("hidden") &&
+    scroller
+  );
+
+  const anchorBefore = panelVisible
+    ? rd118VisibleConquestCard()
+    : null;
+
+  const topBefore = anchorBefore
+    ? anchorBefore
+        .getBoundingClientRect().top
+    : NaN;
+
+  const scrollBefore = scroller
+    ? scroller.scrollTop
+    : 0;
+
+  const result =
+    roadDiscoveryV118
+      .renderMultiplayerState();
+
+  if (
+    !panelVisible ||
+    !scroller
+  ) {
+    return result;
+  }
+
+  /*
+    Disable automatic browser scroll anchoring.
+    The Conquest card is positioned manually
+    during each room update instead.
+  */
+  scroller.style.overflowAnchor =
+    "none";
+
+  const restorePosition = () => {
+    if (
+      panel.classList.contains("hidden")
+    ) {
+      return;
+    }
+
+    const anchorAfter =
+      rd118VisibleConquestCard();
+
+    if (
+      anchorAfter &&
+      Number.isFinite(topBefore)
+    ) {
+      const topAfter =
+        anchorAfter
+          .getBoundingClientRect().top;
+
+      scroller.scrollTop +=
+        topAfter - topBefore;
+
+    } else {
+      scroller.scrollTop =
+        scrollBefore;
+    }
+  };
+
+  /*
+    Restore synchronously so no changed
+    position is painted to the screen.
+  */
+  restorePosition();
+
+  /*
+    Restore once more immediately before
+    the browser paints, covering delayed
+    text and layout measurements.
+  */
+  window.requestAnimationFrame(
+    restorePosition
+  );
+
+  return result;
+};
+
+
+function rd118InitStablePanel() {
+  const scroller =
+    rd118MultiplayerScroller();
+
+  if (scroller) {
+    scroller.style.overflowAnchor =
+      "none";
+  }
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd118InitStablePanel,
+    { once: true }
+  );
+
+} else {
+  rd118InitStablePanel();
+}
