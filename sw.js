@@ -1,15 +1,15 @@
 "use strict";
 
 /*
-  Road Discovery AU v119 service worker
+  Road Discovery AU v120 service worker
 
   Expected frontend versions:
-  - app.js?v=117
+  - app.js?v=118
   - style.css?v=65
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v119";
+  "road-discovery-au-v120";
 
 const CORE_APP_SHELL = [
   "./",
@@ -20,6 +20,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=118",
   "./app.js?v=117",
   "./app.js?v=116",
   "./app.js?v=115",
@@ -112,10 +113,8 @@ self.addEventListener(
       new URL(request.url);
 
     /*
-      Leaflet, Supabase, map tiles,
-      Overpass, OSRM and other external
-      requests remain controlled by
-      their own network services.
+      External map, routing and database
+      requests are not intercepted.
     */
     if (
       url.origin !==
@@ -126,9 +125,7 @@ self.addEventListener(
 
 
     /*
-      Page navigation:
-      network first with the saved
-      application page as an offline fallback.
+      Page navigation.
     */
     if (
       request.mode === "navigate"
@@ -173,9 +170,7 @@ self.addEventListener(
 
 
     /*
-      Local files:
-      network first, exact cached request
-      second, recent compatible version last.
+      Local application files.
     */
     event.respondWith(
       fetch(request)
@@ -214,6 +209,11 @@ self.addEventListener(
             )
           ) {
             return (
+              await caches.match(
+                "./app.js?v=118"
+              )
+            ) ||
+            (
               await caches.match(
                 "./app.js?v=117"
               )
