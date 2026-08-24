@@ -1,15 +1,15 @@
 "use strict";
 
 /*
-  Road Discovery AU v118 service worker
+  Road Discovery AU v119 service worker
 
   Expected frontend versions:
-  - app.js?v=116
+  - app.js?v=117
   - style.css?v=65
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v118";
+  "road-discovery-au-v119";
 
 const CORE_APP_SHELL = [
   "./",
@@ -20,18 +20,18 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=65",
+  "./app.js?v=117",
   "./app.js?v=116",
   "./app.js?v=115",
   "./app.js?v=114",
-  "./app.js?v=113",
 
   /*
     Recent deployment fallbacks.
   */
+  "./app.js?v=113",
   "./app.js?v=112",
   "./app.js?v=111",
   "./app.js?v=110",
-  "./app.js?v=109",
   "./style.css?v=64",
   "./style.css?v=63"
 ];
@@ -127,8 +127,8 @@ self.addEventListener(
 
     /*
       Page navigation:
-      try the network first and use the
-      saved application page when offline.
+      network first with the saved
+      application page as an offline fallback.
     */
     if (
       request.mode === "navigate"
@@ -173,9 +173,9 @@ self.addEventListener(
 
 
     /*
-      Local application files:
-      network first, exact cached version
-      second, recent compatible fallback last.
+      Local files:
+      network first, exact cached request
+      second, recent compatible version last.
     */
     event.respondWith(
       fetch(request)
@@ -215,6 +215,11 @@ self.addEventListener(
           ) {
             return (
               await caches.match(
+                "./app.js?v=117"
+              )
+            ) ||
+            (
+              await caches.match(
                 "./app.js?v=116"
               )
             ) ||
@@ -246,11 +251,6 @@ self.addEventListener(
             (
               await caches.match(
                 "./app.js?v=110"
-              )
-            ) ||
-            (
-              await caches.match(
-                "./app.js?v=109"
               )
             ) ||
             Response.error();
