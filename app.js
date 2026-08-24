@@ -40826,3 +40826,1466 @@ if (
 } else {
   rd115InitLegendaryClock();
 }
+
+/* ================================================== */
+/* Road Discovery AU v116                             */
+/* Stable Conquest HUD, named bots and Match Summary  */
+/* ================================================== */
+
+const roadDiscoveryV116 = {
+  applyConquestState:
+    rd86ApplyConquestState,
+
+  renderConquestPlayers:
+    rd86RenderConquestPlayers,
+
+  renderFocusStrip:
+    rd86RenderFocusStrip,
+
+  drawObjectives:
+    rd86DrawObjectives,
+
+  drawCaches:
+    rd86DrawCaches,
+
+  showConquestResult:
+    rd86ShowConquestResult,
+
+  leaveConquestRound:
+    rd86LeaveConquestRound,
+
+  resetConquestState:
+    rd86ResetConquestState
+};
+
+
+state.conquest.matchSummary = {
+  roundId: "",
+  winnerStartedFor: "",
+  loadingFor: "",
+  requestId: 0,
+  data: null,
+  dismissedRoundId: ""
+};
+
+
+let rd116PlayerRenderKey = "";
+let rd116FocusRenderKey = "";
+let rd116ObjectiveDrawKey = "";
+let rd116CacheDrawKey = "";
+
+
+const RD116_BOT_NAMES = {
+  red: [
+    "Blaze",
+    "Viper",
+    "Raptor",
+    "Rocket"
+  ],
+
+  blue: [
+    "Frost",
+    "Comet",
+    "Storm",
+    "Nova"
+  ]
+};
+
+
+function rd116BotName(team, index) {
+  const safeTeam =
+    team === "red"
+      ? "red"
+      : "blue";
+
+  return (
+    RD116_BOT_NAMES[safeTeam][index] ||
+    `${
+      safeTeam === "red"
+        ? "Red"
+        : "Blue"
+    } Bot ${index + 1}`
+  );
+}
+
+
+/* -------------------------------------------------- */
+/* Named bots in roster confirmation                  */
+/* -------------------------------------------------- */
+
+rd106BotReviewRows = function (
+  team,
+  count
+) {
+  const difficulties =
+    state.customConquest
+      .botDifficulties[team];
+
+  return Array.from(
+    { length: count },
+    (_, index) => {
+      const selected =
+        rd106SafeBotDifficulty(
+          difficulties[index]
+        );
+
+      const teamLabel =
+        team === "red"
+          ? "Red"
+          : "Blue";
+
+      const botName =
+        rd116BotName(team, index);
+
+      return `
+        <label
+          class="rd106-roster-row ${team}"
+        >
+          <span
+            class="rd106-roster-person"
+          >
+            <strong>
+              ${escapeHtml(botName)}
+            </strong>
+
+            <span>
+              ${teamLabel} team • road-following bot
+            </span>
+          </span>
+
+          <select
+            class="rd106-difficulty-select"
+            data-rd106-bot-team="${team}"
+            data-rd106-bot-index="${index}"
+            aria-label="Difficulty for ${escapeHtml(
+              botName
+            )}"
+          >
+            ${rd106DifficultyOptions(
+              selected
+            )}
+          </select>
+        </label>
+      `;
+    }
+  ).join("");
+};
+
+
+/* -------------------------------------------------- */
+/* Stable rendering prevents HUD flicker              */
+/* -------------------------------------------------- */
+
+function rd116StableKey(value) {
+  try {
+    return JSON.stringify(value);
+
+  } catch (error) {
+    return String(Date.now());
+  }
+}
+
+
+rd86RenderConquestPlayers = function () {
+  const key = rd116StableKey(
+    (state.conquest.players || [])
+      .map((player) => [
+        player?.user_id,
+        player?.display_name,
+        player?.team,
+        player?.player_status,
+        player?.checked_in,
+        player?.is_me,
+        player?.is_bot
+      ])
+  );
+
+  if (
+    key === rd116PlayerRenderKey &&
+    els.conquestPlayersList
+      ?.hasChildNodes()
+  ) {
+    return;
+  }
+
+  rd116PlayerRenderKey = key;
+
+  return roadDiscoveryV116
+    .renderConquestPlayers();
+};
+
+
+rd86RenderFocusStrip = function () {
+  const key = rd116StableKey({
+    phase:
+      state.conquest.phase,
+
+    waypoint:
+      state.conquest
+        .personalWaypointKey || "",
+
+    objectives:
+      (
+        state.conquest.objectives || []
+      ).map((objective) => [
+        objective?.code,
+        objective?.owner_team,
+        objective?.pressure_state
+      ]),
+
+    caches:
+      (
+        state.conquest.caches || []
+      ).map((cache) => [
+        cache?.id,
+        cache?.tier,
+        cache?.reward,
+        cache?.status
+      ])
+  });
+
+  if (
+    key === rd116FocusRenderKey &&
+    els.conquestFocusStrip
+  ) {
+    window.requestAnimationFrame(
+      rd86UpdateFocusDirections
+    );
+
+    return;
+  }
+
+  rd116FocusRenderKey = key;
+
+  return roadDiscoveryV116
+    .renderFocusStrip();
+};
+
+
+rd86DrawObjectives = function () {
+  const key = rd116StableKey({
+    phase:
+      state.conquest.phase,
+
+    radius:
+      state.conquest.objectiveRadiusM,
+
+    objectives:
+      (
+        state.conquest.objectives || []
+      ).map((objective) => [
+        objective?.code,
+        objective?.lat,
+        objective?.lng,
+        objective?.owner_team,
+        objective?.pressure_state
+      ])
+  });
+
+  if (
+    key === rd116ObjectiveDrawKey
+  ) {
+    return;
+  }
+
+  rd116ObjectiveDrawKey = key;
+
+  return roadDiscoveryV116
+    .drawObjectives();
+};
+
+
+rd86DrawCaches = function () {
+  const key = rd116StableKey({
+    phase:
+      state.conquest.phase,
+
+    caches:
+      (
+        state.conquest.caches || []
+      ).map((cache) => [
+        cache?.id,
+        cache?.lat,
+        cache?.lng,
+        cache?.tier,
+        cache?.reward,
+        cache?.status
+      ])
+  });
+
+  if (
+    key === rd116CacheDrawKey
+  ) {
+    return;
+  }
+
+  rd116CacheDrawKey = key;
+
+  return roadDiscoveryV116
+    .drawCaches();
+};
+
+
+function rd116RenderConquestClockOnly() {
+  if (!rd86HasConquestRound()) {
+    return;
+  }
+
+  rd86CacheConquestElements();
+
+  const timerText =
+    rd86FormatConquestCountdown();
+
+  if (
+    els.conquestTimerValue &&
+    els.conquestTimerValue.textContent !==
+      timerText
+  ) {
+    els.conquestTimerValue.textContent =
+      timerText;
+  }
+
+  if (
+    els.conquestMapTimer &&
+    els.conquestMapTimer.textContent !==
+      timerText
+  ) {
+    els.conquestMapTimer.textContent =
+      timerText;
+  }
+}
+
+
+rd86StartConquestCountdown = function () {
+  if (!rd86HasConquestRound()) {
+    rd86StopConquestCountdown();
+    return;
+  }
+
+  if (
+    state.conquest.countdownTimer !== null
+  ) {
+    rd116RenderConquestClockOnly();
+    return;
+  }
+
+  state.conquest.countdownTimer =
+    window.setInterval(
+      rd116RenderConquestClockOnly,
+      250
+    );
+
+  rd116RenderConquestClockOnly();
+};
+
+
+/* -------------------------------------------------- */
+
+/* Match Summary interface                            */
+/* -------------------------------------------------- */
+
+function rd116InstallSummaryStyles() {
+  if (
+    document.getElementById(
+      "rd116MatchSummaryStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd116MatchSummaryStyles";
+
+  style.textContent = `
+    .rd116-summary-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 11100;
+      display: grid;
+      place-items: center;
+      padding:
+        max(16px, env(safe-area-inset-top))
+        max(16px, env(safe-area-inset-right))
+        max(16px, env(safe-area-inset-bottom))
+        max(16px, env(safe-area-inset-left));
+      background: rgba(2, 5, 9, 0.84);
+      backdrop-filter: blur(12px);
+    }
+
+    .rd116-summary-overlay[hidden] {
+      display: none;
+    }
+
+    .rd116-summary-card {
+      width: min(720px, 100%);
+      max-height: min(780px, 94vh);
+      overflow: auto;
+      border: 1px solid
+        rgba(143, 167, 203, 0.34);
+      border-radius: 22px;
+      background:
+        linear-gradient(
+          145deg,
+          rgba(15, 21, 31, 0.99),
+          rgba(8, 12, 19, 0.99)
+        );
+      box-shadow:
+        0 28px 90px
+          rgba(0, 0, 0, 0.68);
+      color: #f7f9ff;
+    }
+
+    .rd116-summary-heading {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid
+        rgba(143, 167, 203, 0.2);
+      text-align: center;
+    }
+
+    .rd116-summary-heading span {
+      display: block;
+      color: #9eabc0;
+      font-size: 0.67rem;
+      font-weight: 1000;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .rd116-summary-heading strong {
+      display: block;
+      margin-top: 5px;
+      font-size:
+        clamp(
+          1.35rem,
+          5vw,
+          2.15rem
+        );
+      line-height: 1.05;
+    }
+
+    .rd116-summary-score {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 9px;
+      font-size: 0.86rem;
+      font-weight: 1000;
+    }
+
+    .rd116-summary-score .red {
+      color: #ff7278;
+    }
+
+    .rd116-summary-score .blue {
+      color: #71c8ff;
+    }
+
+    .rd116-summary-body {
+      display: grid;
+      gap: 14px;
+      padding: 16px 18px 18px;
+    }
+
+    .rd116-mvp {
+      padding: 15px;
+      border: 1px solid
+        rgba(255, 207, 67, 0.52);
+      border-radius: 16px;
+      background:
+        linear-gradient(
+          130deg,
+          rgba(67, 45, 6, 0.66),
+          rgba(27, 32, 43, 0.86)
+        );
+      text-align: center;
+    }
+
+    .rd116-mvp small {
+      display: block;
+      color: #e7c75e;
+      font-size: 0.62rem;
+      font-weight: 1000;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .rd116-mvp strong {
+      display: block;
+      margin-top: 4px;
+      color: #fff1aa;
+      font-size: 1.28rem;
+    }
+
+    .rd116-mvp span {
+      display: block;
+      margin-top: 5px;
+      color: #d6dce8;
+      font-size: 0.76rem;
+    }
+
+    .rd116-legendary-badge {
+      display: inline-flex;
+      margin-top: 8px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background:
+        rgba(255, 198, 38, 0.16);
+      color: #ffe175;
+      font-size: 0.61rem;
+      font-weight: 1000;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .rd116-team-section {
+      display: grid;
+      gap: 8px;
+    }
+
+    .rd116-team-title {
+      font-size: 0.68rem;
+      font-weight: 1000;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .rd116-team-title.red {
+      color: #ff777d;
+    }
+
+    .rd116-team-title.blue {
+      color: #76caff;
+    }
+
+    .rd116-stat-row {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 11px 12px;
+      border: 1px solid
+        rgba(143, 167, 203, 0.2);
+      border-radius: 13px;
+      background:
+        rgba(23, 31, 44, 0.78);
+    }
+
+    .rd116-stat-person {
+      min-width: 0;
+    }
+
+    .rd116-stat-person strong,
+    .rd116-stat-person span {
+      display: block;
+    }
+
+    .rd116-stat-person strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.83rem;
+    }
+
+    .rd116-stat-person span {
+      margin-top: 3px;
+      color: #aeb9ca;
+      font-size: 0.68rem;
+      line-height: 1.35;
+    }
+
+    .rd116-stat-points {
+      color: #f5df91;
+      font-size: 0.74rem;
+      font-weight: 1000;
+      white-space: nowrap;
+    }
+
+    .rd116-summary-loading,
+    .rd116-summary-error {
+      padding: 28px 16px;
+      color: #b9c3d1;
+      text-align: center;
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    .rd116-summary-error {
+      color: #ffb4b7;
+    }
+
+    .rd116-summary-actions {
+      position: sticky;
+      bottom: 0;
+      padding: 12px 18px 18px;
+      background:
+        linear-gradient(
+          to bottom,
+          rgba(8, 12, 19, 0),
+          rgba(8, 12, 19, 0.98)
+            28%
+        );
+    }
+
+    .rd116-finish-button {
+      width: 100%;
+      min-height: 50px;
+      border: 1px solid
+        rgba(255, 119, 83, 0.7);
+      border-radius: 14px;
+      background:
+        linear-gradient(
+          100deg,
+          #d94c32,
+          #bd2f45
+        );
+      color: #fff;
+      font: inherit;
+      font-size: 0.87rem;
+      font-weight: 1000;
+      cursor: pointer;
+    }
+
+    @media (max-width: 520px) {
+      .rd116-summary-overlay {
+        place-items: end center;
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-bottom:
+          max(
+            10px,
+            env(safe-area-inset-bottom)
+          );
+      }
+
+      .rd116-summary-card {
+        max-height: 92vh;
+        border-radius:
+          20px 20px 14px 14px;
+      }
+
+      .rd116-summary-heading {
+        padding: 17px 15px 14px;
+      }
+
+      .rd116-summary-body {
+        padding: 14px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function rd116SummaryElement() {
+  let element =
+    document.getElementById(
+      "rd116MatchSummary"
+    );
+
+  if (!element) {
+    element =
+      document.createElement("div");
+
+    element.id =
+      "rd116MatchSummary";
+
+    element.className =
+      "rd116-summary-overlay";
+
+    element.hidden = true;
+
+    element.setAttribute(
+      "role",
+      "dialog"
+    );
+
+    element.setAttribute(
+      "aria-modal",
+      "true"
+    );
+
+    element.setAttribute(
+      "aria-label",
+      "Conquest Match Summary"
+    );
+
+    element.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.target.closest(
+            "#rd116FinishConquestBtn"
+          )
+        ) {
+          rd116FinishConquestSummary();
+        }
+      }
+    );
+
+    document.body.appendChild(element);
+  }
+
+  return element;
+}
+
+
+function rd116DismissStorageKey(roundId) {
+  const userId = String(
+    state.auth.user?.id || "guest"
+  );
+
+  const roomId = String(
+    state.multiplayer.roomId || "room"
+  );
+
+  return (
+    "road-discovery-conquest-finished:" +
+    `${userId}:${roomId}:${roundId}`
+  );
+}
+
+
+function rd116IsRoundDismissed(roundId) {
+  const id = String(roundId || "");
+
+  if (!id) return false;
+
+  if (
+    state.conquest.matchSummary
+      .dismissedRoundId === id
+  ) {
+    return true;
+  }
+
+  try {
+    return (
+      window.localStorage.getItem(
+        rd116DismissStorageKey(id)
+      ) === "true"
+    );
+
+  } catch (error) {
+    return false;
+  }
+}
+
+
+function rd116RememberDismissedRound(
+  roundId
+) {
+  const id = String(roundId || "");
+
+  if (!id) return;
+
+  state.conquest.matchSummary
+    .dismissedRoundId = id;
+
+  try {
+    window.localStorage.setItem(
+      rd116DismissStorageKey(id),
+      "true"
+    );
+
+  } catch (error) {
+    /*
+      Private browsing can reject storage.
+    */
+  }
+}
+
+
+function rd116HideMatchSummary() {
+  const element =
+    document.getElementById(
+      "rd116MatchSummary"
+    );
+
+  if (element) {
+    element.hidden = true;
+    element.innerHTML = "";
+  }
+}
+
+
+function rd116WinnerLabel(data) {
+  if (data?.winner === "draw") {
+    return "DRAW";
+  }
+
+  return data?.winner === "red"
+    ? "RED TEAM WINS"
+    : "BLUE TEAM WINS";
+}
+
+
+function rd116ParticipantStatsText(
+  participant
+) {
+  const captures = Number(
+    participant?.objective_captures
+  ) || 0;
+
+  const caches = Number(
+    participant?.caches_collected
+  ) || 0;
+
+  return (
+    `${captures} objective capture${
+      captures === 1 ? "" : "s"
+    } • ` +
+    `${caches} cache${
+      caches === 1 ? "" : "s"
+    }`
+  );
+}
+
+
+function rd116StatRowHtml(participant) {
+  const bot =
+    participant?.participant_type ===
+      "bot";
+
+  const legendary = Boolean(
+    participant?.legendary_collected
+  );
+
+  return `
+    <div class="rd116-stat-row">
+      <div class="rd116-stat-person">
+        <strong>
+          ${escapeHtml(
+            participant?.display_name ||
+              (
+                bot
+                  ? "Road Bot"
+                  : "Rider"
+              )
+          )}${bot ? " • BOT" : ""}
+        </strong>
+
+        <span>
+          ${escapeHtml(
+            rd116ParticipantStatsText(
+              participant
+            )
+          )}
+          ${
+            legendary
+              ? " • Legendary Collector"
+              : ""
+          }
+        </span>
+      </div>
+
+      <span class="rd116-stat-points">
+        +${Number(
+          participant?.cache_points
+        ) || 0} cache pts
+      </span>
+    </div>
+  `;
+}
+
+
+function rd116TeamSummaryHtml(
+  team,
+  participants
+) {
+  const rows = participants
+    .filter(
+      (participant) =>
+        participant?.team === team
+    )
+    .map(rd116StatRowHtml)
+    .join("");
+
+  const label =
+    team === "red"
+      ? "Red Team"
+      : "Blue Team";
+
+  return `
+    <section class="rd116-team-section">
+      <div
+        class="rd116-team-title ${team}"
+      >
+        ${label}
+      </div>
+
+      ${
+        rows ||
+        `
+          <div class="empty-state">
+            No participants
+          </div>
+        `
+      }
+    </section>
+  `;
+}
+
+
+function rd116SummaryCardHtml(data) {
+  const participants = Array.isArray(
+    data?.participants
+  )
+    ? data.participants
+    : [];
+
+  const mvpId = String(
+    data?.mvp_id || ""
+  );
+
+  const mvp = participants.find(
+    (participant) =>
+      String(
+        participant?.participant_id ||
+          ""
+      ) === mvpId
+  ) || participants[0] || null;
+
+  const mvpLegendary = Boolean(
+    mvp?.legendary_collected
+  );
+
+  return `
+    <article class="rd116-summary-card">
+      <header class="rd116-summary-heading">
+        <span>Match Summary</span>
+
+        <strong>
+          ${escapeHtml(
+            rd116WinnerLabel(data)
+          )}
+        </strong>
+
+        <div class="rd116-summary-score">
+          <span class="red">
+            RED ${
+              Number(
+                data?.red_score
+              ) || 0
+            }
+          </span>
+
+          <span>—</span>
+
+          <span class="blue">
+            BLUE ${
+              Number(
+                data?.blue_score
+              ) || 0
+            }
+          </span>
+        </div>
+      </header>
+
+      <div class="rd116-summary-body">
+        ${
+          mvp
+            ? `
+              <section class="rd116-mvp">
+                <small>Match MVP</small>
+
+                <strong>
+                  ${escapeHtml(
+                    mvp.display_name ||
+                      "Road Rider"
+                  )}
+                </strong>
+
+                <span>
+                  ${escapeHtml(
+                    rd116ParticipantStatsText(
+                      mvp
+                    )
+                  )}
+                  • +${Number(
+                    mvp.cache_points
+                  ) || 0} cache points
+                </span>
+
+                ${
+                  mvpLegendary
+                    ? `
+                      <em
+                        class="rd116-legendary-badge"
+                      >
+                        Legendary Cache Collector
+                      </em>
+                    `
+                    : ""
+                }
+              </section>
+            `
+            : ""
+        }
+
+        ${rd116TeamSummaryHtml(
+          "red",
+          participants
+        )}
+
+        ${rd116TeamSummaryHtml(
+          "blue",
+          participants
+        )}
+      </div>
+
+      <div class="rd116-summary-actions">
+        <button
+          id="rd116FinishConquestBtn"
+          class="rd116-finish-button"
+          type="button"
+        >
+          Finish
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+
+function rd116LoadingSummaryHtml() {
+  return `
+    <article class="rd116-summary-card">
+      <header class="rd116-summary-heading">
+        <span>Match Summary</span>
+
+        <strong>
+          Loading statistics…
+        </strong>
+      </header>
+
+      <div class="rd116-summary-loading">
+        Counting objective captures and Road Caches.
+      </div>
+    </article>
+  `;
+}
+
+
+function rd116ErrorSummaryHtml(message) {
+  return `
+    <article class="rd116-summary-card">
+      <header class="rd116-summary-heading">
+        <span>Match Complete</span>
+
+        <strong>
+          ${escapeHtml(
+            state.conquest.winner === "red"
+              ? "RED TEAM WINS"
+              : state.conquest.winner ===
+                  "blue"
+                ? "BLUE TEAM WINS"
+                : "DRAW"
+          )}
+        </strong>
+      </header>
+
+      <div class="rd116-summary-error">
+        ${escapeHtml(message)}
+      </div>
+
+      <div class="rd116-summary-actions">
+        <button
+          id="rd116FinishConquestBtn"
+          class="rd116-finish-button"
+          type="button"
+        >
+          Finish
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+async function rd116LoadMatchSummary(
+  roundId
+) {
+  const id = String(roundId || "");
+
+  if (
+    !id ||
+    !state.auth.client ||
+    rd116IsRoundDismissed(id) ||
+    state.conquest.matchSummary
+      .loadingFor === id ||
+    (
+      state.conquest.matchSummary
+        .roundId === id &&
+      state.conquest.matchSummary.data
+    )
+  ) {
+    return;
+  }
+
+  const requestId =
+    ++state.conquest.matchSummary
+      .requestId;
+
+  state.conquest.matchSummary
+    .loadingFor = id;
+
+  try {
+    const { data, error } =
+      await state.auth.client.rpc(
+        "get_conquest_match_summary",
+        {
+          p_round_id: id
+        }
+      );
+
+    if (error) {
+      throw error;
+    }
+
+    if (
+      requestId !==
+        state.conquest.matchSummary
+          .requestId ||
+      rd116IsRoundDismissed(id)
+    ) {
+      return;
+    }
+
+    const summary = Array.isArray(data)
+      ? data[0] || null
+      : data || null;
+
+    if (!summary) {
+      throw new Error(
+        "Match statistics were unavailable."
+      );
+    }
+
+    state.conquest.matchSummary.roundId =
+      id;
+
+    state.conquest.matchSummary.data =
+      summary;
+
+    const element =
+      document.getElementById(
+        "rd116MatchSummary"
+      );
+
+    if (
+      element &&
+      !element.hidden
+    ) {
+      element.innerHTML =
+        rd116SummaryCardHtml(summary);
+    }
+
+  } catch (error) {
+    console.error(error);
+
+    if (
+      requestId ===
+        state.conquest.matchSummary
+          .requestId
+    ) {
+      state.conquest.matchSummary
+        .roundId = id;
+
+      state.conquest.matchSummary.data = {
+        error:
+          rd86ConquestErrorMessage(error)
+      };
+
+      const element =
+        document.getElementById(
+          "rd116MatchSummary"
+        );
+
+      if (
+        element &&
+        !element.hidden
+      ) {
+        element.innerHTML =
+          rd116ErrorSummaryHtml(
+            state.conquest.matchSummary
+              .data.error
+          );
+      }
+    }
+
+  } finally {
+    if (
+      state.conquest.matchSummary
+        .loadingFor === id
+    ) {
+      state.conquest.matchSummary
+        .loadingFor = "";
+    }
+  }
+}
+
+
+function rd116ShowMatchSummary(roundId) {
+  const id = String(roundId || "");
+
+  if (
+    !id ||
+    rd116IsRoundDismissed(id) ||
+    String(
+      state.conquest.roundId || ""
+    ) !== id
+  ) {
+    return;
+  }
+
+  const element =
+    rd116SummaryElement();
+
+  const summaryState =
+    state.conquest.matchSummary;
+
+  if (
+    summaryState.roundId === id &&
+    summaryState.data?.error
+  ) {
+    element.innerHTML =
+      rd116ErrorSummaryHtml(
+        summaryState.data.error
+      );
+
+  } else if (
+    summaryState.roundId === id &&
+    summaryState.data
+  ) {
+    element.innerHTML =
+      rd116SummaryCardHtml(
+        summaryState.data
+      );
+
+  } else {
+    element.innerHTML =
+      rd116LoadingSummaryHtml();
+
+    void rd116LoadMatchSummary(id);
+  }
+
+  element.hidden = false;
+
+  window.setTimeout(() => {
+    document.getElementById(
+      "rd116FinishConquestBtn"
+    )?.focus();
+  }, 0);
+}
+
+function rd116FinishConquestSummary() {
+  const roundId = String(
+    state.conquest.roundId ||
+      state.conquest.matchSummary.roundId ||
+      ""
+  );
+
+  if (roundId) {
+    rd116RememberDismissedRound(roundId);
+  }
+
+  state.conquest.matchSummary
+    .requestId += 1;
+
+  rd116HideMatchSummary();
+
+  els.conquestResultOverlay
+    ?.classList.add("hidden");
+
+  roadDiscoveryV116
+    .resetConquestState({
+      clearRound: true,
+      render: true
+    });
+
+  showToast(
+    "Match finished • Back in multiplayer lobby"
+  );
+}
+
+
+/* -------------------------------------------------- */
+/* Winner splash followed by required summary         */
+/* -------------------------------------------------- */
+
+rd86ShowConquestResult = function () {
+  const roundId = String(
+    state.conquest.roundId || ""
+  );
+
+  if (
+    !roundId ||
+    rd116IsRoundDismissed(roundId) ||
+    state.conquest.matchSummary
+      .winnerStartedFor === roundId
+  ) {
+    return;
+  }
+
+  state.conquest.matchSummary
+    .winnerStartedFor = roundId;
+
+  roadDiscoveryV116
+    .showConquestResult();
+
+  void rd116LoadMatchSummary(roundId);
+
+  if (
+    state.conquest.resultTimer !== null
+  ) {
+    window.clearTimeout(
+      state.conquest.resultTimer
+    );
+  }
+
+  state.conquest.resultTimer =
+    window.setTimeout(() => {
+      els.conquestResultOverlay
+        ?.classList.add("hidden");
+
+      state.conquest.resultTimer = null;
+
+      rd116ShowMatchSummary(roundId);
+    }, 3000);
+};
+
+
+/* -------------------------------------------------- */
+/* Finished rounds stay dismissed on this device      */
+/* -------------------------------------------------- */
+
+rd86ApplyConquestState = function (row) {
+  const roundId = String(
+    row?.round_id || ""
+  );
+
+  const phase = String(
+    row?.phase || ""
+  );
+
+  if (
+    roundId &&
+    [
+      "finished",
+      "cancelled"
+    ].includes(phase) &&
+    rd116IsRoundDismissed(roundId)
+  ) {
+    if (
+      String(
+        state.conquest.roundId || ""
+      ) === roundId
+    ) {
+      roadDiscoveryV116
+        .resetConquestState({
+          clearRound: true,
+          render: true
+        });
+    }
+
+    return;
+  }
+
+  if (
+    roundId &&
+    roundId !==
+      state.conquest.matchSummary.roundId &&
+    ![
+      "finished",
+      "cancelled"
+    ].includes(phase)
+  ) {
+    rd116HideMatchSummary();
+
+    state.conquest.matchSummary.roundId =
+      "";
+
+    state.conquest.matchSummary
+      .winnerStartedFor = "";
+
+    state.conquest.matchSummary.data =
+      null;
+  }
+
+  return roadDiscoveryV116
+    .applyConquestState(row);
+};
+
+
+rd86LeaveConquestRound =
+async function (options = {}) {
+  if (
+    state.conquest.roundId &&
+    [
+      "finished",
+      "cancelled"
+    ].includes(state.conquest.phase)
+  ) {
+    rd116FinishConquestSummary();
+    return;
+  }
+
+  return roadDiscoveryV116
+    .leaveConquestRound(options);
+};
+
+
+rd86ResetConquestState = function (
+  options = {}
+) {
+  rd116PlayerRenderKey = "";
+  rd116FocusRenderKey = "";
+  rd116ObjectiveDrawKey = "";
+  rd116CacheDrawKey = "";
+
+  rd116HideMatchSummary();
+
+  state.conquest.matchSummary
+    .requestId += 1;
+
+  state.conquest.matchSummary
+    .loadingFor = "";
+
+  if (
+    options.clearRound !== false
+  ) {
+    state.conquest.matchSummary
+      .winnerStartedFor = "";
+
+    state.conquest.matchSummary.roundId =
+      "";
+
+    state.conquest.matchSummary.data =
+      null;
+  }
+
+  return roadDiscoveryV116
+    .resetConquestState(options);
+};
+
+
+function rd116InitMatchSummary() {
+  rd116InstallSummaryStyles();
+  rd116SummaryElement();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd116InitMatchSummary,
+    { once: true }
+  );
+
+} else {
+  rd116InitMatchSummary();
+}
