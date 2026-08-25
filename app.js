@@ -38625,6 +38625,9 @@ state.customConquest.savedMapsError =
 state.customConquest.savedMapsOwnerId =
   "";
 
+state.customConquest.savedMapCarouselIndex =
+  0;
+
 state.conquestArena.savedMapId =
   null;
 
@@ -38947,8 +38950,64 @@ function rd114InstallSavedMapStyles() {
     }
 
     .rd114-saved-map-list {
+      min-width: 0;
+    }
+
+    .rd114-saved-map-carousel {
       display: grid;
-      gap: 9px;
+      grid-template-columns:
+        42px minmax(0, 1fr) 42px;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .rd114-saved-map-viewport {
+      min-width: 0;
+    }
+
+    .rd114-carousel-arrow {
+      width: 42px;
+      height: 58px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 1px solid
+        rgba(245, 214, 112, 0.38);
+      border-radius: 13px;
+      background:
+        rgba(245, 214, 112, 0.11);
+      color: #f5d670;
+      font: inherit;
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      transition:
+        transform 0.12s ease,
+        border-color 0.12s ease,
+        background 0.12s ease;
+    }
+
+    .rd114-carousel-arrow:active {
+      transform: scale(0.94);
+      border-color:
+        rgba(245, 214, 112, 0.72);
+      background:
+        rgba(245, 214, 112, 0.2);
+    }
+
+    .rd114-carousel-arrow:disabled {
+      opacity: 0.28;
+      cursor: default;
+    }
+
+    .rd114-carousel-position {
+      margin-top: 8px;
+      color: #9fb2cc;
+      font-size: 0.68rem;
+      font-weight: 850;
+      letter-spacing: 0.04em;
+      text-align: center;
     }
 
     .rd114-saved-map-card {
@@ -39054,6 +39113,16 @@ function rd114InstallSavedMapStyles() {
     }
 
     @media (max-width: 520px) {
+      .rd114-saved-map-carousel {
+        grid-template-columns:
+          38px minmax(0, 1fr) 38px;
+        gap: 6px;
+      }
+
+      .rd114-carousel-arrow {
+        width: 38px;
+      }
+
       .rd94-arena-actions.rd114-has-save {
         grid-template-columns:
           1fr 1fr;
@@ -39428,6 +39497,11 @@ function rd114EnsureSavedMapsUi() {
         Private to your Road Profile. Load a tested arena without placing Rally and every objective again.
       </p>
 
+      <div
+        id="rd114SavedMapList"
+        class="rd114-saved-map-list"
+      ></div>
+
       <button
         id="rd114NewCustomMapBtn"
         class="rd114-new-map-btn"
@@ -39435,11 +39509,6 @@ function rd114EnsureSavedMapsUi() {
       >
         Create New Custom Map
       </button>
-
-      <div
-        id="rd114SavedMapList"
-        class="rd114-saved-map-list"
-      ></div>
     `;
 
     section.addEventListener(
@@ -39453,6 +39522,34 @@ function rd114EnsureSavedMapsUi() {
         if (newButton) {
           void rd94BeginArenaPlacement(
             "custom"
+          );
+
+          return;
+        }
+
+        const previousButton =
+          event.target.closest(
+            "[data-rd114-previous-map]"
+          );
+
+        if (previousButton) {
+          rd114MoveSavedMapCarousel(
+            -1,
+            "previous"
+          );
+
+          return;
+        }
+
+        const nextButton =
+          event.target.closest(
+            "[data-rd114-next-map]"
+          );
+
+        if (nextButton) {
+          rd114MoveSavedMapCarousel(
+            1,
+            "next"
           );
 
           return;
@@ -39525,6 +39622,81 @@ function rd114EnsureSavedMapsUi() {
   }
 
   rd114RenderSavedMapsUi();
+}
+
+
+function rd114NormaliseSavedMapCarouselIndex(
+  maps = state.customConquest.savedMaps
+) {
+  const length = Array.isArray(maps)
+    ? maps.length
+    : 0;
+
+  if (length < 1) {
+    state.customConquest
+      .savedMapCarouselIndex = 0;
+
+    return 0;
+  }
+
+  const requested = Math.trunc(
+    Number(
+      state.customConquest
+        .savedMapCarouselIndex
+    ) || 0
+  );
+
+  const normalised =
+    ((requested % length) + length) %
+      length;
+
+  state.customConquest
+    .savedMapCarouselIndex = normalised;
+
+  return normalised;
+}
+
+
+function rd114MoveSavedMapCarousel(
+  direction,
+  focusDirection = ""
+) {
+  const maps =
+    state.customConquest.savedMaps;
+
+  if (
+    !Array.isArray(maps) ||
+    maps.length < 2
+  ) {
+    return;
+  }
+
+  const currentIndex =
+    rd114NormaliseSavedMapCarouselIndex(
+      maps
+    );
+
+  state.customConquest
+    .savedMapCarouselIndex =
+      currentIndex +
+      (
+        Number(direction) < 0
+          ? -1
+          : 1
+      );
+
+  rd114RenderSavedMapsUi();
+
+  const selector =
+    focusDirection === "previous"
+      ? "[data-rd114-previous-map]"
+      : "[data-rd114-next-map]";
+
+  window.requestAnimationFrame(() => {
+    document.querySelector(
+      selector
+    )?.focus();
+  });
 }
 
 
@@ -39615,20 +39787,81 @@ function rd114RenderSavedMapsUi() {
     return;
   }
 
-  list.innerHTML =
-    maps.length
-      ? maps
-          .map(
-            rd114SavedMapCardHtml
+  if (!maps.length) {
+    state.customConquest
+      .savedMapCarouselIndex = 0;
+
+    list.innerHTML = `
+      <div
+        class="rd114-saved-empty"
+      >
+        No saved maps yet. Create a custom arena, place Rally and the objectives, then press Save Map.
+      </div>
+    `;
+
+    return;
+  }
+
+  const currentIndex =
+    rd114NormaliseSavedMapCarouselIndex(
+      maps
+    );
+
+  const currentMap =
+    maps[currentIndex];
+
+  const arrowsDisabled =
+    maps.length < 2
+      ? "disabled"
+      : "";
+
+  list.innerHTML = `
+    <div
+      class="rd114-saved-map-carousel"
+      aria-label="Saved map ${
+        currentIndex + 1
+      } of ${maps.length}"
+    >
+      <button
+        class="rd114-carousel-arrow"
+        type="button"
+        data-rd114-previous-map
+        aria-label="Previous saved map"
+        title="Previous saved map"
+        ${arrowsDisabled}
+      >
+        &#8249;
+      </button>
+
+      <div
+        class="rd114-saved-map-viewport"
+      >
+        ${
+          rd114SavedMapCardHtml(
+            currentMap
           )
-          .join("")
-      : `
-          <div
-            class="rd114-saved-empty"
-          >
-            No saved maps yet. Create a custom arena, place Rally and the objectives, then press Save Map.
-          </div>
-        `;
+        }
+      </div>
+
+      <button
+        class="rd114-carousel-arrow"
+        type="button"
+        data-rd114-next-map
+        aria-label="Next saved map"
+        title="Next saved map"
+        ${arrowsDisabled}
+      >
+        &#8250;
+      </button>
+    </div>
+
+    <div
+      class="rd114-carousel-position"
+      aria-live="polite"
+    >
+      ${currentIndex + 1} of ${maps.length}
+    </div>
+  `;
 }
 
 async function rd114LoadSavedMaps(
@@ -39692,6 +39925,18 @@ async function rd114LoadSavedMaps(
       throw error;
     }
 
+    const previousMaps =
+      state.customConquest.savedMaps;
+
+    const previousIndex =
+      rd114NormaliseSavedMapCarouselIndex(
+        previousMaps
+      );
+
+    const previousMapId =
+      previousMaps[previousIndex]?.id ||
+      "";
+
     state.customConquest.savedMaps =
       (
         Array.isArray(data)
@@ -39703,6 +39948,27 @@ async function rd114LoadSavedMaps(
         )
         .filter(Boolean)
         .slice(0, 10);
+
+    const restoredIndex =
+      state.customConquest.savedMaps
+        .findIndex(
+          (savedMap) =>
+            String(savedMap.id) ===
+              String(previousMapId)
+        );
+
+    state.customConquest
+      .savedMapCarouselIndex =
+        restoredIndex >= 0
+          ? restoredIndex
+          : Math.min(
+              previousIndex,
+              Math.max(
+                0,
+                state.customConquest
+                  .savedMaps.length - 1
+              )
+            );
 
     state.customConquest
       .savedMapsLoaded = true;
@@ -45051,3 +45317,8 @@ if (
 } else {
   rd121InitConquestMapLayout();
 }
+
+/* ================================================== */
+/* Road Discovery AU v122                             */
+/* Saved Maps single-card carousel                    */
+/* ================================================== */
