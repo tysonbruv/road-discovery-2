@@ -7724,6 +7724,18 @@ body.conquest-game-active .brand-row {
   text-overflow: ellipsis;
 }
 
+.custom-conquest-human-name::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #8df5a7;
+  box-shadow: 0 0 7px rgba(141, 245, 167, 0.68);
+  vertical-align: 1px;
+}
+
 .custom-conquest-team-select,
 .custom-conquest-bot-select {
   width: 100%;
