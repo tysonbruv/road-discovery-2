@@ -44893,3 +44893,161 @@ if (
 } else {
   rd120InitRouteChoices();
 }
+
+/* ================================================== */
+/* Road Discovery AU v121                             */
+/* Cleaner Custom Conquest saved-map flow             */
+/* ================================================== */
+
+const roadDiscoveryV121 = {
+  ensureArenaChoices:
+    rd94EnsureArenaChoices,
+
+  renderConquestSettings:
+    rd95RenderConquestSettings,
+
+  renderMultiplayerState,
+
+  renderSavedMaps:
+    rd114RenderSavedMapsUi
+};
+
+
+function rd121InstallConquestMapStyles() {
+  if (
+    document.getElementById(
+      "rd121ConquestMapStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd121ConquestMapStyles";
+
+  style.textContent = `
+    /*
+      Custom Conquest always uses host-placed or
+      saved objectives now, so this old selector
+      card is no longer part of the settings flow.
+    */
+    [data-rd94-arena-choice="custom"] {
+      display: none !important;
+    }
+
+    /* Saved map names use the Conquest gold. */
+    .rd114-map-card-title strong {
+      color: #ffc94a !important;
+    }
+
+    /* The create button belongs after the map list. */
+    #rd114SavedMapList +
+    #rd114NewCustomMapBtn {
+      margin-top: 1px;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd121ArrangeConquestMaps() {
+  rd121InstallConquestMapStyles();
+
+  const redundantArenaChoice =
+    document.querySelector(
+      '[data-rd94-arena-choice="custom"]'
+    );
+
+  redundantArenaChoice?.remove();
+
+  const list =
+    document.getElementById(
+      "rd114SavedMapList"
+    );
+
+  const createButton =
+    document.getElementById(
+      "rd114NewCustomMapBtn"
+    );
+
+  if (
+    list &&
+    createButton &&
+    list.parentElement ===
+      createButton.parentElement &&
+    list.nextElementSibling !==
+      createButton
+  ) {
+    list.insertAdjacentElement(
+      "afterend",
+      createButton
+    );
+  }
+}
+
+
+rd94EnsureArenaChoices = function () {
+  const result =
+    roadDiscoveryV121
+      .ensureArenaChoices();
+
+  rd121ArrangeConquestMaps();
+
+  return result;
+};
+
+
+rd114RenderSavedMapsUi = function () {
+  const result =
+    roadDiscoveryV121
+      .renderSavedMaps();
+
+  rd121ArrangeConquestMaps();
+
+  return result;
+};
+
+
+rd95RenderConquestSettings = function () {
+  const result =
+    roadDiscoveryV121
+      .renderConquestSettings();
+
+  rd121ArrangeConquestMaps();
+
+  return result;
+};
+
+
+renderMultiplayerState = function () {
+  const result =
+    roadDiscoveryV121
+      .renderMultiplayerState();
+
+  rd121ArrangeConquestMaps();
+
+  return result;
+};
+
+
+function rd121InitConquestMapLayout() {
+  rd121ArrangeConquestMaps();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd121InitConquestMapLayout,
+    { once: true }
+  );
+
+} else {
+  rd121InitConquestMapLayout();
+}
