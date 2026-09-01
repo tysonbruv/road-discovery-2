@@ -1,7 +1,7 @@
 "use strict";
 
-/* Road Discovery AU v49
-   Checkpoint 10: Hide & Seek Mode inside Multiplayer.
+/* Road Discovery AU v124
+   Self-hosted NSW OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
    Live GPS, current drives, markers, accuracy, speed, heading, waypoints and routes are never uploaded.
@@ -64,6 +64,632 @@ const ROAD_GREY = "#4e5563";
 const ROAD_ORANGE = "#ff8a18";
 const ROAD_CURRENT = "#ffb04a";
 const ROUTE_BLUE = "#4bb3ff";
+
+const ROAD_DISCOVERY_BASEMAP_URL =
+  "https://pub-22b254326ffe4854bae9993e2a43a443.r2.dev/nsw-road-discovery.pmtiles";
+
+const ROAD_DISCOVERY_BASEMAP_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> ' +
+  '&middot; <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>';
+
+const ROAD_DISCOVERY_BASEMAP_ROAD_CLASSES =
+  new Set([
+    "motorway",
+    "trunk",
+    "primary",
+    "secondary",
+    "tertiary",
+    "minor",
+    "service",
+    "track"
+  ]);
+
+const ROAD_DISCOVERY_BASEMAP_MAJOR_ROADS =
+  new Set([
+    "motorway",
+    "trunk",
+    "primary",
+    "secondary",
+    "tertiary"
+  ]);
+
+const ROAD_DISCOVERY_BASEMAP_PALETTES = {
+  dark: {
+    background: "#090b0f",
+    landDefault: "#0d1116",
+    landcover: {
+      wood: "#0e1815",
+      grass: "#101812",
+      scrub: "#111815",
+      farmland: "#111510"
+    },
+    landuseDefault: "#101419",
+    landuse: {
+      residential: "#11161c",
+      commercial: "#15171c",
+      industrial: "#17171a",
+      park: "#101a14",
+      cemetery: "#111914"
+    },
+    water: "#05090d",
+    waterway: "#152936",
+    localBoundary: "#313945",
+    stateBoundary: "#717b89",
+    roadCasing: "#080a0d",
+    roadDefault: "#2c333c",
+    roads: {
+      motorway: "#565f6d",
+      trunk: "#565f6d",
+      primary: "#4b5561",
+      secondary: "#414a55",
+      tertiary: "#39424c",
+      minor: "#303842",
+      service: "#272e36",
+      track: "#252b31"
+    },
+    majorRoadLabel: "#c4cad2",
+    localRoadLabel: "#aab2bc",
+    stateLabel: "#929aa5",
+    townLabel: "#e2e6eb",
+    suburbLabel: "#b7bec8",
+    labelHalo: "#090b0f"
+  },
+  light: {
+    background: "#e8edf1",
+    landDefault: "#e6ebee",
+    landcover: {
+      wood: "#d5e1d7",
+      grass: "#dce6d7",
+      scrub: "#dce3da",
+      farmland: "#e8e3d4"
+    },
+    landuseDefault: "#e1e6e9",
+    landuse: {
+      residential: "#e4e8eb",
+      commercial: "#e8e1df",
+      industrial: "#e1e0df",
+      park: "#d8e7d8",
+      cemetery: "#dbe5da"
+    },
+    water: "#c5dbe7",
+    waterway: "#8dbed2",
+    localBoundary: "#9ca6af",
+    stateBoundary: "#697581",
+    roadCasing: "#f2f4f5",
+    roadDefault: "#9aa3ab",
+    roads: {
+      motorway: "#6f7b86",
+      trunk: "#74808a",
+      primary: "#7d8892",
+      secondary: "#88929b",
+      tertiary: "#929ca5",
+      minor: "#a1a9b0",
+      service: "#b0b6bc",
+      track: "#aaa99f"
+    },
+    majorRoadLabel: "#3b4650",
+    localRoadLabel: "#5c6670",
+    stateLabel: "#59646e",
+    townLabel: "#222c35",
+    suburbLabel: "#4c5863",
+    labelHalo: "#f4f6f7"
+  }
+};
+
+function roadDiscoveryBaseFeatureValue(
+  feature,
+  key,
+  fallback = ""
+) {
+  const value = feature?.props?.[key];
+
+  return value === undefined || value === null
+    ? fallback
+    : value;
+}
+
+function roadDiscoveryBaseFeatureClass(feature) {
+  return String(
+    roadDiscoveryBaseFeatureValue(
+      feature,
+      "class"
+    )
+  );
+}
+
+function roadDiscoveryBaseZoomValue(
+  zoom,
+  stops
+) {
+  if (zoom <= stops[0][0]) {
+    return stops[0][1];
+  }
+
+  const last = stops[stops.length - 1];
+
+  if (zoom >= last[0]) {
+    return last[1];
+  }
+
+  for (let index = 0; index < stops.length - 1; index++) {
+    const start = stops[index];
+    const end = stops[index + 1];
+
+    if (zoom <= end[0]) {
+      const progress =
+        (zoom - start[0]) /
+        (end[0] - start[0]);
+
+      return start[1] +
+        (end[1] - start[1]) *
+          progress;
+    }
+  }
+
+  return last[1];
+}
+
+function roadDiscoveryBaseRoadWidth(
+  multiplier = 1
+) {
+  return function (zoom, feature) {
+    const roadClass =
+      roadDiscoveryBaseFeatureClass(feature);
+
+    const widths = {
+      motorway: [1.4, 3.8, 7.5, 15],
+      trunk: [1.4, 3.8, 7.5, 15],
+      primary: [0.8, 3, 6.3, 13],
+      secondary: [0.8, 2.3, 5.2, 11],
+      tertiary: [0.35, 1.8, 4.3, 9],
+      minor: [0.35, 1.25, 3.2, 7],
+      service: [0.35, 0.8, 2.2, 5],
+      track: [0.35, 0.8, 1.5, 3.5]
+    };
+
+    const values =
+      widths[roadClass] || widths.track;
+
+    return multiplier *
+      roadDiscoveryBaseZoomValue(
+        zoom,
+        [
+          [5, values[0]],
+          [10, values[1]],
+          [14, values[2]],
+          [18, values[3]]
+        ]
+      );
+  };
+}
+
+function roadDiscoveryBasePaintRules(
+  daylight = false
+) {
+  const renderer = window.protomapsL;
+  const palette =
+    ROAD_DISCOVERY_BASEMAP_PALETTES[
+      daylight ? "light" : "dark"
+    ];
+
+  return [
+    {
+      dataLayer: "landcover",
+      symbolizer:
+        new renderer.PolygonSymbolizer({
+          fill: function (zoom, feature) {
+            const featureClass =
+              roadDiscoveryBaseFeatureClass(
+                feature
+              );
+
+            return palette.landcover[
+              featureClass
+            ] || palette.landDefault;
+          },
+          opacity: 0.82
+        })
+    },
+    {
+      dataLayer: "landuse",
+      minzoom: 8,
+      symbolizer:
+        new renderer.PolygonSymbolizer({
+          fill: function (zoom, feature) {
+            const featureClass =
+              roadDiscoveryBaseFeatureClass(
+                feature
+              );
+
+            return palette.landuse[
+              featureClass
+            ] || palette.landuseDefault;
+          },
+          opacity: 0.72
+        })
+    },
+    {
+      dataLayer: "water",
+      symbolizer:
+        new renderer.PolygonSymbolizer({
+          fill: palette.water
+        })
+    },
+    {
+      dataLayer: "waterway",
+      minzoom: 8,
+      symbolizer:
+        new renderer.LineSymbolizer({
+          color: palette.waterway,
+          opacity: 0.82,
+          width: (zoom) =>
+            roadDiscoveryBaseZoomValue(
+              zoom,
+              [[8, 0.4], [16, 1.6]]
+            ),
+          lineCap: "round",
+          lineJoin: "round"
+        })
+    },
+    {
+      dataLayer: "boundary",
+      minzoom: 8,
+      filter: (zoom, feature) => {
+        const level = Number(
+          roadDiscoveryBaseFeatureValue(
+            feature,
+            "admin_level",
+            0
+          )
+        );
+
+        return level >= 6 && level <= 10;
+      },
+      symbolizer:
+        new renderer.LineSymbolizer({
+          color: palette.localBoundary,
+          opacity: 0.52,
+          width: (zoom) =>
+            roadDiscoveryBaseZoomValue(
+              zoom,
+              [[8, 0.45], [15, 1]]
+            ),
+          dash: [2, 2]
+        })
+    },
+    {
+      dataLayer: "boundary",
+      filter: (zoom, feature) =>
+        Number(
+          roadDiscoveryBaseFeatureValue(
+            feature,
+            "admin_level",
+            0
+          )
+        ) === 4,
+      symbolizer:
+        new renderer.LineSymbolizer({
+          color: palette.stateBoundary,
+          opacity: 0.7,
+          width: (zoom) =>
+            roadDiscoveryBaseZoomValue(
+              zoom,
+              [[3, 0.8], [10, 1.8]]
+            ),
+          dash: [3, 2]
+        })
+    },
+    {
+      dataLayer: "transportation",
+      minzoom: 5,
+      filter: (zoom, feature) =>
+        ROAD_DISCOVERY_BASEMAP_ROAD_CLASSES.has(
+          roadDiscoveryBaseFeatureClass(feature)
+        ),
+      symbolizer:
+        new renderer.LineSymbolizer({
+          color: palette.roadCasing,
+          opacity: 0.96,
+          width: roadDiscoveryBaseRoadWidth(1.42),
+          lineCap: "round",
+          lineJoin: "round"
+        })
+    },
+    {
+      dataLayer: "transportation",
+      minzoom: 5,
+      filter: (zoom, feature) =>
+        ROAD_DISCOVERY_BASEMAP_ROAD_CLASSES.has(
+          roadDiscoveryBaseFeatureClass(feature)
+        ),
+      symbolizer:
+        new renderer.LineSymbolizer({
+          color: function (zoom, feature) {
+            const roadClass =
+              roadDiscoveryBaseFeatureClass(
+                feature
+              );
+
+            return palette.roads[roadClass] ||
+              palette.roadDefault;
+          },
+          opacity: (zoom) =>
+            roadDiscoveryBaseZoomValue(
+              zoom,
+              [[5, 0.75], [11, 0.94]]
+            ),
+          width: roadDiscoveryBaseRoadWidth(1),
+          lineCap: "round",
+          lineJoin: "round"
+        })
+    }
+  ];
+}
+
+function roadDiscoveryBaseLabelRules(
+  daylight = false
+) {
+  const renderer = window.protomapsL;
+  const palette =
+    ROAD_DISCOVERY_BASEMAP_PALETTES[
+      daylight ? "light" : "dark"
+    ];
+  const labelProps = [
+    "name:en",
+    "name",
+    "ref"
+  ];
+  const fontFamily =
+    "Inter, ui-sans-serif, system-ui, sans-serif";
+
+  return [
+    {
+      dataLayer: "place",
+      minzoom: 3,
+      maxzoom: 8,
+      filter: (zoom, feature) =>
+        roadDiscoveryBaseFeatureClass(feature) ===
+          "state",
+      symbolizer:
+        new renderer.CenteredTextSymbolizer({
+          labelProps,
+          textTransform: "uppercase",
+          fontFamily,
+          fontWeight: 650,
+          fontSize: (zoom) =>
+            roadDiscoveryBaseZoomValue(
+              zoom,
+              [[3, 12], [7, 16]]
+            ),
+          letterSpacing: 1.3,
+          fill: palette.stateLabel,
+          stroke: palette.labelHalo,
+          width: 1.5,
+          maxLineChars: 30
+        })
+    },
+    {
+      dataLayer: "place",
+      minzoom: 5,
+      filter: (zoom, feature) =>
+        [
+          "city",
+          "town",
+          "village",
+          "hamlet"
+        ].includes(
+          roadDiscoveryBaseFeatureClass(feature)
+        ),
+      sort: (first, second) =>
+        Number(first?.rank || 99) -
+        Number(second?.rank || 99),
+      symbolizer:
+        new renderer.CenteredTextSymbolizer({
+          labelProps,
+          fontFamily,
+          fontWeight: 650,
+          fontSize: function (zoom, feature) {
+            const placeClass =
+              roadDiscoveryBaseFeatureClass(
+                feature
+              );
+            const city = placeClass === "city";
+            const town = placeClass === "town";
+
+            return roadDiscoveryBaseZoomValue(
+              zoom,
+              city
+                ? [[5, 15], [13, 20]]
+                : town
+                  ? [[5, 12], [13, 17]]
+                  : [[5, 10], [13, 14]]
+            );
+          },
+          fill: palette.townLabel,
+          stroke: palette.labelHalo,
+          width: 1.7,
+          maxLineChars: 32
+        })
+    },
+    {
+      dataLayer: "transportation_name",
+      minzoom: 7,
+      filter: (zoom, feature) =>
+        ROAD_DISCOVERY_BASEMAP_MAJOR_ROADS.has(
+          roadDiscoveryBaseFeatureClass(feature)
+        ),
+      symbolizer:
+        new renderer.LineLabelSymbolizer({
+          labelProps,
+          fontFamily,
+          fontWeight: 650,
+          fontSize: (zoom) =>
+            roadDiscoveryBaseZoomValue(
+              zoom,
+              [[7, 10], [15, 13], [18, 15]]
+            ),
+          fill: palette.majorRoadLabel,
+          stroke: palette.labelHalo,
+          width: 3.5,
+          repeatDistance: 360,
+          maxLabelChars: 40
+        })
+    },
+    {
+      dataLayer: "place",
+      minzoom: 9,
+      filter: (zoom, feature) =>
+        [
+          "suburb",
+          "quarter",
+          "neighbourhood"
+        ].includes(
+          roadDiscoveryBaseFeatureClass(feature)
+        ),
+      symbolizer:
+        new renderer.CenteredTextSymbolizer({
+          labelProps,
+          fontFamily,
+          fontWeight: 500,
+          fontSize: (zoom) =>
+            roadDiscoveryBaseZoomValue(
+              zoom,
+              [[9, 10], [15, 13]]
+            ),
+          letterSpacing: 0.4,
+          fill: palette.suburbLabel,
+          stroke: palette.labelHalo,
+          width: 1.5,
+          maxLineChars: 30
+        })
+    },
+    {
+      dataLayer: "transportation_name",
+      minzoom: 13,
+      filter: (zoom, feature) =>
+        ["minor", "service"].includes(
+          roadDiscoveryBaseFeatureClass(feature)
+        ),
+      symbolizer:
+        new renderer.LineLabelSymbolizer({
+          labelProps,
+          fontFamily,
+          fontWeight: 500,
+          fontSize: (zoom) =>
+            roadDiscoveryBaseZoomValue(
+              zoom,
+              [[13, 10], [17, 12]]
+            ),
+          fill: palette.localRoadLabel,
+          stroke: palette.labelHalo,
+          width: 3,
+          repeatDistance: 270,
+          maxLabelChars: 40
+        })
+    }
+  ];
+}
+
+function roadDiscoveryFallbackBaseLayer(
+  daylight = false
+) {
+  const palette =
+    ROAD_DISCOVERY_BASEMAP_PALETTES[
+      daylight ? "light" : "dark"
+    ];
+  const layer = L.gridLayer({
+    maxZoom: 20,
+    noWrap: true,
+    attribution:
+      ROAD_DISCOVERY_BASEMAP_ATTRIBUTION
+  });
+
+  layer.createTile = function () {
+    const tile =
+      document.createElement("canvas");
+    const size = 256;
+
+    tile.width = size;
+    tile.height = size;
+
+    const context = tile.getContext("2d");
+
+    if (context) {
+      context.fillStyle = palette.background;
+      context.fillRect(0, 0, size, size);
+    }
+
+    return tile;
+  };
+
+  window.setTimeout(() => {
+    showToast(
+      "Map renderer did not load"
+    );
+  }, 0);
+
+  return layer;
+}
+
+function createRoadDiscoveryBaseLayer(
+  daylight = false
+) {
+  const renderer = window.protomapsL;
+  const palette =
+    ROAD_DISCOVERY_BASEMAP_PALETTES[
+      daylight ? "light" : "dark"
+    ];
+
+  const layer =
+    renderer?.leafletLayer
+      ? renderer.leafletLayer({
+        url: ROAD_DISCOVERY_BASEMAP_URL,
+        maxZoom: 20,
+        maxDataZoom: 14,
+        noWrap: true,
+        backgroundColor: palette.background,
+        paintRules:
+          roadDiscoveryBasePaintRules(
+            daylight
+          ),
+        labelRules:
+          roadDiscoveryBaseLabelRules(
+            daylight
+          ),
+        attribution:
+          ROAD_DISCOVERY_BASEMAP_ATTRIBUTION
+      })
+      : roadDiscoveryFallbackBaseLayer(
+        daylight
+      );
+
+  Object.assign(layer, {
+    _roadDiscoveryBaseMap: true,
+    _roadDiscoveryBaseTheme:
+      daylight ? "light" : "dark",
+    _roadDiscoveryArchiveUrl:
+      ROAD_DISCOVERY_BASEMAP_URL
+  });
+
+  return layer;
+}
+
+function addRoadDiscoveryBaseLayer(
+  map,
+  daylight = false
+) {
+  return createRoadDiscoveryBaseLayer(
+    daylight
+  ).addTo(map);
+}
+
+function isRoadDiscoveryBaseLayer(layer) {
+  return Boolean(
+    layer?._roadDiscoveryBaseMap ||
+    layer?._roadDiscoveryArchiveUrl ===
+      ROAD_DISCOVERY_BASEMAP_URL
+  );
+}
 
 const $ = (id) => document.getElementById(id);
 const els = {};
@@ -450,7 +1076,7 @@ function initMap() {
   state.map = L.map(els.map, {
     zoomControl: false,
     preferCanvas: true,
-    attributionControl: false,
+    attributionControl: true,
     tap: true
   }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
 
@@ -476,11 +1102,10 @@ function initMap() {
     userLocationPane.style.pointerEvents = "none";
   }
 
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    maxZoom: 20,
-    crossOrigin: true,
-    attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
-  }).addTo(state.map);
+  addRoadDiscoveryBaseLayer(
+    state.map,
+    false
+  );
 
   state.roadsLayer.addTo(state.map);
   state.savedLayer.addTo(state.map);
@@ -6259,18 +6884,14 @@ function ensureFriendFullMap() {
   state.friendMap.fullMap = L.map(els.friendFullMap, {
     zoomControl: true,
     preferCanvas: true,
-    attributionControl: false,
+    attributionControl: true,
     tap: true
   }).setView(DEFAULT_CENTER, 4);
 
-  L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    {
-      maxZoom: 20,
-      crossOrigin: true,
-      attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
-    }
-  ).addTo(state.friendMap.fullMap);
+  addRoadDiscoveryBaseLayer(
+    state.friendMap.fullMap,
+    false
+  );
 
   state.friendMap.fullRenderer = L.canvas({ padding: 0.5 });
 
@@ -19743,21 +20364,14 @@ function rd77EnsurePublicMap() {
   rd77PublicMap.map = L.map(container, {
     zoomControl: true,
     preferCanvas: true,
-    attributionControl: false,
+    attributionControl: true,
     tap: true
   }).setView(DEFAULT_CENTER, 4);
 
-  L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/" +
-    "dark_all/{z}/{x}/{y}{r}.png",
-    {
-      maxZoom: 20,
-      crossOrigin: true,
-      attribution:
-        "&copy; OpenStreetMap contributors " +
-        "&copy; CARTO"
-    }
-  ).addTo(rd77PublicMap.map);
+  addRoadDiscoveryBaseLayer(
+    rd77PublicMap.map,
+    false
+  );
 
   rd77PublicMap.renderer = L.canvas({
     padding: 0.5
@@ -22242,11 +22856,9 @@ if (document.readyState === "loading") {
 const RD83_DAYLIGHT_MAP_KEY =
   "roadDiscoveryAU.daylightMap.v1";
 
-const RD83_DARK_TILE_URL =
-  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const RD83_DARK_THEME = "dark";
 
-const RD83_LIGHT_TILE_URL =
-  "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const RD83_LIGHT_THEME = "light";
 
 const roadDiscoveryV83 = {
   initMap
@@ -22283,16 +22895,7 @@ function rd83SaveDaylightMap() {
 }
 
 function rd83IsRoadDiscoveryBaseTile(layer) {
-  const url = String(layer?._url || "");
-
-  return (
-    url.includes(
-      "basemaps.cartocdn.com/dark_all"
-    ) ||
-    url.includes(
-      "basemaps.cartocdn.com/light_all"
-    )
-  );
+  return isRoadDiscoveryBaseLayer(layer);
 }
 
 function rd83ApplyDaylightMap() {
@@ -22317,22 +22920,21 @@ function rd83ApplyDaylightMap() {
     return;
   }
 
-  const currentUrl = enabled
-    ? RD83_LIGHT_TILE_URL
-    : RD83_DARK_TILE_URL;
+  const currentTheme = enabled
+    ? RD83_LIGHT_THEME
+    : RD83_DARK_THEME;
 
   const layersToRemove = [];
   let matchingLayer = null;
 
   state.map.eachLayer((layer) => {
     if (
-      layer instanceof L.TileLayer &&
       rd83IsRoadDiscoveryBaseTile(layer)
     ) {
       if (
         !matchingLayer &&
-        String(layer._url || "") ===
-          currentUrl
+        layer._roadDiscoveryBaseTheme ===
+          currentTheme
       ) {
         matchingLayer = layer;
       } else {
@@ -22347,15 +22949,10 @@ function rd83ApplyDaylightMap() {
 
   state.rd83BaseTileLayer =
     matchingLayer ||
-    L.tileLayer(
-      currentUrl,
-      {
-        maxZoom: 20,
-        crossOrigin: true,
-        attribution:
-          "&copy; OpenStreetMap contributors &copy; CARTO"
-      }
-    ).addTo(state.map);
+    addRoadDiscoveryBaseLayer(
+      state.map,
+      enabled
+    );
 
   state.rd83BaseTileLayer
     .bringToBack?.();
@@ -43106,7 +43703,6 @@ function rd119BaseTileLayer() {
   state.map?.eachLayer?.((layer) => {
     if (
       !result &&
-      layer instanceof L.TileLayer &&
       rd83IsRoadDiscoveryBaseTile(layer)
     ) {
       result = layer;
@@ -43123,23 +43719,6 @@ function rd119AlternateTileUrl(
 ) {
   try {
     const url = new URL(source);
-    const hosts = ["a", "b", "c", "d"];
-
-    const match = url.hostname.match(
-      /^([a-d])\.basemaps\.cartocdn\.com$/
-    );
-
-    if (match) {
-      const currentIndex =
-        hosts.indexOf(match[1]);
-
-      const nextIndex =
-        (currentIndex + attempt + 1) %
-        hosts.length;
-
-      url.hostname =
-        `${hosts[nextIndex]}.basemaps.cartocdn.com`;
-    }
 
     url.searchParams.set(
       "rd_retry",
@@ -43184,6 +43763,24 @@ function rd119RetryTile(event) {
   if (!tile) return;
 
   rd119RememberTileFailure();
+
+  /*
+    The self-hosted PMTiles basemap renders each
+    Leaflet tile into a canvas. Canvas tiles do not
+    have a URL that can be retried like the previous
+    raster images, so redraw the vector layer instead.
+  */
+  if (
+    String(tile.tagName || "")
+      .toUpperCase() !== "IMG"
+  ) {
+    rd119ScheduleBaseMapRedraw(
+      700,
+      "vector-tile-error"
+    );
+
+    return;
+  }
 
   const attempt = Number(
     tile.dataset.rd119Retry || 0
