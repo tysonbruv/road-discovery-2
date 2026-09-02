@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v129
+/* Road Discovery AU v130
    Self-hosted NSW OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -7008,7 +7008,7 @@ function ensureFriendFullMap() {
 
   addRoadDiscoveryBaseLayer(
     state.friendMap.fullMap,
-    false
+    "contrast"
   );
 
   state.friendMap.fullRenderer = L.canvas({ padding: 0.5 });
@@ -20488,7 +20488,7 @@ function rd77EnsurePublicMap() {
 
   addRoadDiscoveryBaseLayer(
     rd77PublicMap.map,
-    false
+    "contrast"
   );
 
   rd77PublicMap.renderer = L.canvas({
@@ -47333,3 +47333,70 @@ if (document.readyState === "loading") {
 } else {
   rd128InitHighContrastMap();
 }
+
+/* ================================================== */
+/* Road Discovery AU v130                             */
+/* High-Contrast Friend and Public Maps               */
+/* ================================================== */
+
+function rd130ViewedMapTrailStyle(zoomValue) {
+  const zoom = Number(zoomValue);
+
+  if (!Number.isFinite(zoom) || zoom >= 14) {
+    return {
+      weight: 5,
+      opacity: 1
+    };
+  }
+
+  if (zoom >= 13) {
+    return {
+      weight: 3.4,
+      opacity: 1
+    };
+  }
+
+  if (zoom >= 12) {
+    return {
+      weight: 2.3,
+      opacity: 0.98
+    };
+  }
+
+  if (zoom >= 10) {
+    return {
+      weight: 1.55,
+      opacity: 0.96
+    };
+  }
+
+  if (zoom >= 8) {
+    return {
+      weight: 1.15,
+      opacity: 0.94
+    };
+  }
+
+  return {
+    weight: 0.9,
+    opacity: 0.92
+  };
+}
+
+
+rd61FriendSavedRoadStyle = function () {
+  return rd130ViewedMapTrailStyle(
+    state.friendMap.fullMap?.getZoom?.()
+  );
+};
+
+
+rd77PublicMapRoadStyle = function () {
+  return rd130ViewedMapTrailStyle(
+    rd77PublicMap.map?.getZoom?.()
+  );
+};
+
+
+rd61ApplyFriendSavedRoadStyle();
+rd77ApplyPublicMapRoadStyle();
