@@ -1,7 +1,7 @@
 "use strict";
 
-/* Road Discovery AU v127
-   Self-hosted NSW OpenStreetMap PMTiles basemap with dark and daylight styles.
+/* Road Discovery AU v128
+   Self-hosted NSW OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
    Live GPS, current drives, markers, accuracy, speed, heading, waypoints and routes are never uploaded.
@@ -177,8 +177,62 @@ const ROAD_DISCOVERY_BASEMAP_PALETTES = {
     townLabel: "#222c35",
     suburbLabel: "#4c5863",
     labelHalo: "#f4f6f7"
+  },
+  contrast: {
+    background: "#030507",
+    landDefault: "#070a0d",
+    landcover: {
+      wood: "#07100d",
+      grass: "#09110b",
+      scrub: "#0a100d",
+      farmland: "#0d100b"
+    },
+    landuseDefault: "#0a0d11",
+    landuse: {
+      residential: "#0a0e12",
+      commercial: "#0d0f13",
+      industrial: "#101115",
+      park: "#08110c",
+      cemetery: "#09120d"
+    },
+    water: "#020408",
+    waterway: "#0d202c",
+    localBoundary: "#222933",
+    stateBoundary: "#535e6c",
+    tunnelCasing: "#030507",
+    tunnelRoad: "#171c22",
+    roadCasing: "#020304",
+    roadDefault: "#1a2027",
+    roads: {
+      motorway: "#39424e",
+      trunk: "#38414d",
+      primary: "#313a45",
+      secondary: "#29313b",
+      tertiary: "#222a32",
+      minor: "#1c2229",
+      service: "#171c22",
+      track: "#14191e"
+    },
+    majorRoadLabel: "#b3bac4",
+    localRoadLabel: "#8d96a1",
+    stateLabel: "#78828e",
+    townLabel: "#d3d8df",
+    suburbLabel: "#9ca5b0",
+    labelHalo: "#030507"
   }
 };
+
+function roadDiscoveryBaseThemeKey(value = false) {
+  if (value === true || value === "light") {
+    return "light";
+  }
+
+  if (value === "contrast") {
+    return "contrast";
+  }
+
+  return "dark";
+}
 
 function roadDiscoveryBaseFeatureValue(
   feature,
@@ -284,7 +338,7 @@ function roadDiscoveryBasePaintRules(
   const renderer = window.protomapsL;
   const palette =
     ROAD_DISCOVERY_BASEMAP_PALETTES[
-      daylight ? "light" : "dark"
+      roadDiscoveryBaseThemeKey(daylight)
     ];
 
   return [
@@ -496,7 +550,7 @@ function roadDiscoveryBaseLabelRules(
   const renderer = window.protomapsL;
   const palette =
     ROAD_DISCOVERY_BASEMAP_PALETTES[
-      daylight ? "light" : "dark"
+      roadDiscoveryBaseThemeKey(daylight)
     ];
   const labelProps = [
     "name:en",
@@ -659,7 +713,7 @@ function roadDiscoveryFallbackBaseLayer(
 ) {
   const palette =
     ROAD_DISCOVERY_BASEMAP_PALETTES[
-      daylight ? "light" : "dark"
+      roadDiscoveryBaseThemeKey(daylight)
     ];
   const layer = L.gridLayer({
     maxZoom: 20,
@@ -701,7 +755,7 @@ function createRoadDiscoveryBaseLayer(
   const renderer = window.protomapsL;
   const palette =
     ROAD_DISCOVERY_BASEMAP_PALETTES[
-      daylight ? "light" : "dark"
+      roadDiscoveryBaseThemeKey(daylight)
     ];
 
   const layer =
@@ -730,7 +784,7 @@ function createRoadDiscoveryBaseLayer(
   Object.assign(layer, {
     _roadDiscoveryBaseMap: true,
     _roadDiscoveryBaseTheme:
-      daylight ? "light" : "dark",
+      roadDiscoveryBaseThemeKey(daylight),
     _roadDiscoveryArchiveUrl:
       ROAD_DISCOVERY_BASEMAP_URL
   });
@@ -46956,3 +47010,326 @@ rd86ResetConquestState = function (
   return roadDiscoveryV126
     .resetConquestState(options);
 };
+
+/* ================================================== */
+/* Road Discovery AU v128                             */
+/* Optional High-Contrast Dark Basemap                */
+/* ================================================== */
+
+const RD128_HIGH_CONTRAST_MAP_KEY =
+  "roadDiscoveryAU.highContrastMap.v1";
+
+const RD128_HIGH_CONTRAST_THEME =
+  "contrast";
+
+state.highContrastMap =
+  rd128LoadHighContrastMap();
+
+
+function rd128LoadHighContrastMap() {
+  try {
+    return (
+      localStorage.getItem(
+        RD128_HIGH_CONTRAST_MAP_KEY
+      ) === "true"
+    );
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
+
+
+function rd128SaveHighContrastMap() {
+  try {
+    localStorage.setItem(
+      RD128_HIGH_CONTRAST_MAP_KEY,
+      String(Boolean(state.highContrastMap))
+    );
+  } catch (error) {
+    console.error(error);
+    showToast(
+      "Could not save map appearance"
+    );
+  }
+}
+
+
+function rd128CurrentMapTheme() {
+  if (state.highContrastMap) {
+    return RD128_HIGH_CONTRAST_THEME;
+  }
+
+  return state.daylightMap
+    ? RD83_LIGHT_THEME
+    : RD83_DARK_THEME;
+}
+
+
+function rd128UpdateMapAppearanceControls() {
+  const daylightToggle = $(
+    "rd83DaylightMapToggle"
+  );
+
+  const contrastToggle = $(
+    "rd128HighContrastMapToggle"
+  );
+
+  if (daylightToggle) {
+    daylightToggle.checked = Boolean(
+      state.daylightMap
+    );
+  }
+
+  if (contrastToggle) {
+    contrastToggle.checked = Boolean(
+      state.highContrastMap
+    );
+  }
+}
+
+
+rd83ApplyDaylightMap = function () {
+  const currentTheme =
+    rd128CurrentMapTheme();
+
+  const daylight =
+    currentTheme === RD83_LIGHT_THEME;
+
+  const highContrast =
+    currentTheme ===
+      RD128_HIGH_CONTRAST_THEME;
+
+  document.body.classList.toggle(
+    "rd83-daylight-map",
+    daylight
+  );
+
+  document.body.classList.toggle(
+    "rd128-high-contrast-map",
+    highContrast
+  );
+
+  rd128UpdateMapAppearanceControls();
+
+  if (!state.map || !window.L) {
+    return;
+  }
+
+  const layersToRemove = [];
+  let matchingLayer = null;
+
+  state.map.eachLayer((layer) => {
+    if (!rd83IsRoadDiscoveryBaseTile(layer)) {
+      return;
+    }
+
+    if (
+      !matchingLayer &&
+      layer._roadDiscoveryBaseTheme ===
+        currentTheme
+    ) {
+      matchingLayer = layer;
+    } else {
+      layersToRemove.push(layer);
+    }
+  });
+
+  for (const layer of layersToRemove) {
+    state.map.removeLayer(layer);
+  }
+
+  state.rd83BaseTileLayer =
+    matchingLayer ||
+    addRoadDiscoveryBaseLayer(
+      state.map,
+      currentTheme
+    );
+
+  state.rd83BaseTileLayer
+    .bringToBack?.();
+
+  const container =
+    state.map.getContainer?.();
+
+  container?.classList.toggle(
+    "rd83-daylight-map-active",
+    daylight
+  );
+
+  container?.classList.toggle(
+    "rd128-high-contrast-map-active",
+    highContrast
+  );
+
+  window.setTimeout(() => {
+    state.map?.invalidateSize?.(false);
+  }, 0);
+};
+
+
+function rd128InsertHighContrastMapSetting() {
+  if ($("rd128HighContrastMapToggle")) {
+    rd128UpdateMapAppearanceControls();
+    return;
+  }
+
+  const daylightSetting = $(
+    "rd83DaylightMapSetting"
+  );
+
+  const mapSection = $(
+    "locationMarkerToggle"
+  )?.closest(".panel-section");
+
+  if (!mapSection) return;
+
+  const setting =
+    document.createElement("label");
+
+  setting.id =
+    "rd128HighContrastMapSetting";
+
+  setting.className =
+    "toggle-row rd128-high-contrast-map-setting";
+
+  setting.htmlFor =
+    "rd128HighContrastMapToggle";
+
+  setting.innerHTML = `
+    <div class="toggle-text">
+      <strong>High-contrast dark map</strong>
+
+      <span>
+        Uses a deeper CARTO-style map colour and
+        quieter ordinary roads so your discovered
+        trail has a cleaner pop. Your progress and
+        trail colour stay unchanged.
+      </span>
+    </div>
+
+    <input
+      id="rd128HighContrastMapToggle"
+      class="toggle-input"
+      type="checkbox"
+    />
+
+    <span
+      class="toggle-switch"
+      aria-hidden="true"
+    >
+      <span class="toggle-knob"></span>
+    </span>
+  `;
+
+  if (
+    daylightSetting &&
+    daylightSetting.parentElement === mapSection
+  ) {
+    daylightSetting.insertAdjacentElement(
+      "afterend",
+      setting
+    );
+  } else {
+    const trailColourSetting = $(
+      "trailColourSetting"
+    );
+
+    if (
+      trailColourSetting &&
+      trailColourSetting.parentElement ===
+        mapSection
+    ) {
+      mapSection.insertBefore(
+        setting,
+        trailColourSetting
+      );
+    } else {
+      mapSection.appendChild(setting);
+    }
+  }
+
+  $("rd128HighContrastMapToggle")
+    ?.addEventListener(
+      "change",
+      (event) => {
+        const enabled = Boolean(
+          event.currentTarget.checked
+        );
+
+        state.highContrastMap = enabled;
+
+        if (enabled && state.daylightMap) {
+          state.daylightMap = false;
+          rd83SaveDaylightMap();
+        }
+
+        rd128SaveHighContrastMap();
+        rd83ApplyDaylightMap();
+
+        showToast(
+          enabled
+            ? "High-contrast dark map on"
+            : "Standard dark map on"
+        );
+      }
+    );
+}
+
+
+function rd128BindDaylightExclusivity() {
+  const daylightToggle = $(
+    "rd83DaylightMapToggle"
+  );
+
+  if (
+    !daylightToggle ||
+    daylightToggle.dataset
+      .rd128ContrastBound === "true"
+  ) {
+    return;
+  }
+
+  daylightToggle.dataset
+    .rd128ContrastBound = "true";
+
+  daylightToggle.addEventListener(
+    "change",
+    (event) => {
+      if (
+        event.currentTarget.checked &&
+        state.highContrastMap
+      ) {
+        state.highContrastMap = false;
+        rd128SaveHighContrastMap();
+      }
+    },
+    true
+  );
+}
+
+
+function rd128InitHighContrastMap() {
+  if (
+    state.highContrastMap &&
+    state.daylightMap
+  ) {
+    state.daylightMap = false;
+    rd83SaveDaylightMap();
+  }
+
+  rd128InsertHighContrastMapSetting();
+  rd128BindDaylightExclusivity();
+  rd83ApplyDaylightMap();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd128InitHighContrastMap,
+    { once: true }
+  );
+} else {
+  rd128InitHighContrastMap();
+}
