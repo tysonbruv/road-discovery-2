@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v128
+/* Road Discovery AU v129
    Self-hosted NSW OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -179,46 +179,46 @@ const ROAD_DISCOVERY_BASEMAP_PALETTES = {
     labelHalo: "#f4f6f7"
   },
   contrast: {
-    background: "#030507",
-    landDefault: "#070a0d",
+    background: "#090909",
+    landDefault: "#0d0d0d",
     landcover: {
-      wood: "#07100d",
-      grass: "#09110b",
-      scrub: "#0a100d",
-      farmland: "#0d100b"
+      wood: "#101211",
+      grass: "#111211",
+      scrub: "#101110",
+      farmland: "#121210"
     },
-    landuseDefault: "#0a0d11",
+    landuseDefault: "#101010",
     landuse: {
-      residential: "#0a0e12",
-      commercial: "#0d0f13",
-      industrial: "#101115",
-      park: "#08110c",
-      cemetery: "#09120d"
+      residential: "#111111",
+      commercial: "#141313",
+      industrial: "#151414",
+      park: "#101210",
+      cemetery: "#111311"
     },
-    water: "#020408",
-    waterway: "#0d202c",
-    localBoundary: "#222933",
-    stateBoundary: "#535e6c",
-    tunnelCasing: "#030507",
-    tunnelRoad: "#171c22",
-    roadCasing: "#020304",
-    roadDefault: "#1a2027",
+    water: "#080a0b",
+    waterway: "#151b1e",
+    localBoundary: "#1d1d1d",
+    stateBoundary: "#343434",
+    tunnelCasing: "#090909",
+    tunnelRoad: "#181818",
+    roadCasing: "#090909",
+    roadDefault: "#252424",
     roads: {
-      motorway: "#39424e",
-      trunk: "#38414d",
-      primary: "#313a45",
-      secondary: "#29313b",
-      tertiary: "#222a32",
-      minor: "#1c2229",
-      service: "#171c22",
-      track: "#14191e"
+      motorway: "#2d2c2c",
+      trunk: "#2b2a2a",
+      primary: "#292828",
+      secondary: "#252424",
+      tertiary: "#222121",
+      minor: "#1f1f1f",
+      service: "#1c1c1c",
+      track: "#191919"
     },
-    majorRoadLabel: "#b3bac4",
-    localRoadLabel: "#8d96a1",
-    stateLabel: "#78828e",
-    townLabel: "#d3d8df",
-    suburbLabel: "#9ca5b0",
-    labelHalo: "#030507"
+    majorRoadLabel: "#646464",
+    localRoadLabel: "#484848",
+    stateLabel: "#454545",
+    townLabel: "#777777",
+    suburbLabel: "#575757",
+    labelHalo: "#090909"
   }
 };
 
@@ -47012,7 +47012,7 @@ rd86ResetConquestState = function (
 };
 
 /* ================================================== */
-/* Road Discovery AU v128                             */
+/* Road Discovery AU v129                             */
 /* Optional High-Contrast Dark Basemap                */
 /* ================================================== */
 
