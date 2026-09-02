@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v124
+/* Road Discovery AU v127
    Self-hosted NSW OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -115,6 +115,8 @@ const ROAD_DISCOVERY_BASEMAP_PALETTES = {
     waterway: "#152936",
     localBoundary: "#313945",
     stateBoundary: "#717b89",
+    tunnelCasing: "#0a0d11",
+    tunnelRoad: "#252c34",
     roadCasing: "#080a0d",
     roadDefault: "#2c333c",
     roads: {
@@ -155,6 +157,8 @@ const ROAD_DISCOVERY_BASEMAP_PALETTES = {
     waterway: "#8dbed2",
     localBoundary: "#9ca6af",
     stateBoundary: "#697581",
+    tunnelCasing: "#d9dfe3",
+    tunnelRoad: "#a7b0b7",
     roadCasing: "#f2f4f5",
     roadDefault: "#9aa3ab",
     roads: {
@@ -195,6 +199,17 @@ function roadDiscoveryBaseFeatureClass(feature) {
       "class"
     )
   );
+}
+
+function roadDiscoveryBaseFeatureIsTunnel(
+  feature
+) {
+  return String(
+    roadDiscoveryBaseFeatureValue(
+      feature,
+      "brunnel"
+    )
+  ).toLowerCase() === "tunnel";
 }
 
 function roadDiscoveryBaseZoomValue(
@@ -381,10 +396,56 @@ function roadDiscoveryBasePaintRules(
     },
     {
       dataLayer: "transportation",
+      minzoom: 7,
+      filter: (zoom, feature) =>
+        ROAD_DISCOVERY_BASEMAP_ROAD_CLASSES.has(
+          roadDiscoveryBaseFeatureClass(feature)
+        ) &&
+        roadDiscoveryBaseFeatureIsTunnel(
+          feature
+        ),
+      symbolizer:
+        new renderer.LineSymbolizer({
+          color: palette.tunnelCasing,
+          opacity: 0.88,
+          width: roadDiscoveryBaseRoadWidth(0.92),
+          lineCap: "round",
+          lineJoin: "round"
+        })
+    },
+    {
+      dataLayer: "transportation",
+      minzoom: 7,
+      filter: (zoom, feature) =>
+        ROAD_DISCOVERY_BASEMAP_ROAD_CLASSES.has(
+          roadDiscoveryBaseFeatureClass(feature)
+        ) &&
+        roadDiscoveryBaseFeatureIsTunnel(
+          feature
+        ),
+      symbolizer:
+        new renderer.LineSymbolizer({
+          color: palette.tunnelRoad,
+          opacity: (zoom) =>
+            roadDiscoveryBaseZoomValue(
+              zoom,
+              [[7, 0.5], [13, 0.68]]
+            ),
+          width: roadDiscoveryBaseRoadWidth(0.64),
+          dash: [5, 4],
+          lineCap: "round",
+          lineJoin: "round"
+        })
+    },
+    {
+      dataLayer: "transportation",
       minzoom: 5,
       filter: (zoom, feature) =>
         ROAD_DISCOVERY_BASEMAP_ROAD_CLASSES.has(
           roadDiscoveryBaseFeatureClass(feature)
+        ) &&
+        !roadDiscoveryBaseFeatureIsTunnel(
+          feature
         ),
       symbolizer:
         new renderer.LineSymbolizer({
@@ -401,6 +462,9 @@ function roadDiscoveryBasePaintRules(
       filter: (zoom, feature) =>
         ROAD_DISCOVERY_BASEMAP_ROAD_CLASSES.has(
           roadDiscoveryBaseFeatureClass(feature)
+        ) &&
+        !roadDiscoveryBaseFeatureIsTunnel(
+          feature
         ),
       symbolizer:
         new renderer.LineSymbolizer({
