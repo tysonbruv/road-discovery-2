@@ -46020,3 +46020,875 @@ rd86ApplyConquestState = function (row) {
 
   return result;
 };
+
+/* ================================================== */
+/* Road Discovery AU v126                             */
+/* Legendary +150 instantly retargets affected bots   */
+/* ================================================== */
+
+const roadDiscoveryV126 = {
+  applyConquestState:
+    rd86ApplyConquestState,
+
+  resetConquestState:
+    rd86ResetConquestState,
+
+  mergeVisiblePlayers:
+    rd112MergeVisiblePlayers,
+
+  processBotRouteRequests:
+    rd87ProcessBotRouteRequests,
+
+  supplyOneBotRoute:
+    rd87SupplyOneBotRoute
+};
+
+
+state.customConquest
+  .legendaryRetargetAwardKey = "";
+
+state.customConquest
+  .legendaryRetargetGeneration = 0;
+
+state.customConquest
+  .legendaryRetargetRefreshing = false;
+
+state.customConquest
+  .legendaryBotOverrides = new Map();
+
+state.customConquest
+  .legendaryBotTargetVersions = new Map();
+
+state.customConquest
+  .legendaryRouteProcessingSuppressed =
+    false;
+
+state.customConquest
+  .legendaryRouteJobs = new Map();
+
+
+rd87SupplyOneBotRoute = function (
+  request
+) {
+  const botId = String(
+    request?.bot_id || ""
+  );
+
+  const routePromise = Promise.resolve(
+    roadDiscoveryV126
+      .supplyOneBotRoute(request)
+  );
+
+  if (!botId) {
+    return routePromise;
+  }
+
+  let jobs =
+    state.customConquest
+      .legendaryRouteJobs
+      .get(botId);
+
+  if (!jobs) {
+    jobs = new Set();
+
+    state.customConquest
+      .legendaryRouteJobs
+      .set(botId, jobs);
+  }
+
+  jobs.add(routePromise);
+
+  void routePromise.finally(() => {
+    jobs.delete(routePromise);
+
+    if (
+      jobs.size === 0 &&
+      state.customConquest
+        .legendaryRouteJobs
+        .get(botId) === jobs
+    ) {
+      state.customConquest
+        .legendaryRouteJobs
+        .delete(botId);
+    }
+  });
+
+  return routePromise;
+};
+
+
+rd87ProcessBotRouteRequests = function () {
+  if (
+    state.customConquest
+      .legendaryRouteProcessingSuppressed
+  ) {
+    return;
+  }
+
+  return roadDiscoveryV126
+    .processBotRouteRequests();
+};
+
+
+function rd126IsLegendaryBot(player) {
+  return Boolean(
+    player?.is_bot &&
+    /legendary/i.test(
+      String(player?.target_label || "")
+    )
+  );
+}
+
+
+function rd126BotId(player) {
+  return String(
+    player?.user_id ||
+    player?.bot_id ||
+    ""
+  );
+}
+
+
+function rd126BotPosition(player) {
+  const botId = rd126BotId(player);
+
+  const markerPoint =
+    state.conquest
+      .teammateMarkers
+      .get(botId)
+      ?.getLatLng?.();
+
+  if (
+    Number.isFinite(
+      Number(markerPoint?.lat)
+    ) &&
+    Number.isFinite(
+      Number(markerPoint?.lng)
+    )
+  ) {
+    return {
+      lat: Number(markerPoint.lat),
+      lng: Number(markerPoint.lng)
+    };
+  }
+
+  const visible =
+    rd87VisibleBotPosition(player);
+
+  if (
+    Number.isFinite(
+      Number(visible?.lat)
+    ) &&
+    Number.isFinite(
+      Number(visible?.lng)
+    )
+  ) {
+    return {
+      lat: Number(visible.lat),
+      lng: Number(visible.lng)
+    };
+  }
+
+  return null;
+}
+
+
+function rd126ClosestObjective(point) {
+  if (!point) return null;
+
+  let closest = null;
+  let closestDistance = Infinity;
+
+  for (
+    const objective of
+    state.conquest.objectives || []
+  ) {
+    const lat = Number(objective?.lat);
+    const lng = Number(objective?.lng);
+
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      continue;
+    }
+
+    const distance = haversine(
+      point,
+      { lat, lng }
+    );
+
+    if (distance < closestDistance) {
+      closestDistance = distance;
+
+      closest = {
+        ...objective,
+        lat,
+        lng,
+        code: String(
+          objective?.code || "?"
+        )
+      };
+    }
+  }
+
+  return closest;
+}
+
+
+function rd126RememberBotTargetVersions() {
+  for (
+    const request of
+    state.customConquest
+      .routeRequests || []
+  ) {
+    const botId = String(
+      request?.bot_id || ""
+    );
+
+    const targetVersion = Number(
+      request?.target_version
+    );
+
+    if (
+      botId &&
+      Number.isFinite(targetVersion)
+    ) {
+      state.customConquest
+        .legendaryBotTargetVersions
+        .set(
+          botId,
+          targetVersion
+        );
+    }
+  }
+}
+
+
+function rd126TargetVersion(player) {
+  const direct = Number(
+    player?.target_version
+  );
+
+  if (Number.isFinite(direct)) {
+    return direct;
+  }
+
+  return Number(
+    state.customConquest
+      .legendaryBotTargetVersions
+      .get(rd126BotId(player))
+  );
+}
+
+
+function rd126RouteHeadsToObjective(
+  player,
+  objective
+) {
+  const routePoints =
+    rd87NormaliseRoutePoints(
+      player?.route_points
+    );
+
+  const lastPoint =
+    routePoints.at(-1);
+
+  if (!lastPoint || !objective) {
+    return false;
+  }
+
+  return (
+    haversine(
+      lastPoint,
+      objective
+    ) <= 120
+  );
+}
+
+
+function rd126ApplyBotOverride(
+  player,
+  override
+) {
+  if (!player || !override) return;
+
+  const routedToObjective =
+    rd126RouteHeadsToObjective(
+      player,
+      override.objective
+    );
+
+  player.target_label =
+    `Objective ${override.objective.code}`;
+
+  player.target_kind = "objective";
+  player.target_id =
+    override.objective.code;
+
+  player.target_lat =
+    override.objective.lat;
+
+  player.target_lng =
+    override.objective.lng;
+
+  if (!routedToObjective) {
+    player.lat = override.position.lat;
+    player.lng = override.position.lng;
+    player.route_points = [];
+    player.route_started_at = null;
+    player.route_duration_seconds = 0;
+    player.route_distance_m = 0;
+  }
+}
+
+
+function rd126ReconcileBotOverrides() {
+  const playersById = new Map(
+    (state.conquest.players || [])
+      .map((player) => [
+        rd126BotId(player),
+        player
+      ])
+      .filter(([botId]) => botId)
+  );
+
+  for (
+    const [botId, override] of
+    state.customConquest
+      .legendaryBotOverrides
+      .entries()
+  ) {
+    const player =
+      playersById.get(botId);
+
+    if (!player) {
+      state.customConquest
+        .legendaryBotOverrides
+        .delete(botId);
+
+      continue;
+    }
+
+    if (!rd126IsLegendaryBot(player)) {
+      state.customConquest
+        .legendaryBotOverrides
+        .delete(botId);
+
+      continue;
+    }
+
+    rd126ApplyBotOverride(
+      player,
+      override
+    );
+  }
+}
+
+
+function rd126ClearOldBotRouteWork(
+  botIds
+) {
+  const ids = new Set(botIds);
+
+  state.customConquest.routeRequests =
+    (
+      state.customConquest
+        .routeRequests || []
+    ).filter(
+      (request) =>
+        !ids.has(
+          String(
+            request?.bot_id || ""
+          )
+        )
+    );
+
+  for (
+    const requestKey of
+    [
+      ...state.customConquest
+        .routeActive
+    ]
+  ) {
+    const botId = String(
+      requestKey
+    ).split(":")[0];
+
+    if (ids.has(botId)) {
+      state.customConquest
+        .routeActive
+        .delete(requestKey);
+    }
+  }
+
+  for (
+    const requestKey of
+    [
+      ...state.customConquest
+        .routeRetryAt.keys()
+    ]
+  ) {
+    const botId = String(
+      requestKey
+    ).split(":")[0];
+
+    if (ids.has(botId)) {
+      state.customConquest
+        .routeRetryAt
+        .delete(requestKey);
+    }
+  }
+}
+
+
+function rd126SendClosestObjectiveRoute(
+  player,
+  position,
+  objective
+) {
+  const botId = rd126BotId(player);
+
+  const targetVersion =
+    rd126TargetVersion(player);
+
+  if (
+    !botId ||
+    !Number.isFinite(targetVersion) ||
+    !state.auth.client ||
+    !navigator.onLine
+  ) {
+    return null;
+  }
+
+  return rd87SupplyOneBotRoute({
+    bot_id: botId,
+    target_version: targetVersion,
+    start_lat: position.lat,
+    start_lng: position.lng,
+    target_lat: objective.lat,
+    target_lng: objective.lng,
+    display_name:
+      player?.display_name ||
+      "Road Bot"
+  });
+}
+
+
+function rd126RepeatRouteAfterOldJobs(
+  reroute
+) {
+  if (!reroute.oldJobs.length) {
+    return;
+  }
+
+  const roundId = String(
+    state.conquest.roundId || ""
+  );
+
+  void Promise.allSettled(
+    reroute.oldJobs
+  ).then(() => {
+    const currentOverride =
+      state.customConquest
+        .legendaryBotOverrides
+        .get(reroute.botId);
+
+    if (
+      !currentOverride ||
+      String(
+        state.conquest.roundId || ""
+      ) !== roundId ||
+      currentOverride.objective.code !==
+        reroute.objective.code
+    ) {
+      return;
+    }
+
+    rd126SendClosestObjectiveRoute(
+      reroute.player,
+      currentOverride.position,
+      currentOverride.objective
+    );
+  });
+}
+
+
+function rd126RetargetLegendaryBots(
+  players
+) {
+  const reroutes = [];
+
+  for (const player of players) {
+    if (!rd126IsLegendaryBot(player)) {
+      continue;
+    }
+
+    const botId = rd126BotId(player);
+    const position =
+      rd126BotPosition(player);
+
+    const objective =
+      rd126ClosestObjective(position);
+
+    if (
+      !botId ||
+      !position ||
+      !objective
+    ) {
+      continue;
+    }
+
+    const override = {
+      position,
+      objective
+    };
+
+    state.customConquest
+      .legendaryBotOverrides
+      .set(botId, override);
+
+    rd126ApplyBotOverride(
+      player,
+      override
+    );
+
+    reroutes.push({
+      player,
+      botId,
+      position,
+      objective,
+      oldJobs: [
+        ...(
+          state.customConquest
+            .legendaryRouteJobs
+            .get(botId) || []
+        )
+      ]
+    });
+  }
+
+  rd126ClearOldBotRouteWork(
+    reroutes.map(
+      (reroute) => reroute.botId
+    )
+  );
+
+  rd86DrawTeammates();
+
+  for (const reroute of reroutes) {
+    rd126SendClosestObjectiveRoute(
+      reroute.player,
+      reroute.position,
+      reroute.objective
+    );
+
+    rd126RepeatRouteAfterOldJobs(
+      reroute
+    );
+  }
+
+  return reroutes.length;
+}
+
+
+function rd126Wait(milliseconds) {
+  return new Promise((resolve) => {
+    window.setTimeout(
+      resolve,
+      milliseconds
+    );
+  });
+}
+
+
+function rd126ScheduleLegendaryRefresh(
+  roundId,
+  generation
+) {
+  window.setTimeout(
+    async () => {
+      if (
+        generation !==
+          state.customConquest
+            .legendaryRetargetGeneration ||
+        state.customConquest
+          .legendaryRetargetRefreshing
+      ) {
+        return;
+      }
+
+      state.customConquest
+        .legendaryRetargetRefreshing =
+          true;
+
+      try {
+        for (
+          let attempt = 0;
+          attempt < 3;
+          attempt += 1
+        ) {
+          if (
+            generation !==
+              state.customConquest
+                .legendaryRetargetGeneration ||
+            String(
+              state.conquest.roundId || ""
+            ) !== roundId
+          ) {
+            break;
+          }
+
+          await rd86PollConquestState({
+            force: true
+          });
+
+          const staleBots =
+            (
+              state.conquest.players || []
+            ).filter(
+              rd126IsLegendaryBot
+            );
+
+          if (!staleBots.length) {
+            break;
+          }
+
+          rd126RetargetLegendaryBots(
+            staleBots
+          );
+
+          await rd126Wait(
+            attempt === 0
+              ? 150
+              : 350
+          );
+        }
+
+      } finally {
+        if (
+          generation ===
+            state.customConquest
+              .legendaryRetargetGeneration
+        ) {
+          state.customConquest
+            .legendaryRetargetRefreshing =
+              false;
+        }
+      }
+    },
+    0
+  );
+}
+
+
+rd112MergeVisiblePlayers = function (
+  players
+) {
+  for (const player of players || []) {
+    const botId = rd126BotId(player);
+
+    if (
+      botId &&
+      state.customConquest
+        .legendaryBotOverrides
+        .has(botId) &&
+      String(player?.target_label || "") &&
+      !rd126IsLegendaryBot(player)
+    ) {
+      state.customConquest
+        .legendaryBotOverrides
+        .delete(botId);
+    }
+  }
+
+  const result =
+    roadDiscoveryV126
+      .mergeVisiblePlayers(players);
+
+  rd126ReconcileBotOverrides();
+
+  return result;
+};
+
+
+rd86ApplyConquestState = function (row) {
+  const previousRoundId = String(
+    state.conquest.roundId || ""
+  );
+
+  const previousPhase = String(
+    state.conquest.phase || ""
+  );
+
+  const previousRedScore = Number(
+    state.conquest.redScore
+  ) || 0;
+
+  const previousBlueScore = Number(
+    state.conquest.blueScore
+  ) || 0;
+
+  const incomingRoundId = String(
+    row?.round_id || ""
+  );
+
+  const incomingPhase = String(
+    row?.phase || ""
+  );
+
+  const incomingRedIncrease =
+    (
+      Number(row?.red_score) || 0
+    ) - previousRedScore;
+
+  const incomingBlueIncrease =
+    (
+      Number(row?.blue_score) || 0
+    ) - previousBlueScore;
+
+  const incomingLegendaryAward =
+    Boolean(
+      previousRoundId &&
+      previousRoundId ===
+        incomingRoundId &&
+      [
+        "active",
+        "overtime"
+      ].includes(previousPhase) &&
+      [
+        "active",
+        "overtime"
+      ].includes(incomingPhase) &&
+      (
+        incomingRedIncrease >= 150 ||
+        incomingBlueIncrease >= 150
+      )
+    );
+
+  state.customConquest
+    .legendaryRouteProcessingSuppressed =
+      incomingLegendaryAward;
+
+  let result;
+
+  try {
+    result = roadDiscoveryV126
+      .applyConquestState(row);
+
+  } finally {
+    state.customConquest
+      .legendaryRouteProcessingSuppressed =
+        false;
+  }
+
+  rd126RememberBotTargetVersions();
+
+  const serverLegendaryBots =
+    (
+      state.conquest.players || []
+    ).filter(rd126IsLegendaryBot);
+
+  rd126ReconcileBotOverrides();
+
+  const roundId = String(
+    state.conquest.roundId || ""
+  );
+
+  const currentPhase = String(
+    state.conquest.phase || ""
+  );
+
+  const redIncrease =
+    (
+      Number(state.conquest.redScore) || 0
+    ) - previousRedScore;
+
+  const blueIncrease =
+    (
+      Number(state.conquest.blueScore) || 0
+    ) - previousBlueScore;
+
+  const sameActiveRound = Boolean(
+    previousRoundId &&
+    previousRoundId === roundId &&
+    [
+      "active",
+      "overtime"
+    ].includes(previousPhase) &&
+    [
+      "active",
+      "overtime"
+    ].includes(currentPhase)
+  );
+
+  const legendaryScoreAwarded =
+    sameActiveRound &&
+    (
+      redIncrease >= 150 ||
+      blueIncrease >= 150
+    );
+
+  const awardKey =
+    `${roundId}:` +
+    `${state.conquest.redScore}:` +
+    `${state.conquest.blueScore}`;
+
+  if (
+    legendaryScoreAwarded &&
+    state.customConquest
+      .legendaryRetargetAwardKey !==
+        awardKey
+  ) {
+    state.customConquest
+      .legendaryRetargetAwardKey =
+        awardKey;
+
+    rd126RetargetLegendaryBots(
+      serverLegendaryBots
+    );
+
+    rd87ProcessBotRouteRequests();
+
+    const generation =
+      ++state.customConquest
+        .legendaryRetargetGeneration;
+
+    rd126ScheduleLegendaryRefresh(
+      roundId,
+      generation
+    );
+  }
+
+  return result;
+};
+
+
+rd86ResetConquestState = function (
+  options = {}
+) {
+  state.customConquest
+    .legendaryRetargetAwardKey = "";
+
+  state.customConquest
+    .legendaryRetargetGeneration += 1;
+
+  state.customConquest
+    .legendaryRetargetRefreshing = false;
+
+  state.customConquest
+    .legendaryBotOverrides.clear();
+
+  state.customConquest
+    .legendaryBotTargetVersions.clear();
+
+  state.customConquest
+    .legendaryRouteProcessingSuppressed =
+      false;
+
+  state.customConquest
+    .legendaryRouteJobs.clear();
+
+  return roadDiscoveryV126
+    .resetConquestState(options);
+};
