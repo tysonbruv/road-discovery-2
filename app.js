@@ -45919,3 +45919,104 @@ if (
 /* Road Discovery AU v122                             */
 /* Saved Maps single-card carousel                    */
 /* ================================================== */
+
+/* ================================================== */
+/* Road Discovery AU v125                             */
+/* Remove movable setup markers when Conquest starts  */
+/* ================================================== */
+
+const roadDiscoveryV125 = {
+  drawArenaObjectives:
+    rd94DrawArenaObjectives,
+
+  drawArenaCentre:
+    rd94DrawArenaCentre,
+
+  renderPlacementOverlay:
+    rd94RenderPlacementOverlay,
+
+  applyConquestState:
+    rd86ApplyConquestState
+};
+
+
+function rd125ArenaEditingAllowed() {
+  return Boolean(
+    state.conquestArena.active &&
+    !state.conquestArena.busy &&
+    !hasActiveConquestRound() &&
+    !hasActiveHideSeekRound()
+  );
+}
+
+
+function rd125ClearArenaEditorVisuals() {
+  rd94UnbindArenaMapClick();
+  rd94ClearPlacementLayers();
+
+  document.getElementById(
+    "rd94ArenaOverlay"
+  )?.classList.add("hidden");
+
+  const saveButton =
+    document.getElementById(
+      "rd114SaveArenaBtn"
+    );
+
+  if (saveButton) {
+    saveButton.hidden = true;
+  }
+}
+
+
+rd94DrawArenaObjectives = function () {
+  if (!rd125ArenaEditingAllowed()) {
+    rd125ClearArenaEditorVisuals();
+    return;
+  }
+
+  return roadDiscoveryV125
+    .drawArenaObjectives();
+};
+
+
+rd94DrawArenaCentre = function () {
+  if (!rd125ArenaEditingAllowed()) {
+    rd125ClearArenaEditorVisuals();
+    return;
+  }
+
+  return roadDiscoveryV125
+    .drawArenaCentre();
+};
+
+
+rd94RenderPlacementOverlay = function (
+  overrideMessage = ""
+) {
+  if (!rd125ArenaEditingAllowed()) {
+    rd125ClearArenaEditorVisuals();
+    return;
+  }
+
+  return roadDiscoveryV125
+    .renderPlacementOverlay(
+      overrideMessage
+    );
+};
+
+
+rd86ApplyConquestState = function (row) {
+  const result =
+    roadDiscoveryV125
+      .applyConquestState(row);
+
+  if (hasActiveConquestRound()) {
+    state.conquestArena.active = false;
+    state.conquestArena.busy = false;
+
+    rd125ClearArenaEditorVisuals();
+  }
+
+  return result;
+};
