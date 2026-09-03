@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v134
+/* Road Discovery AU v135
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -905,7 +905,12 @@ function rd134AttachLabelLayer(
   labelLayer._roadDiscoveryBaseLayer =
     baseLayer;
 
-  labelLayer.addTo(map);
+  if (
+    map !== state.map ||
+    state.mapLabelsVisible !== false
+  ) {
+    labelLayer.addTo(map);
+  }
 
   return labelLayer;
 }
@@ -48452,4 +48457,259 @@ if (document.readyState === "loading") {
   );
 } else {
   rd131InitSponsor();
+}
+
+/* ================================================== */
+/* Road Discovery AU v135                             */
+/* Saved Map labels visibility setting                */
+/* ================================================== */
+
+const RD135_MAP_LABELS_VISIBLE_KEY =
+  "roadDiscoveryAU.mapLabelsVisible.v1";
+
+const roadDiscoveryV135 = {
+  applyDaylightMap:
+    rd83ApplyDaylightMap
+};
+
+state.mapLabelsVisible =
+  rd135LoadMapLabelsVisible();
+
+
+function rd135LoadMapLabelsVisible() {
+  try {
+    const stored = localStorage.getItem(
+      RD135_MAP_LABELS_VISIBLE_KEY
+    );
+
+    return stored === null
+      ? true
+      : stored !== "false";
+  } catch (error) {
+    return true;
+  }
+}
+
+
+function rd135SaveMapLabelsVisible() {
+  try {
+    localStorage.setItem(
+      RD135_MAP_LABELS_VISIBLE_KEY,
+      String(
+        Boolean(state.mapLabelsVisible)
+      )
+    );
+  } catch (error) {
+    console.error(error);
+    showToast(
+      "Could not save map-label setting"
+    );
+  }
+}
+
+
+function rd135MainBaseLayer() {
+  if (!state.map) return null;
+
+  if (
+    state.rd83BaseTileLayer &&
+    state.map.hasLayer?.(
+      state.rd83BaseTileLayer
+    )
+  ) {
+    return state.rd83BaseTileLayer;
+  }
+
+  let result = null;
+
+  state.map.eachLayer?.((layer) => {
+    if (
+      !result &&
+      isRoadDiscoveryBaseLayer(layer)
+    ) {
+      result = layer;
+    }
+  });
+
+  return result;
+}
+
+
+function rd135ApplyMapLabelVisibility() {
+  const shouldShow =
+    state.mapLabelsVisible !== false;
+
+  const toggle = $(
+    "rd135MapLabelsToggle"
+  );
+
+  if (toggle) {
+    toggle.checked = shouldShow;
+  }
+
+  document.body.classList.toggle(
+    "rd135-map-labels-hidden",
+    !shouldShow
+  );
+
+  if (!state.map) return;
+
+  const baseLayer =
+    rd135MainBaseLayer();
+
+  if (!baseLayer) return;
+
+  let labelLayer =
+    baseLayer._roadDiscoveryLabelLayer;
+
+  if (!labelLayer && shouldShow) {
+    labelLayer = rd134AttachLabelLayer(
+      state.map,
+      baseLayer,
+      baseLayer._roadDiscoveryBaseTheme
+    );
+  }
+
+  if (!labelLayer) return;
+
+  const showing =
+    state.map.hasLayer?.(labelLayer);
+
+  if (shouldShow && !showing) {
+    labelLayer.addTo(state.map);
+    labelLayer.redraw?.();
+  } else if (!shouldShow && showing) {
+    state.map.removeLayer(labelLayer);
+  }
+}
+
+
+function rd135InsertMapLabelsSetting() {
+  const existing = $(
+    "rd135MapLabelsToggle"
+  );
+
+  if (existing) {
+    rd135ApplyMapLabelVisibility();
+    return;
+  }
+
+  const mapSection = $(
+    "locationMarkerToggle"
+  )?.closest(".panel-section");
+
+  if (!mapSection) return;
+
+  const setting =
+    document.createElement("label");
+
+  setting.id =
+    "rd135MapLabelsSetting";
+  setting.className =
+    "toggle-row rd135-map-labels-setting";
+  setting.htmlFor =
+    "rd135MapLabelsToggle";
+
+  setting.innerHTML = `
+    <div class="toggle-text">
+      <strong>Map labels</strong>
+
+      <span>
+        Show state, city, town, suburb and road names.
+        Turn this off for a completely clean trail view.
+      </span>
+    </div>
+
+    <input
+      id="rd135MapLabelsToggle"
+      class="toggle-input"
+      type="checkbox"
+    />
+
+    <span
+      class="toggle-switch"
+      aria-hidden="true"
+    >
+      <span class="toggle-knob"></span>
+    </span>
+  `;
+
+  const daylightSetting = $(
+    "rd83DaylightMapSetting"
+  );
+
+  const contrastSetting = $(
+    "rd128HighContrastMapSetting"
+  );
+
+  const trailColourSetting = $(
+    "trailColourSetting"
+  );
+
+  const nextSetting = [
+    daylightSetting,
+    contrastSetting,
+    trailColourSetting
+  ].find(
+    (element) =>
+      element?.parentElement === mapSection
+  );
+
+  if (nextSetting) {
+    mapSection.insertBefore(
+      setting,
+      nextSetting
+    );
+  } else {
+    mapSection.appendChild(setting);
+  }
+
+  $("rd135MapLabelsToggle")
+    ?.addEventListener(
+      "change",
+      (event) => {
+        state.mapLabelsVisible = Boolean(
+          event.currentTarget.checked
+        );
+
+        rd135SaveMapLabelsVisible();
+        rd135ApplyMapLabelVisibility();
+
+        showToast(
+          state.mapLabelsVisible
+            ? "Map labels shown"
+            : "Map labels hidden"
+        );
+      }
+    );
+
+  rd135ApplyMapLabelVisibility();
+}
+
+
+rd83ApplyDaylightMap = function () {
+  const result =
+    roadDiscoveryV135
+      .applyDaylightMap();
+
+  rd135ApplyMapLabelVisibility();
+
+  return result;
+};
+
+
+function rd135InitMapLabelsSetting() {
+  rd135InsertMapLabelsSetting();
+  rd135ApplyMapLabelVisibility();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd135InitMapLabelsSetting,
+    { once: true }
+  );
+} else {
+  rd135InitMapLabelsSetting();
 }
