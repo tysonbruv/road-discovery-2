@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v131
+/* Road Discovery AU v132
    Self-hosted NSW OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -56,6 +56,10 @@ const ROUTE_MIN_REROUTE_TIME_MS = 45000;
 
 const PROFILE_STATS_SYNC_MIN_MS = 60000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const FINISHED_DRIVE_SUMMARY_MS = 8000;
+
+let finishedDriveSummaryTimer = null;
+let finishedDriveSummaryText = "";
 
 const DEFAULT_CENTER = [-33.8688, 151.2093];
 const DEFAULT_ZOOM = 14;
@@ -3764,6 +3768,8 @@ async function startDrive() {
     return;
   }
 
+  clearFinishedDriveSummaryTimer();
+  finishedDriveSummaryText = "";
   stopGpsWatch();
   resetTripState();
   setDriveButtons("loading");
@@ -3864,12 +3870,16 @@ function finishDrive() {
   const travelledKm = metersToKm(state.tripDistanceM);
   const discoveredKm = sumTripUnlockedKm().toFixed(2);
   const unlocked = state.tripUnlocked.size.toLocaleString("en-AU");
+  const finishedSummary =
+    `${travelledKm} km travelled • ${discoveredKm} km discovered • ${unlocked} unlocks`;
+
+  finishedDriveSummaryText = finishedSummary;
 
   setDriveStatus("Drive finished");
   setGpsStatus("GPS idle");
-  setAccuracyStatus(
-    `${travelledKm} km travelled • ${discoveredKm} km discovered • ${unlocked} unlocks`
-  );
+  setAccuracyStatus(finishedSummary);
+
+  scheduleFinishedDriveSummaryHide();
 
   renderAllStats();
   void maybeSyncProfileStats({ force: true, quiet: true });
@@ -3897,6 +3907,45 @@ function stopGpsWatch() {
     navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
   }
+}
+
+function clearFinishedDriveSummaryTimer() {
+  if (finishedDriveSummaryTimer === null) {
+    return;
+  }
+
+  window.clearTimeout(finishedDriveSummaryTimer);
+  finishedDriveSummaryTimer = null;
+}
+
+function scheduleFinishedDriveSummaryHide() {
+  clearFinishedDriveSummaryTimer();
+
+  const summary = finishedDriveSummaryText;
+
+  if (
+    !summary ||
+    state.isRecording ||
+    els.accuracyStatus?.textContent !== summary
+  ) {
+    return;
+  }
+
+  finishedDriveSummaryTimer = window.setTimeout(
+    () => {
+      finishedDriveSummaryTimer = null;
+
+      if (
+        state.isRecording ||
+        els.accuracyStatus?.textContent !== summary
+      ) {
+        return;
+      }
+
+      setAccuracyStatus("");
+    },
+    FINISHED_DRIVE_SUMMARY_MS
+  );
 }
 
 function resetTripState() {
@@ -8023,7 +8072,13 @@ function setGpsStatus(text) {
 
 function setAccuracyStatus(text) {
   if (els.accuracyStatus) {
-    els.accuracyStatus.textContent = text;
+    const value = String(text ?? "").trim();
+
+    els.accuracyStatus.textContent = value;
+    els.accuracyStatus.classList.toggle(
+      "hidden",
+      !value
+    );
   }
 }
 
@@ -47918,6 +47973,9 @@ function rd131CloseSponsor() {
 
   if (!overlay) return;
 
+  const completionKey =
+    rd131SponsorState.activeKey;
+
   overlay.classList.add("hidden");
   overlay.setAttribute("aria-hidden", "true");
 
@@ -47928,6 +47986,17 @@ function rd131CloseSponsor() {
   }
 
   rd131SponsorState.activeKey = "";
+
+  if (
+    completionKey.startsWith("drive:") &&
+    finishedDriveSummaryText &&
+    !state.isRecording
+  ) {
+    setAccuracyStatus(
+      finishedDriveSummaryText
+    );
+    scheduleFinishedDriveSummaryHide();
+  }
 
   const returnFocus =
     rd131SponsorState.returnFocus;
@@ -47991,6 +48060,10 @@ function rd131ShowSponsor(config, key) {
 
   if (!overlay || !media || !image) {
     return false;
+  }
+
+  if (String(key).startsWith("drive:")) {
+    clearFinishedDriveSummaryTimer();
   }
 
   image.src = config.imageUrl;
