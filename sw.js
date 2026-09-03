@@ -4,7 +4,7 @@
   Road Discovery AU v134 service worker
 
   Expected frontend versions:
-  - app.js?v=131
+  - app.js?v=132
   - style.css?v=67
 */
 
@@ -19,8 +19,9 @@ const CORE_APP_SHELL = [
 ];
 
 const VERSIONED_APP_FILES = [
-  "./app.js?v=131",
   "./style.css?v=67",
+  "./app.js?v=132",
+  "./app.js?v=131",
   "./app.js?v=130",
   "./app.js?v=129",
   "./app.js?v=128",
@@ -211,6 +212,11 @@ self.addEventListener(
             )
           ) {
             return (
+              await caches.match(
+                "./app.js?v=132"
+              )
+            ) ||
+            (
               await caches.match(
                 "./app.js?v=131"
               )
