@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v133
+/* Road Discovery AU v134
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -71,6 +71,11 @@ const ROUTE_BLUE = "#4bb3ff";
 
 const ROAD_DISCOVERY_BASEMAP_URL =
   "https://pub-22b254326ffe4854bae9993e2a43a443.r2.dev/australia-road-discovery.pmtiles";
+
+const RD134_LABEL_PANE =
+  "roadDiscoveryLabelsPane";
+
+const RD134_LABEL_PANE_Z_INDEX = 450;
 
 const ROAD_DISCOVERY_BASEMAP_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> ' +
@@ -774,10 +779,7 @@ function createRoadDiscoveryBaseLayer(
           roadDiscoveryBasePaintRules(
             daylight
           ),
-        labelRules:
-          roadDiscoveryBaseLabelRules(
-            daylight
-          ),
+        labelRules: [],
         attribution:
           ROAD_DISCOVERY_BASEMAP_ATTRIBUTION
       })
@@ -796,20 +798,146 @@ function createRoadDiscoveryBaseLayer(
   return layer;
 }
 
+function rd134EnsureLabelPane(map) {
+  if (
+    !map?.createPane ||
+    !map?.getPane
+  ) {
+    return null;
+  }
+
+  const pane =
+    map.getPane(RD134_LABEL_PANE) ||
+    map.createPane(RD134_LABEL_PANE);
+
+  if (!pane) return null;
+
+  pane.style.zIndex = String(
+    RD134_LABEL_PANE_Z_INDEX
+  );
+  pane.style.pointerEvents = "none";
+
+  return pane;
+}
+
+function rd134CreateLabelLayer(
+  daylight = false
+) {
+  const renderer = window.protomapsL;
+
+  if (!renderer?.leafletLayer) {
+    return null;
+  }
+
+  const layer = renderer.leafletLayer({
+    url: ROAD_DISCOVERY_BASEMAP_URL,
+    maxZoom: 20,
+    maxDataZoom: 14,
+    noWrap: true,
+    paintRules: [],
+    labelRules:
+      roadDiscoveryBaseLabelRules(
+        daylight
+      ),
+    pane: RD134_LABEL_PANE,
+    attribution: ""
+  });
+
+  Object.assign(layer, {
+    _roadDiscoveryLabelOverlay: true,
+    _roadDiscoveryLabelTheme:
+      roadDiscoveryBaseThemeKey(daylight)
+  });
+
+  return layer;
+}
+
+function rd134BindBaseLabelCleanup(map) {
+  if (
+    !map?.on ||
+    map._rd134BaseLabelCleanupBound
+  ) {
+    return;
+  }
+
+  map._rd134BaseLabelCleanupBound = true;
+
+  map.on("layerremove", (event) => {
+    const baseLayer = event?.layer;
+
+    if (!baseLayer?._roadDiscoveryBaseMap) {
+      return;
+    }
+
+    const labelLayer =
+      baseLayer._roadDiscoveryLabelLayer;
+
+    if (!labelLayer) return;
+
+    baseLayer._roadDiscoveryLabelLayer = null;
+    labelLayer._roadDiscoveryBaseLayer = null;
+
+    if (map.hasLayer?.(labelLayer)) {
+      map.removeLayer(labelLayer);
+    }
+  });
+}
+
+function rd134AttachLabelLayer(
+  map,
+  baseLayer,
+  daylight = false
+) {
+  if (
+    !rd134EnsureLabelPane(map) ||
+    !baseLayer
+  ) {
+    return null;
+  }
+
+  const labelLayer =
+    rd134CreateLabelLayer(daylight);
+
+  if (!labelLayer) return null;
+
+  baseLayer._roadDiscoveryLabelLayer =
+    labelLayer;
+  labelLayer._roadDiscoveryBaseLayer =
+    baseLayer;
+
+  labelLayer.addTo(map);
+
+  return labelLayer;
+}
+
 function addRoadDiscoveryBaseLayer(
   map,
   daylight = false
 ) {
-  return createRoadDiscoveryBaseLayer(
+  rd134BindBaseLabelCleanup(map);
+
+  const baseLayer =
+    createRoadDiscoveryBaseLayer(
+      daylight
+    ).addTo(map);
+
+  rd134AttachLabelLayer(
+    map,
+    baseLayer,
     daylight
-  ).addTo(map);
+  );
+
+  return baseLayer;
 }
 
 function isRoadDiscoveryBaseLayer(layer) {
   return Boolean(
-    layer?._roadDiscoveryBaseMap ||
-    layer?._roadDiscoveryArchiveUrl ===
-      ROAD_DISCOVERY_BASEMAP_URL
+    !layer?._roadDiscoveryLabelOverlay &&
+    (
+      layer?._roadDiscoveryBaseMap ||
+      layer?._roadDiscoveryArchiveUrl ===
+        ROAD_DISCOVERY_BASEMAP_URL
+    )
   );
 }
 
@@ -44067,6 +44195,8 @@ function rd119RedrawBaseMap(
   });
 
   layer.redraw?.();
+  layer._roadDiscoveryLabelLayer
+    ?.redraw?.();
   layer.bringToBack?.();
 
   return true;
