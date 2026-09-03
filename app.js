@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v130
+/* Road Discovery AU v131
    Self-hosted NSW OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -47400,3 +47400,853 @@ rd77PublicMapRoadStyle = function () {
 
 rd61ApplyFriendSavedRoadStyle();
 rd77ApplyPublicMapRoadStyle();
+
+/* ================================================== */
+/* Road Discovery AU v131                             */
+/* Dismissible sponsor after completed activities     */
+/* ================================================== */
+
+const RD131_SPONSOR_ROOT =
+  "https://pub-22b254326ffe4854bae9993e2a43a443.r2.dev/";
+
+const RD131_SPONSOR_CONFIG_URL =
+  `${RD131_SPONSOR_ROOT}sponsor-ad.json`;
+
+const RD131_SPONSOR_FALLBACK_IMAGE_URL =
+  `${RD131_SPONSOR_ROOT}weekly-sponsor.jpg`;
+
+const RD131_SPONSOR_SEEN_KEY =
+  "roadDiscoveryAU.sponsorCompletions.v1";
+
+const roadDiscoveryV131 = {
+  finishDrive,
+  applyHideSeekRows,
+  finishConquestSummary:
+    rd116FinishConquestSummary
+};
+
+const rd131SponsorState = {
+  configPromise: null,
+  imagePromises: new Map(),
+  pendingKeys: new Set(),
+  seenKeys: rd131LoadSeenSponsorKeys(),
+  activeKey: "",
+  returnFocus: null
+};
+
+
+function rd131LoadSeenSponsorKeys() {
+  try {
+    const stored = JSON.parse(
+      sessionStorage.getItem(
+        RD131_SPONSOR_SEEN_KEY
+      ) || "[]"
+    );
+
+    return new Set(
+      Array.isArray(stored)
+        ? stored
+            .map((value) => String(value))
+            .filter(Boolean)
+            .slice(-100)
+        : []
+    );
+  } catch (error) {
+    return new Set();
+  }
+}
+
+
+function rd131RememberSponsorKey(key) {
+  const value = String(key || "");
+
+  if (!value) return;
+
+  rd131SponsorState.seenKeys.add(value);
+
+  try {
+    sessionStorage.setItem(
+      RD131_SPONSOR_SEEN_KEY,
+      JSON.stringify(
+        [
+          ...rd131SponsorState.seenKeys
+        ].slice(-100)
+      )
+    );
+  } catch (error) {
+    /* The in-memory guard still prevents duplicates. */
+  }
+}
+
+
+function rd131SafeSponsorUrl(
+  value,
+  base = RD131_SPONSOR_CONFIG_URL
+) {
+  const text = String(value || "").trim();
+
+  if (!text) return "";
+
+  try {
+    const url = new URL(text, base);
+    const localDevelopment =
+      ["localhost", "127.0.0.1"]
+        .includes(url.hostname);
+
+    if (
+      url.protocol !== "https:" &&
+      !(localDevelopment && url.protocol === "http:")
+    ) {
+      return "";
+    }
+
+    return url.href;
+  } catch (error) {
+    return "";
+  }
+}
+
+
+function rd131SponsorCacheToken(value) {
+  const supplied = String(value || "")
+    .trim()
+    .replace(/[^a-z0-9._-]/gi, "-")
+    .slice(0, 80);
+
+  return supplied ||
+    new Date().toISOString().slice(0, 10);
+}
+
+
+function rd131VersionedSponsorImage(
+  imageUrl,
+  version
+) {
+  try {
+    const url = new URL(imageUrl);
+
+    url.searchParams.set(
+      "rd-sponsor",
+      rd131SponsorCacheToken(version)
+    );
+
+    return url.href;
+  } catch (error) {
+    return imageUrl;
+  }
+}
+
+
+function rd131SponsorDateAllows(config) {
+  const now = Date.now();
+  const startsAt = Date.parse(
+    String(config?.startsAt || "")
+  );
+  const endsAt = Date.parse(
+    String(config?.endsAt || "")
+  );
+
+  if (
+    Number.isFinite(startsAt) &&
+    now < startsAt
+  ) {
+    return false;
+  }
+
+  if (
+    Number.isFinite(endsAt) &&
+    now >= endsAt
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+
+async function rd131FetchSponsorConfig() {
+  const fallback = {
+    active: true,
+    imageUrl:
+      RD131_SPONSOR_FALLBACK_IMAGE_URL,
+    clickUrl: "",
+    alt: "Weekly sponsor advertisement",
+    version: ""
+  };
+
+  let supplied = null;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    3500
+  );
+
+  try {
+    const url = new URL(
+      RD131_SPONSOR_CONFIG_URL
+    );
+
+    url.searchParams.set(
+      "rd-config",
+      String(Date.now())
+    );
+
+    const response = await fetch(url.href, {
+      cache: "no-store",
+      signal: controller.signal
+    });
+
+    if (response.ok) {
+      const parsed = await response.json();
+
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed)
+      ) {
+        supplied = parsed;
+      }
+    }
+  } catch (error) {
+    /* A missing or unavailable sponsor is intentionally silent. */
+  } finally {
+    window.clearTimeout(timeout);
+  }
+
+  const config = supplied
+    ? { ...fallback, ...supplied }
+    : fallback;
+
+  if (
+    config.active === false ||
+    !rd131SponsorDateAllows(config)
+  ) {
+    return null;
+  }
+
+  const imageUrl = rd131SafeSponsorUrl(
+    config.imageUrl ||
+      RD131_SPONSOR_FALLBACK_IMAGE_URL
+  );
+
+  if (!imageUrl) return null;
+
+  return {
+    imageUrl: rd131VersionedSponsorImage(
+      imageUrl,
+      config.version
+    ),
+    clickUrl: rd131SafeSponsorUrl(
+      config.clickUrl,
+      window.location.href
+    ),
+    alt:
+      String(config.alt || "")
+        .trim()
+        .slice(0, 180) ||
+      "Weekly sponsor advertisement"
+  };
+}
+
+
+function rd131LoadSponsorConfig() {
+  if (!rd131SponsorState.configPromise) {
+    rd131SponsorState.configPromise =
+      rd131FetchSponsorConfig();
+  }
+
+  return rd131SponsorState.configPromise;
+}
+
+
+function rd131PreloadSponsorImage(url) {
+  const source = String(url || "");
+
+  if (!source) {
+    return Promise.resolve(false);
+  }
+
+  if (
+    rd131SponsorState.imagePromises.has(
+      source
+    )
+  ) {
+    return rd131SponsorState.imagePromises
+      .get(source);
+  }
+
+  const promise = new Promise((resolve) => {
+    const image = new Image();
+    let settled = false;
+
+    const finish = (loaded) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      resolve(Boolean(loaded));
+    };
+
+    const timeout = window.setTimeout(
+      () => finish(false),
+      6500
+    );
+
+    image.onload = () => finish(true);
+    image.onerror = () => finish(false);
+    image.decoding = "async";
+    image.src = source;
+  });
+
+  rd131SponsorState.imagePromises.set(
+    source,
+    promise
+  );
+
+  return promise;
+}
+
+
+function rd131InstallSponsorStyles() {
+  if ($("rd131SponsorStyles")) return;
+
+  const style = document.createElement("style");
+
+  style.id = "rd131SponsorStyles";
+  style.textContent = `
+    .rd131-sponsor-overlay {
+      position: fixed;
+      z-index: 25000;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding:
+        calc(16px + env(safe-area-inset-top))
+        calc(16px + env(safe-area-inset-right))
+        calc(16px + env(safe-area-inset-bottom))
+        calc(16px + env(safe-area-inset-left));
+      background: rgba(0, 0, 0, 0.78);
+      -webkit-backdrop-filter: blur(9px);
+      backdrop-filter: blur(9px);
+    }
+
+    .rd131-sponsor-card {
+      position: relative;
+      width: min(680px, 100%);
+      max-height: 100%;
+      padding: 47px 10px 10px;
+      overflow: auto;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 24px;
+      background: rgba(8, 11, 15, 0.99);
+      box-shadow:
+        0 28px 90px rgba(0, 0, 0, 0.72),
+        0 0 34px rgba(255, 133, 23, 0.12);
+      overscroll-behavior: contain;
+    }
+
+    .rd131-sponsor-label {
+      position: absolute;
+      top: 17px;
+      left: 18px;
+      color: rgba(238, 244, 251, 0.68);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+
+    .rd131-sponsor-close {
+      position: absolute;
+      z-index: 2;
+      top: 7px;
+      right: 7px;
+      display: grid;
+      width: 40px;
+      height: 40px;
+      place-items: center;
+      padding: 0;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 999px;
+      background: rgba(4, 6, 9, 0.94);
+      color: #ffffff;
+      font-size: 28px;
+      font-weight: 450;
+      line-height: 1;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .rd131-sponsor-close:focus-visible {
+      outline: 3px solid #ff8a18;
+      outline-offset: 2px;
+    }
+
+    .rd131-sponsor-media {
+      display: block;
+      width: 100%;
+      overflow: hidden;
+      border-radius: 16px;
+      background: #030406;
+      text-decoration: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .rd131-sponsor-media:not([href]) {
+      cursor: default;
+    }
+
+    .rd131-sponsor-image {
+      display: block;
+      width: 100%;
+      max-height:
+        calc(100dvh - 110px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+      object-fit: contain;
+      background: #030406;
+    }
+
+    @media (max-width: 520px) {
+      .rd131-sponsor-overlay {
+        padding:
+          calc(10px + env(safe-area-inset-top))
+          calc(10px + env(safe-area-inset-right))
+          calc(10px + env(safe-area-inset-bottom))
+          calc(10px + env(safe-area-inset-left));
+      }
+
+      .rd131-sponsor-card {
+        padding: 45px 8px 8px;
+        border-radius: 20px;
+      }
+
+      .rd131-sponsor-image {
+        max-height:
+          calc(100dvh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+      }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .rd131-sponsor-card {
+        animation: rd131-sponsor-in 180ms ease-out both;
+      }
+
+      @keyframes rd131-sponsor-in {
+        from {
+          opacity: 0;
+          transform: translateY(10px) scale(0.985);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd131SponsorElement() {
+  let overlay = $("rd131SponsorOverlay");
+
+  if (overlay) return overlay;
+
+  rd131InstallSponsorStyles();
+
+  overlay = document.createElement("section");
+  overlay.id = "rd131SponsorOverlay";
+  overlay.className =
+    "rd131-sponsor-overlay hidden";
+  overlay.setAttribute("aria-hidden", "true");
+
+  overlay.innerHTML = `
+    <article
+      class="rd131-sponsor-card"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Sponsored message"
+    >
+      <span class="rd131-sponsor-label">
+        Sponsored
+      </span>
+
+      <button
+        id="rd131SponsorCloseBtn"
+        class="rd131-sponsor-close"
+        type="button"
+        aria-label="Close sponsored message"
+      >
+        ×
+      </button>
+
+      <a
+        id="rd131SponsorMedia"
+        class="rd131-sponsor-media"
+        target="_blank"
+        rel="noopener noreferrer sponsored"
+      >
+        <img
+          id="rd131SponsorImage"
+          class="rd131-sponsor-image"
+          alt="Weekly sponsor advertisement"
+        />
+      </a>
+    </article>
+  `;
+
+  overlay.addEventListener("click", (event) => {
+    if (
+      event.target === overlay ||
+      event.target.closest(
+        "#rd131SponsorCloseBtn"
+      )
+    ) {
+      rd131CloseSponsor();
+    }
+  });
+
+  document.body.appendChild(overlay);
+
+  return overlay;
+}
+
+
+function rd131CloseSponsor() {
+  const overlay = $("rd131SponsorOverlay");
+
+  if (!overlay) return;
+
+  overlay.classList.add("hidden");
+  overlay.setAttribute("aria-hidden", "true");
+
+  const image = $("rd131SponsorImage");
+
+  if (image) {
+    image.removeAttribute("src");
+  }
+
+  rd131SponsorState.activeKey = "";
+
+  const returnFocus =
+    rd131SponsorState.returnFocus;
+
+  rd131SponsorState.returnFocus = null;
+
+  if (
+    returnFocus &&
+    document.contains(returnFocus)
+  ) {
+    returnFocus.focus?.();
+  }
+}
+
+
+function rd131CompletionUiBusy() {
+  return Boolean(
+    state.statsSync?.syncing ||
+    state.sharedRoadSync?.syncing ||
+    state.hiddenDiscoveries?.syncing ||
+    document.querySelector(
+      ".confirm-overlay:not(.hidden), " +
+      ".drive-preparation-overlay:not(.hidden), " +
+      ".conquest-result-overlay:not(.hidden), " +
+      "#rd116MatchSummary:not([hidden])"
+    )
+  );
+}
+
+
+function rd131ActivityIsRunning() {
+  return Boolean(
+    state.isRecording ||
+    state.watchId !== null ||
+    (
+      typeof hasActiveHideSeekRound ===
+        "function" &&
+      hasActiveHideSeekRound()
+    ) ||
+    (
+      typeof hasActiveConquestRound ===
+        "function" &&
+      hasActiveConquestRound()
+    )
+  );
+}
+
+
+function rd131ShowSponsor(config, key) {
+  if (
+    !config ||
+    rd131SponsorState.activeKey ||
+    rd131ActivityIsRunning()
+  ) {
+    return false;
+  }
+
+  const overlay = rd131SponsorElement();
+  const media = $("rd131SponsorMedia");
+  const image = $("rd131SponsorImage");
+
+  if (!overlay || !media || !image) {
+    return false;
+  }
+
+  image.src = config.imageUrl;
+  image.alt = config.alt;
+
+  if (config.clickUrl) {
+    media.href = config.clickUrl;
+    media.setAttribute(
+      "aria-label",
+      `${config.alt} — open sponsor link`
+    );
+  } else {
+    media.removeAttribute("href");
+    media.removeAttribute("aria-label");
+  }
+
+  rd131SponsorState.returnFocus =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+
+  rd131SponsorState.activeKey = key;
+  rd131RememberSponsorKey(key);
+
+  overlay.classList.remove("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+
+  window.setTimeout(() => {
+    $("rd131SponsorCloseBtn")?.focus();
+  }, 0);
+
+  return true;
+}
+
+
+async function rd131TrySponsor(
+  key,
+  attempt = 0
+) {
+  const completionKey = String(key || "");
+
+  if (
+    !completionKey ||
+    rd131SponsorState.seenKeys.has(
+      completionKey
+    )
+  ) {
+    rd131SponsorState.pendingKeys.delete(
+      completionKey
+    );
+    return;
+  }
+
+  if (rd131ActivityIsRunning()) {
+    rd131SponsorState.pendingKeys.delete(
+      completionKey
+    );
+    return;
+  }
+
+  const config =
+    await rd131LoadSponsorConfig();
+
+  if (!config) {
+    rd131SponsorState.pendingKeys.delete(
+      completionKey
+    );
+    return;
+  }
+
+  const imageReady =
+    await rd131PreloadSponsorImage(
+      config.imageUrl
+    );
+
+  if (!imageReady) {
+    rd131SponsorState.pendingKeys.delete(
+      completionKey
+    );
+    return;
+  }
+
+  if (rd131ActivityIsRunning()) {
+    rd131SponsorState.pendingKeys.delete(
+      completionKey
+    );
+    return;
+  }
+
+  if (
+    rd131CompletionUiBusy() ||
+    rd131SponsorState.activeKey
+  ) {
+    if (attempt < 240) {
+      window.setTimeout(
+        () => {
+          void rd131TrySponsor(
+            completionKey,
+            attempt + 1
+          );
+        },
+        500
+      );
+    } else {
+      rd131SponsorState.pendingKeys.delete(
+        completionKey
+      );
+    }
+
+    return;
+  }
+
+  rd131SponsorState.pendingKeys.delete(
+    completionKey
+  );
+
+  rd131ShowSponsor(
+    config,
+    completionKey
+  );
+}
+
+
+function rd131QueueSponsor(
+  key,
+  delay = 500
+) {
+  const completionKey = String(key || "");
+
+  if (
+    !completionKey ||
+    rd131SponsorState.pendingKeys.has(
+      completionKey
+    ) ||
+    rd131SponsorState.seenKeys.has(
+      completionKey
+    )
+  ) {
+    return;
+  }
+
+  rd131SponsorState.pendingKeys.add(
+    completionKey
+  );
+
+  window.setTimeout(() => {
+    void rd131TrySponsor(completionKey);
+  }, Math.max(0, Number(delay) || 0));
+}
+
+
+function rd131InitSponsor() {
+  rd131SponsorElement();
+
+  window.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      rd131SponsorState.activeKey
+    ) {
+      rd131CloseSponsor();
+    }
+  });
+}
+
+
+finishDrive = function () {
+  const wasRunning = Boolean(
+    state.isRecording ||
+    state.watchId !== null
+  );
+
+  const result =
+    roadDiscoveryV131.finishDrive();
+
+  if (wasRunning) {
+    rd131QueueSponsor(
+      `drive:${Date.now()}`,
+      650
+    );
+  }
+
+  return result;
+};
+
+
+applyHideSeekRows = function (rows) {
+  const previousRoundId = String(
+    state.hideSeek.roundId || ""
+  );
+
+  const previousPhase = String(
+    state.hideSeek.phase || ""
+  );
+
+  const result =
+    roadDiscoveryV131.applyHideSeekRows(
+      rows
+    );
+
+  const roundId = String(
+    state.hideSeek.roundId ||
+      rows?.[0]?.round_id ||
+      ""
+  );
+
+  if (
+    roundId &&
+    state.hideSeek.phase === "finished" &&
+    (
+      previousPhase !== "finished" ||
+      previousRoundId !== roundId
+    )
+  ) {
+    rd131QueueSponsor(
+      `hide-seek:${roundId}`,
+      900
+    );
+  }
+
+  return result;
+};
+
+
+rd116FinishConquestSummary = function () {
+  const roundId = String(
+    state.conquest.roundId ||
+      state.conquest.matchSummary?.roundId ||
+      ""
+  );
+
+  const completed = Boolean(
+    roundId &&
+    state.conquest.phase === "finished"
+  );
+
+  const result =
+    roadDiscoveryV131
+      .finishConquestSummary();
+
+  if (completed) {
+    rd131QueueSponsor(
+      `conquest:${roundId}`,
+      350
+    );
+  }
+
+  return result;
+};
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd131InitSponsor,
+    { once: true }
+  );
+} else {
+  rd131InitSponsor();
+}
