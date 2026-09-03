@@ -1,7 +1,7 @@
 "use strict";
 
-/* Road Discovery AU v132
-   Self-hosted NSW OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
+/* Road Discovery AU v133
+   Self-hosted Australian OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
    Live GPS, current drives, markers, accuracy, speed, heading, waypoints and routes are never uploaded.
@@ -70,7 +70,7 @@ const ROAD_CURRENT = "#ffb04a";
 const ROUTE_BLUE = "#4bb3ff";
 
 const ROAD_DISCOVERY_BASEMAP_URL =
-  "https://pub-22b254326ffe4854bae9993e2a43a443.r2.dev/nsw-road-discovery.pmtiles";
+  "https://pub-22b254326ffe4854bae9993e2a43a443.r2.dev/australia-road-discovery.pmtiles";
 
 const ROAD_DISCOVERY_BASEMAP_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> ' +
