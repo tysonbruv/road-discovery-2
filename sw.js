@@ -1,15 +1,15 @@
 "use strict";
 
 /*
-  Road Discovery AU v140 service worker
+  Road Discovery AU v141 service worker
 
   Expected frontend versions:
-  - app.js?v=138
+  - app.js?v=139
   - style.css?v=67
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v140";
+  "road-discovery-au-v141";
 
 const CORE_APP_SHELL = [
   "./",
@@ -20,6 +20,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=67",
+  "./app.js?v=139",
   "./app.js?v=138",
   "./app.js?v=137",
   "./app.js?v=136",
