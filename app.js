@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v136
+/* Road Discovery AU v137
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -48790,3 +48790,474 @@ function rd136ApplyZoomedTrailBrightness() {
 
 
 rd136ApplyZoomedTrailBrightness();
+
+/* ================================================== */
+/* Road Discovery AU v137                             */
+/* Saved Trail Brightness Slider                      */
+/* ================================================== */
+
+const RD137_TRAIL_BRIGHTNESS_KEY =
+  "roadDiscoveryAU.trailBrightness.v1";
+
+const RD137_TRAIL_BRIGHTNESS_DEFAULT = 85;
+const RD137_TRAIL_BRIGHTNESS_MIN = 1;
+const RD137_TRAIL_BRIGHTNESS_MAX = 100;
+
+const roadDiscoveryV137 = {
+  savedRoadStyle: rd53SavedRoadStyle,
+  trailCoreStyle: rd102TrailCoreStyle,
+  getSegmentStyle
+};
+
+let rd137BrightnessApplyTimer = null;
+
+
+function rd137ClampTrailBrightness(value) {
+  const numeric = Math.round(Number(value));
+
+  if (!Number.isFinite(numeric)) {
+    return RD137_TRAIL_BRIGHTNESS_DEFAULT;
+  }
+
+  return Math.min(
+    RD137_TRAIL_BRIGHTNESS_MAX,
+    Math.max(
+      RD137_TRAIL_BRIGHTNESS_MIN,
+      numeric
+    )
+  );
+}
+
+
+function rd137LoadTrailBrightness() {
+  try {
+    const stored = localStorage.getItem(
+      RD137_TRAIL_BRIGHTNESS_KEY
+    );
+
+    return stored === null
+      ? RD137_TRAIL_BRIGHTNESS_DEFAULT
+      : rd137ClampTrailBrightness(stored);
+  } catch (error) {
+    console.error(error);
+    return RD137_TRAIL_BRIGHTNESS_DEFAULT;
+  }
+}
+
+
+state.trailBrightnessPercent =
+  rd137LoadTrailBrightness();
+
+
+function rd137SaveTrailBrightness() {
+  try {
+    localStorage.setItem(
+      RD137_TRAIL_BRIGHTNESS_KEY,
+      String(state.trailBrightnessPercent)
+    );
+  } catch (error) {
+    console.error(error);
+    showToast(
+      "Could not save trail brightness"
+    );
+  }
+}
+
+
+function rd137TrailOpacity() {
+  return (
+    rd137ClampTrailBrightness(
+      state.trailBrightnessPercent
+    ) / 100
+  );
+}
+
+
+rd53SavedRoadStyle = function () {
+  const style = {
+    ...roadDiscoveryV137.savedRoadStyle()
+  };
+
+  style.opacity = rd137TrailOpacity();
+
+  return style;
+};
+
+
+rd102TrailCoreStyle = function () {
+  const style = {
+    ...roadDiscoveryV137.trailCoreStyle()
+  };
+
+  /*
+    Below the default brightness, fade the optional
+    dark centreline with the trail so it never becomes
+    more visible than the coloured road underneath it.
+  */
+  const brightnessScale = Math.min(
+    1,
+    rd137ClampTrailBrightness(
+      state.trailBrightnessPercent
+    ) / RD137_TRAIL_BRIGHTNESS_DEFAULT
+  );
+
+  style.opacity *= brightnessScale;
+
+  return style;
+};
+
+
+getSegmentStyle = function (segment) {
+  const style =
+    roadDiscoveryV137.getSegmentStyle(
+      segment
+    );
+
+  /*
+    Already-discovered roads in the nearby Drive Mode
+    layer match the saved map. The active-drive paint
+    remains fully visible for safety and clarity.
+  */
+  if (segment?.visited && !segment.currentTrip) {
+    style.opacity = rd137TrailOpacity();
+  }
+
+  return style;
+};
+
+
+function rd137UpdateTrailBrightnessUi() {
+  const value = rd137ClampTrailBrightness(
+    state.trailBrightnessPercent
+  );
+
+  const slider = $(
+    "rd137TrailBrightnessSlider"
+  );
+
+  const output = $(
+    "rd137TrailBrightnessValue"
+  );
+
+  if (slider) {
+    slider.value = String(value);
+    slider.setAttribute(
+      "aria-valuetext",
+      `${value}% brightness`
+    );
+    slider.style.setProperty(
+      "--rd137-trail-brightness-fill",
+      `${value}%`
+    );
+  }
+
+  if (output) {
+    output.value = `${value}%`;
+    output.textContent = `${value}%`;
+  }
+}
+
+
+function rd137ApplyTrailBrightness() {
+  if (rd137BrightnessApplyTimer !== null) {
+    window.clearTimeout(
+      rd137BrightnessApplyTimer
+    );
+    rd137BrightnessApplyTimer = null;
+  }
+
+  rd53ApplySavedRoadZoomStyle();
+  rd102ApplyTrailCoreStyle();
+
+  for (const segment of state.roadSegments || []) {
+    if (
+      segment?.visited &&
+      !segment.currentTrip &&
+      segment.layer
+    ) {
+      segment.layer.setStyle?.(
+        getSegmentStyle(segment)
+      );
+    }
+  }
+
+  rd102KeepCorrectLayerOrder();
+}
+
+
+function rd137ScheduleTrailBrightnessApply() {
+  if (rd137BrightnessApplyTimer !== null) {
+    window.clearTimeout(
+      rd137BrightnessApplyTimer
+    );
+  }
+
+  /*
+    A short debounce keeps dragging smooth even when
+    tens of thousands of saved trail pieces are drawn.
+  */
+  rd137BrightnessApplyTimer =
+    window.setTimeout(() => {
+      rd137BrightnessApplyTimer = null;
+      rd137ApplyTrailBrightness();
+    }, 120);
+}
+
+
+function rd137InstallTrailBrightnessStyles() {
+  if ($("rd137TrailBrightnessStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd137TrailBrightnessStyles";
+  style.textContent = `
+    .rd137-trail-brightness-setting {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .rd137-trail-brightness-heading {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 14px;
+    }
+
+    .rd137-trail-brightness-copy {
+      display: grid;
+      gap: 5px;
+    }
+
+    .rd137-trail-brightness-copy strong {
+      color: #f5f7fb;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+
+    .rd137-trail-brightness-copy span {
+      color: #9ca3af;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .rd137-trail-brightness-value {
+      min-width: 54px;
+      padding: 6px 9px;
+      border: 1px solid rgba(255, 138, 24, 0.38);
+      border-radius: 999px;
+      background: rgba(255, 138, 24, 0.12);
+      color: #ffb15b;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+      text-align: center;
+    }
+
+    .rd137-trail-brightness-slider {
+      --rd137-trail-brightness-fill: 85%;
+      width: 100%;
+      height: 28px;
+      margin: 0;
+      padding: 0;
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .rd137-trail-brightness-slider::-webkit-slider-runnable-track {
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(
+        90deg,
+        #ff8a18 0,
+        #ff8a18 var(--rd137-trail-brightness-fill),
+        rgba(255, 255, 255, 0.12) var(--rd137-trail-brightness-fill),
+        rgba(255, 255, 255, 0.12) 100%
+      );
+    }
+
+    .rd137-trail-brightness-slider::-webkit-slider-thumb {
+      width: 24px;
+      height: 24px;
+      margin-top: -8px;
+      border: 3px solid #0b0f14;
+      border-radius: 50%;
+      -webkit-appearance: none;
+      background: #ff9a35;
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.5),
+        0 0 15px rgba(255, 138, 24, 0.62);
+    }
+
+    .rd137-trail-brightness-slider::-moz-range-track {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .rd137-trail-brightness-slider::-moz-range-progress {
+      height: 8px;
+      border-radius: 999px;
+      background: #ff8a18;
+    }
+
+    .rd137-trail-brightness-slider::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      border: 3px solid #0b0f14;
+      border-radius: 50%;
+      background: #ff9a35;
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.5),
+        0 0 15px rgba(255, 138, 24, 0.62);
+    }
+
+    .rd137-trail-brightness-slider:focus-visible {
+      outline: 3px solid rgba(75, 179, 255, 0.42);
+      outline-offset: 3px;
+      border-radius: 999px;
+    }
+
+    .rd137-trail-brightness-range {
+      display: flex;
+      justify-content: space-between;
+      margin-top: -1px;
+      color: #727b88;
+      font-size: 10px;
+      font-weight: 800;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd137InsertTrailBrightnessSetting() {
+  const existing = $(
+    "rd137TrailBrightnessSlider"
+  );
+
+  if (existing) {
+    rd137UpdateTrailBrightnessUi();
+    return;
+  }
+
+  const trailColourSetting = $(
+    "trailColourSetting"
+  );
+
+  if (!trailColourSetting) return;
+
+  const setting =
+    document.createElement("div");
+
+  setting.id =
+    "rd137TrailBrightnessSetting";
+  setting.className =
+    "rd137-trail-brightness-setting";
+
+  setting.innerHTML = `
+    <div class="rd137-trail-brightness-heading">
+      <div class="rd137-trail-brightness-copy">
+        <strong>Trail brightness</strong>
+
+        <span>
+          Adjust your saved trail from 1% to 100%.
+          Trail thickness and active-drive visibility
+          stay unchanged.
+        </span>
+      </div>
+
+      <output
+        id="rd137TrailBrightnessValue"
+        class="rd137-trail-brightness-value"
+        for="rd137TrailBrightnessSlider"
+      >
+        85%
+      </output>
+    </div>
+
+    <input
+      id="rd137TrailBrightnessSlider"
+      class="rd137-trail-brightness-slider"
+      type="range"
+      min="1"
+      max="100"
+      step="1"
+      value="85"
+      aria-label="Trail brightness"
+      aria-valuetext="85% brightness"
+    />
+
+    <div
+      class="rd137-trail-brightness-range"
+      aria-hidden="true"
+    >
+      <span>1%</span>
+      <span>100%</span>
+    </div>
+  `;
+
+  trailColourSetting.insertAdjacentElement(
+    "afterend",
+    setting
+  );
+
+  const slider = $(
+    "rd137TrailBrightnessSlider"
+  );
+
+  slider?.addEventListener(
+    "input",
+    (event) => {
+      state.trailBrightnessPercent =
+        rd137ClampTrailBrightness(
+          event.currentTarget.value
+        );
+
+      rd137UpdateTrailBrightnessUi();
+      rd137ScheduleTrailBrightnessApply();
+    }
+  );
+
+  slider?.addEventListener(
+    "change",
+    (event) => {
+      state.trailBrightnessPercent =
+        rd137ClampTrailBrightness(
+          event.currentTarget.value
+        );
+
+      rd137UpdateTrailBrightnessUi();
+      rd137SaveTrailBrightness();
+      rd137ApplyTrailBrightness();
+
+      showToast(
+        `Trail brightness ${state.trailBrightnessPercent}%`
+      );
+    }
+  );
+
+  rd137UpdateTrailBrightnessUi();
+}
+
+
+function rd137InitTrailBrightness() {
+  rd137InstallTrailBrightnessStyles();
+  rd137InsertTrailBrightnessSetting();
+  rd137UpdateTrailBrightnessUi();
+  rd137ApplyTrailBrightness();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd137InitTrailBrightness,
+    { once: true }
+  );
+} else {
+  rd137InitTrailBrightness();
+}
