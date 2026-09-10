@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v135
+/* Road Discovery AU v136
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -48713,3 +48713,80 @@ if (document.readyState === "loading") {
 } else {
   rd135InitMapLabelsSetting();
 }
+
+/* ================================================== */
+/* Road Discovery AU v136                             */
+/* 85% Brightness for the Zoomed-Out Main Trail       */
+/* ================================================== */
+
+const roadDiscoveryV136 = {
+  mainTrailStyle: rd53SavedRoadStyle,
+  trailCoreStyle: rd102TrailCoreStyle
+};
+
+
+function rd136MainTrailStyle(zoomValue) {
+  const style = {
+    ...roadDiscoveryV136.mainTrailStyle()
+  };
+
+  const zoom = Number(zoomValue);
+
+  /*
+    Keep the close street-level trail exactly as it was.
+    At every wider zoom, retain the carefully scaled line
+    width but hold the orange paint at 85% opacity.
+  */
+  if (Number.isFinite(zoom) && zoom < 14) {
+    style.opacity = 0.85;
+  }
+
+  return style;
+}
+
+
+rd53SavedRoadStyle = function () {
+  return rd136MainTrailStyle(
+    state.map?.getZoom?.()
+  );
+};
+
+
+rd102TrailCoreStyle = function () {
+  const style = {
+    ...roadDiscoveryV136.trailCoreStyle()
+  };
+
+  const zoom = Number(state.map?.getZoom?.());
+
+  /*
+    The dark centreline still separates dense trails,
+    but no longer muddies the orange at regional zooms.
+  */
+  if (Number.isFinite(zoom) && zoom < 14) {
+    style.opacity = Math.min(
+      style.opacity,
+      zoom >= 13
+        ? 0.5
+        : zoom >= 12
+          ? 0.38
+          : zoom >= 10
+            ? 0.26
+            : zoom >= 8
+              ? 0.2
+              : 0.16
+    );
+  }
+
+  return style;
+};
+
+
+function rd136ApplyZoomedTrailBrightness() {
+  rd53ApplySavedRoadZoomStyle();
+  rd102ApplyTrailCoreStyle();
+  rd102KeepCorrectLayerOrder();
+}
+
+
+rd136ApplyZoomedTrailBrightness();
