@@ -50413,3 +50413,761 @@ if (document.readyState === "loading") {
 } else {
   rd141InitSponsors();
 }
+
+
+/* =====================================================
+   Road Discovery AU v142
+   Eight-week sponsor calendar + verified web checkout
+   ===================================================== */
+
+const RD142_SPONSOR_BOOKING_API =
+  `${SUPABASE_URL}/functions/v1/sponsor-booking`;
+const RD142_SPONSOR_EMAIL =
+  "quartzsoftware@outlook.com";
+const roadDiscoveryV142 = {
+  showSponsor: rd131ShowSponsor
+};
+
+let rd142BookingReturnFocus = null;
+
+
+function rd142IsNativeApp() {
+  return Boolean(
+    window.Capacitor?.isNativePlatform?.()
+  );
+}
+
+
+function rd142Escape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+
+function rd142FormatDate(value) {
+  const date = new Date(`${value}T12:00:00Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value || "");
+  }
+
+  return new Intl.DateTimeFormat("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Australia/Sydney"
+  }).format(date);
+}
+
+
+function rd142BookingHeaders() {
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    "Content-Type": "application/json"
+  };
+}
+
+
+async function rd142BookingRequest(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    12000
+  );
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      cache: "no-store",
+      headers: {
+        ...rd142BookingHeaders(),
+        ...(options.headers || {})
+      },
+      signal: controller.signal
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        String(
+          payload?.error ||
+          "Sponsor booking is temporarily unavailable."
+        )
+      );
+    }
+
+    return payload;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+
+function rd142InstallBookingUi() {
+  if ($("rd142SponsorBookingStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd142SponsorBookingStyles";
+  style.textContent = `
+    .rd142-booking-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 26000;
+      display: grid;
+      place-items: center;
+      padding: max(18px, env(safe-area-inset-top))
+        16px max(18px, env(safe-area-inset-bottom));
+      background: rgba(2, 4, 7, 0.82);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .rd142-booking-overlay[hidden] {
+      display: none;
+    }
+
+    .rd142-booking-card {
+      position: relative;
+      width: min(560px, 100%);
+      max-height: min(820px, calc(100dvh - 36px));
+      overflow: auto;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 24px;
+      padding: 24px;
+      background: #0b0e13;
+      color: #f5f7fa;
+      box-shadow: 0 24px 90px rgba(0, 0, 0, 0.58);
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .rd142-booking-close {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 42px;
+      height: 42px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 50%;
+      background: #171c24;
+      color: #ffffff;
+      font-size: 26px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .rd142-booking-kicker {
+      margin: 0 52px 7px 0;
+      color: #ff9c3c;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .rd142-booking-card h2 {
+      margin: 0 52px 8px 0;
+      font-size: clamp(24px, 6vw, 34px);
+      line-height: 1.08;
+    }
+
+    .rd142-booking-lead {
+      margin: 0;
+      color: #b8c0cc;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .rd142-booking-facts {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 18px 0;
+    }
+
+    .rd142-booking-fact {
+      padding: 12px 8px;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 14px;
+      background: #11161d;
+      text-align: center;
+    }
+
+    .rd142-booking-fact strong,
+    .rd142-booking-fact span {
+      display: block;
+    }
+
+    .rd142-booking-fact strong {
+      color: #ffffff;
+      font-size: 15px;
+    }
+
+    .rd142-booking-fact span {
+      margin-top: 3px;
+      color: #8994a3;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .rd142-booking-status {
+      min-height: 22px;
+      margin: 4px 0 10px;
+      color: #b8c0cc;
+      font-size: 13px;
+    }
+
+    .rd142-week-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .rd142-week {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 13px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 15px;
+      background: #11161d;
+    }
+
+    .rd142-week-title {
+      display: block;
+      color: #ffffff;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .rd142-week-slots {
+      display: block;
+      margin-top: 4px;
+      color: #9ca6b4;
+      font-size: 11px;
+    }
+
+    .rd142-week-button,
+    .rd142-contact-button {
+      min-height: 42px;
+      border: 0;
+      border-radius: 999px;
+      padding: 0 16px;
+      background: #ff8a18;
+      color: #090b0f;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 950;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .rd142-week-button:disabled {
+      background: #29303a;
+      color: #8994a3;
+      cursor: not-allowed;
+    }
+
+    .rd142-booking-note {
+      margin: 16px 0 0;
+      color: #7f8997;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .rd142-booking-message {
+      margin-top: 18px;
+      padding: 18px;
+      border: 1px solid rgba(75, 179, 255, 0.3);
+      border-radius: 17px;
+      background: rgba(75, 179, 255, 0.08);
+    }
+
+    .rd142-booking-message.success {
+      border-color: rgba(65, 213, 139, 0.4);
+      background: rgba(65, 213, 139, 0.08);
+    }
+
+    .rd142-booking-message h3 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .rd142-booking-message p {
+      margin: 7px 0;
+      color: #c3cad4;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .rd142-contact-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 450px) {
+      .rd142-booking-card {
+        padding: 21px 16px;
+        border-radius: 20px;
+      }
+
+      .rd142-booking-facts {
+        gap: 6px;
+      }
+
+      .rd142-week {
+        grid-template-columns: 1fr;
+      }
+
+      .rd142-week-button {
+        width: 100%;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+
+  const overlay = document.createElement("section");
+  overlay.id = "rd142SponsorBookingOverlay";
+  overlay.className = "rd142-booking-overlay";
+  overlay.hidden = true;
+  overlay.setAttribute("aria-hidden", "true");
+  overlay.innerHTML = `
+    <article
+      class="rd142-booking-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rd142BookingTitle"
+    >
+      <button
+        id="rd142BookingCloseBtn"
+        class="rd142-booking-close"
+        type="button"
+        aria-label="Close sponsor booking"
+      >×</button>
+
+      <p class="rd142-booking-kicker">Advertise in the app</p>
+      <h2 id="rd142BookingTitle">Book a weekly sponsor slot</h2>
+      <p class="rd142-booking-lead">
+        Choose an available Monday–Sunday week. Your ad joins a fair,
+        persistent rotation with up to four other sponsors.
+      </p>
+
+      <div class="rd142-booking-facts" aria-label="Booking details">
+        <div class="rd142-booking-fact"><strong>$20 AUD</strong><span>per week</span></div>
+        <div class="rd142-booking-fact"><strong>5</strong><span>positions</span></div>
+        <div class="rd142-booking-fact"><strong>8 weeks</strong><span>book ahead</span></div>
+      </div>
+
+      <div
+        id="rd142BookingContent"
+        aria-live="polite"
+      ></div>
+    </article>
+  `;
+
+  overlay.addEventListener("click", (event) => {
+    if (
+      event.target === overlay ||
+      event.target.closest("#rd142BookingCloseBtn")
+    ) {
+      rd142CloseBooking();
+    }
+  });
+  document.body.appendChild(overlay);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !overlay.hidden) {
+      rd142CloseBooking();
+    }
+  });
+}
+
+
+function rd142OpenBookingShell() {
+  rd142InstallBookingUi();
+  const overlay = $("rd142SponsorBookingOverlay");
+
+  rd142BookingReturnFocus = document.activeElement;
+  overlay.hidden = false;
+  overlay.setAttribute("aria-hidden", "false");
+  window.setTimeout(
+    () => $("rd142BookingCloseBtn")?.focus(),
+    0
+  );
+}
+
+
+function rd142CloseBooking() {
+  const overlay = $("rd142SponsorBookingOverlay");
+  if (!overlay || overlay.hidden) return;
+
+  overlay.hidden = true;
+  overlay.setAttribute("aria-hidden", "true");
+
+  if (
+    rd142BookingReturnFocus &&
+    document.contains(rd142BookingReturnFocus)
+  ) {
+    rd142BookingReturnFocus.focus?.();
+  }
+
+  rd142BookingReturnFocus = null;
+}
+
+
+function rd142ContactMessage(message) {
+  const subject = encodeURIComponent(
+    "Road Discovery AU sponsor booking help"
+  );
+  const safeMessage = rd142Escape(message);
+
+  return `
+    <div class="rd142-booking-message">
+      <h3>Booking unavailable</h3>
+      <p>${safeMessage}</p>
+      <p>No payment or reservation has been made.</p>
+      <a
+        class="rd142-contact-button"
+        href="mailto:${RD142_SPONSOR_EMAIL}?subject=${subject}"
+      >Email Quartz Software</a>
+    </div>
+  `;
+}
+
+
+function rd142RenderWeeks(weeks) {
+  const content = $("rd142BookingContent");
+  content.replaceChildren();
+
+  const status = document.createElement("p");
+  status.className = "rd142-booking-status";
+  status.textContent =
+    "Select a week to continue to secure Stripe checkout.";
+  content.appendChild(status);
+
+  const list = document.createElement("div");
+  list.className = "rd142-week-list";
+
+  weeks.forEach((week) => {
+    const available = Math.max(
+      0,
+      Math.min(5, Number(week.available_slots) || 0)
+    );
+    const row = document.createElement("article");
+    row.className = "rd142-week";
+
+    const details = document.createElement("div");
+    const title = document.createElement("strong");
+    title.className = "rd142-week-title";
+    title.textContent =
+      `${rd142FormatDate(week.week_start)} – ` +
+      rd142FormatDate(week.week_end);
+    const slots = document.createElement("span");
+    slots.className = "rd142-week-slots";
+    slots.textContent = available === 0
+      ? "Sold out"
+      : `${available} of 5 positions available`;
+    details.append(title, slots);
+
+    const button = document.createElement("button");
+    button.className = "rd142-week-button";
+    button.type = "button";
+    button.disabled = available === 0;
+    button.textContent = available === 0
+      ? "Sold out"
+      : "Book for $20";
+    button.addEventListener("click", () => {
+      void rd142StartCheckout(week, button, status);
+    });
+
+    row.append(details, button);
+    list.appendChild(row);
+  });
+
+  content.appendChild(list);
+
+  const note = document.createElement("p");
+  note.className = "rd142-booking-note";
+  note.textContent =
+    "Ads require approval. After payment, email your logo/image, destination link and description. Unsuitable ads will be rejected and refunded.";
+  content.appendChild(note);
+}
+
+
+async function rd142OpenBooking() {
+  if (rd142IsNativeApp()) {
+    showToast(
+      "Sponsor purchasing will be available after Apple in-app purchase is added."
+    );
+    return;
+  }
+
+  rd131CloseSponsor();
+  rd142OpenBookingShell();
+  const content = $("rd142BookingContent");
+  content.innerHTML = `
+    <p class="rd142-booking-status">Loading available weeks…</p>
+  `;
+
+  try {
+    const payload = await rd142BookingRequest(
+      RD142_SPONSOR_BOOKING_API
+    );
+    const weeks = Array.isArray(payload?.weeks)
+      ? payload.weeks
+      : [];
+
+    if (weeks.length === 0) {
+      throw new Error("No advertising weeks are available right now.");
+    }
+
+    rd142RenderWeeks(weeks);
+  } catch (error) {
+    content.innerHTML = rd142ContactMessage(
+      error?.name === "AbortError"
+        ? "The booking server took too long to respond."
+        : error?.message
+    );
+  }
+}
+
+
+async function rd142StartCheckout(week, button, status) {
+  const buttons = document.querySelectorAll(
+    ".rd142-week-button"
+  );
+  buttons.forEach((entry) => {
+    entry.disabled = true;
+  });
+  button.textContent = "Reserving…";
+  status.textContent =
+    "Holding one position while secure checkout opens…";
+
+  try {
+    const payload = await rd142BookingRequest(
+      RD142_SPONSOR_BOOKING_API,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          weekStart: String(week.week_start || "")
+        })
+      }
+    );
+    const checkoutUrl = new URL(
+      String(payload?.checkoutUrl || "")
+    );
+
+    if (
+      checkoutUrl.protocol !== "https:" ||
+      checkoutUrl.hostname !== "checkout.stripe.com"
+    ) {
+      throw new Error("The secure checkout address was invalid.");
+    }
+
+    window.location.assign(checkoutUrl.href);
+  } catch (error) {
+    status.textContent = String(
+      error?.name === "AbortError"
+        ? "Checkout took too long to start. Please try again."
+        : error?.message || "Checkout could not be started."
+    );
+    window.setTimeout(
+      () => void rd142OpenBooking(),
+      900
+    );
+  }
+}
+
+
+function rd142ShowCheckoutResult(booking, verified) {
+  const content = $("rd142BookingContent");
+  const dates =
+    `${rd142FormatDate(booking.week_start)} – ` +
+    rd142FormatDate(booking.week_end);
+  const subject = encodeURIComponent(
+    `Road Discovery AU artwork - ${booking.week_start} - slot ${booking.slot_number}`
+  );
+  const body = encodeURIComponent(
+    `Hi, my sponsor booking is for ${dates}, position ${booking.slot_number} of 5. I have attached my advertisement image. My destination website is: `
+  );
+
+  if (verified) {
+    content.innerHTML = `
+      <div class="rd142-booking-message success">
+        <h3>Payment successful</h3>
+        <p><strong>${rd142Escape(dates)}</strong><br>
+        Rotation position ${rd142Escape(booking.slot_number)} of 5</p>
+        <p>
+          Send your advertisement image, website link and a short description
+          to <strong>${RD142_SPONSOR_EMAIL}</strong>. Include this booking week
+          in the subject. Your ad will go live after approval.
+        </p>
+        <a
+          class="rd142-contact-button"
+          href="mailto:${RD142_SPONSOR_EMAIL}?subject=${subject}&body=${body}"
+        >Send advertisement</a>
+      </div>
+    `;
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="rd142-booking-message">
+      <h3>Payment is being verified</h3>
+      <p>
+        Stripe has returned you to Road Discovery AU. The signed payment
+        confirmation has not reached the booking server yet.
+      </p>
+      <p>
+        Do not pay again. Reopen the app shortly, or email
+        ${RD142_SPONSOR_EMAIL} if this remains unchanged.
+      </p>
+    </div>
+  `;
+}
+
+
+async function rd142VerifyCheckout(sessionId) {
+  rd142OpenBookingShell();
+  const content = $("rd142BookingContent");
+  content.innerHTML = `
+    <p class="rd142-booking-status">Verifying your payment securely…</p>
+  `;
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      const url = new URL(RD142_SPONSOR_BOOKING_API);
+      url.searchParams.set("session_id", sessionId);
+      const payload = await rd142BookingRequest(url.href);
+      const booking = payload?.booking;
+
+      if (!booking) {
+        throw new Error("Booking confirmation was not found.");
+      }
+
+      if (["pending_artwork", "approved"].includes(booking.status)) {
+        rd142ShowCheckoutResult(booking, true);
+        return;
+      }
+
+      if (booking.status !== "held") {
+        throw new Error(
+          "This booking is no longer active. Please contact Quartz Software."
+        );
+      }
+
+      if (attempt < 5) {
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, 1400)
+        );
+        continue;
+      }
+
+      rd142ShowCheckoutResult(booking, false);
+      return;
+    } catch (error) {
+      if (attempt < 2) {
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, 1200)
+        );
+        continue;
+      }
+
+      content.innerHTML = rd142ContactMessage(
+        error?.name === "AbortError"
+          ? "Payment verification took too long. Do not pay again."
+          : error?.message
+      );
+      return;
+    }
+  }
+}
+
+
+function rd142PrepareBookingCta() {
+  const section = $("rd141SponsorBooking");
+  const oldButton = $("rd141SponsorBookBtn");
+
+  if (!section || !oldButton) return;
+
+  if (rd142IsNativeApp()) {
+    section.hidden = true;
+    return;
+  }
+
+  section.hidden = false;
+
+  if (oldButton.dataset.rd142Ready === "true") return;
+
+  const button = oldButton.cloneNode(true);
+  button.dataset.rd142Ready = "true";
+  oldButton.replaceWith(button);
+  button.addEventListener("click", () => {
+    void rd142OpenBooking();
+  });
+}
+
+
+rd131ShowSponsor = function (config, key) {
+  const shown = roadDiscoveryV142.showSponsor(config, key);
+  rd142PrepareBookingCta();
+  return shown;
+};
+
+
+function rd142HandleCheckoutReturn() {
+  const url = new URL(window.location.href);
+  const result = url.searchParams.get("sponsor_booking");
+  const sessionId = String(
+    url.searchParams.get("session_id") || ""
+  );
+
+  if (!result) return;
+
+  url.searchParams.delete("sponsor_booking");
+  url.searchParams.delete("session_id");
+  window.history.replaceState(
+    window.history.state,
+    "",
+    url.href
+  );
+
+  if (
+    result === "success" &&
+    /^cs_(test_|live_)?[A-Za-z0-9]+$/.test(sessionId)
+  ) {
+    void rd142VerifyCheckout(sessionId);
+    return;
+  }
+
+  if (result === "cancelled") {
+    showToast("Sponsor checkout cancelled — you were not charged.");
+    void rd142OpenBooking();
+  }
+}
+
+
+function rd142InitSponsorBooking() {
+  rd142InstallBookingUi();
+  rd142PrepareBookingCta();
+  rd142HandleCheckoutReturn();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd142InitSponsorBooking,
+    { once: true }
+  );
+} else {
+  rd142InitSponsorBooking();
+}
