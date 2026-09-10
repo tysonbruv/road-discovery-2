@@ -49816,3 +49816,600 @@ if (document.readyState === "loading") {
 } else {
   rd138InitPerformanceRendering();
 }
+
+/* ================================================== */
+/* Road Discovery AU v141                             */
+/* Five-Sponsor Rotation + Activity Sponsor Triggers  */
+/* ================================================== */
+
+const RD141_SPONSOR_ROTATION_KEY =
+  "roadDiscoveryAU.sponsorRotation.v1";
+
+const RD141_SPONSOR_EMAIL =
+  "quartzsoftware@outlook.com";
+
+const roadDiscoveryV141 = {
+  showSponsor: rd131ShowSponsor,
+  createMultiplayerRoom,
+  leaveMultiplayerRoom,
+  leaveHideSeekRound,
+  leaveConquestRound: rd86LeaveConquestRound
+};
+
+Object.assign(rd131SponsorState, {
+  activeSponsorId: "",
+  activeBookingUrl: ""
+});
+
+
+function rd141Shuffle(values) {
+  const shuffled = [...values];
+
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const randomIndex = Math.floor(
+      Math.random() * (index + 1)
+    );
+
+    [shuffled[index], shuffled[randomIndex]] =
+      [shuffled[randomIndex], shuffled[index]];
+  }
+
+  return shuffled;
+}
+
+
+function rd141LoadRotation() {
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(
+        RD141_SPONSOR_ROTATION_KEY
+      ) || "null"
+    );
+
+    return parsed && typeof parsed === "object"
+      ? parsed
+      : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+
+function rd141SaveRotation(rotation) {
+  try {
+    localStorage.setItem(
+      RD141_SPONSOR_ROTATION_KEY,
+      JSON.stringify(rotation)
+    );
+  } catch (error) {
+    /* The current in-memory rotation still works. */
+  }
+}
+
+
+function rd141RotationKey(config) {
+  return [
+    String(config?.version || ""),
+    ...(config?.sponsors || []).map(
+      (sponsor) => sponsor.id
+    )
+  ].join("|");
+}
+
+
+function rd141CurrentRotation(config) {
+  const key = rd141RotationKey(config);
+  const validIds = new Set(
+    config.sponsors.map((sponsor) => sponsor.id)
+  );
+  const stored = rd141LoadRotation();
+  let remaining = [];
+  let lastShown = "";
+
+  if (stored?.key === key) {
+    remaining = Array.isArray(stored.remaining)
+      ? stored.remaining.filter(
+          (id, index, values) =>
+            validIds.has(id) &&
+            values.indexOf(id) === index
+        )
+      : [];
+    lastShown = validIds.has(stored.lastShown)
+      ? stored.lastShown
+      : "";
+  }
+
+  if (remaining.length === 0) {
+    remaining = rd141Shuffle([...validIds]);
+
+    if (
+      remaining.length > 1 &&
+      remaining[0] === lastShown
+    ) {
+      [remaining[0], remaining[1]] =
+        [remaining[1], remaining[0]];
+    }
+  }
+
+  return { key, remaining, lastShown };
+}
+
+
+function rd141ChooseSponsor(config) {
+  const rotation = rd141CurrentRotation(config);
+  const sponsorId = rotation.remaining[0];
+  const sponsor = config.sponsors.find(
+    (candidate) => candidate.id === sponsorId
+  );
+
+  return sponsor
+    ? { sponsor, rotation }
+    : null;
+}
+
+
+function rd141CommitSponsor(rotation, sponsorId) {
+  rd141SaveRotation({
+    key: rotation.key,
+    remaining: rotation.remaining.filter(
+      (id) => id !== sponsorId
+    ),
+    lastShown: sponsorId
+  });
+}
+
+
+rd131FetchSponsorConfig = async function () {
+  const fallbackSponsor = {
+    id: "road-discovery-weekly-sponsor",
+    active: true,
+    imageUrl: RD131_SPONSOR_FALLBACK_IMAGE_URL,
+    clickUrl: "",
+    alt: "Weekly sponsor advertisement",
+    startsAt: "",
+    endsAt: "",
+    version: "fallback"
+  };
+
+  let supplied = null;
+  let requestFailed = false;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    3500
+  );
+
+  try {
+    const url = new URL(RD131_SPONSOR_CONFIG_URL);
+    url.searchParams.set("rd-config", String(Date.now()));
+
+    const response = await fetch(url.href, {
+      cache: "no-store",
+      signal: controller.signal
+    });
+
+    if (response.ok) {
+      supplied = await response.json();
+    } else {
+      requestFailed = true;
+    }
+  } catch (error) {
+    requestFailed = true;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+
+  if (supplied?.active === false) return null;
+
+  const globalVersion = String(
+    supplied?.version || ""
+  );
+  const suppliedSponsors = Array.isArray(
+    supplied?.sponsors
+  )
+    ? supplied.sponsors
+    : supplied && typeof supplied === "object"
+      ? [supplied]
+      : requestFailed
+        ? [fallbackSponsor]
+        : [];
+  const ids = new Set();
+
+  const sponsors = suppliedSponsors
+    .slice(0, 5)
+    .map((entry, index) => {
+      const version = String(
+        entry?.version || globalVersion || ""
+      );
+      const imageUrl = rd131SafeSponsorUrl(
+        entry?.imageUrl || "",
+        RD131_SPONSOR_CONFIG_URL
+      );
+      let id = String(
+        entry?.id || `sponsor-${index + 1}`
+      )
+        .trim()
+        .replace(/[^a-z0-9._-]/gi, "-")
+        .slice(0, 80);
+
+      if (!id || ids.has(id)) {
+        id = `sponsor-${index + 1}-${rd131SponsorCacheToken(version)}`;
+      }
+
+      ids.add(id);
+
+      return {
+        id,
+        active: entry?.active !== false,
+        imageUrl: imageUrl
+          ? rd131VersionedSponsorImage(imageUrl, version)
+          : "",
+        clickUrl: rd131SafeSponsorUrl(
+          entry?.clickUrl,
+          window.location.href
+        ),
+        alt:
+          String(entry?.alt || "")
+            .trim()
+            .slice(0, 180) ||
+          "Weekly sponsor advertisement",
+        startsAt: entry?.startsAt || "",
+        endsAt: entry?.endsAt || "",
+        version
+      };
+    })
+    .filter((sponsor) =>
+      sponsor.active &&
+      sponsor.imageUrl &&
+      rd131SponsorDateAllows(sponsor)
+    );
+
+  if (sponsors.length === 0) return null;
+
+  return {
+    version: globalVersion,
+    bookingUrl: rd131SafeSponsorUrl(
+      supplied?.bookingUrl,
+      window.location.href
+    ),
+    sponsors
+  };
+};
+
+
+function rd141InstallBookingCta() {
+  const card = document.querySelector(
+    ".rd131-sponsor-card"
+  );
+
+  if (!card || $("rd141SponsorBooking")) return;
+
+  const booking = document.createElement("section");
+  booking.id = "rd141SponsorBooking";
+  booking.className = "rd141-sponsor-booking";
+  booking.innerHTML = `
+    <div>
+      <strong>Your ad here</strong>
+      <span>Five weekly positions · $20 per week</span>
+    </div>
+
+    <button
+      id="rd141SponsorBookBtn"
+      type="button"
+    >
+      Book now
+    </button>
+  `;
+
+  card.appendChild(booking);
+
+  $("rd141SponsorBookBtn")?.addEventListener(
+    "click",
+    () => {
+      const bookingUrl = String(
+        rd131SponsorState.activeBookingUrl || ""
+      );
+
+      if (bookingUrl) {
+        window.open(
+          bookingUrl,
+          "_blank",
+          "noopener,noreferrer"
+        );
+        return;
+      }
+
+      const subject = encodeURIComponent(
+        "Road Discovery AU weekly sponsor booking"
+      );
+      const body = encodeURIComponent(
+        "Hi, I would like to book a $20 weekly advertising slot in Road Discovery AU. Please send me the available dates and payment instructions."
+      );
+
+      window.location.href =
+        `mailto:${RD141_SPONSOR_EMAIL}` +
+        `?subject=${subject}&body=${body}`;
+    }
+  );
+}
+
+
+function rd141InstallBookingStyles() {
+  if ($("rd141SponsorBookingStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd141SponsorBookingStyles";
+  style.textContent = `
+    .rd141-sponsor-booking {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-top: 10px;
+      padding: 13px 12px;
+      border: 1px solid rgba(255, 138, 24, 0.34);
+      border-radius: 15px;
+      background: rgba(255, 138, 24, 0.08);
+    }
+
+    .rd141-sponsor-booking > div {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .rd141-sponsor-booking strong {
+      color: #ffffff;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .rd141-sponsor-booking span {
+      color: #aeb7c3;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    #rd141SponsorBookBtn {
+      flex: 0 0 auto;
+      min-height: 40px;
+      padding: 0 17px;
+      border: 0;
+      border-radius: 999px;
+      background: #ff8a18;
+      color: #090b0f;
+      font-size: 13px;
+      font-weight: 950;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #rd141SponsorBookBtn:focus-visible {
+      outline: 3px solid #4bb3ff;
+      outline-offset: 2px;
+    }
+
+    @media (max-width: 420px) {
+      .rd141-sponsor-booking {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      #rd141SponsorBookBtn {
+        width: 100%;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+rd131ShowSponsor = function (config, key) {
+  rd141InstallBookingStyles();
+  rd141InstallBookingCta();
+
+  rd131SponsorState.activeSponsorId =
+    String(config?.id || "");
+  rd131SponsorState.activeBookingUrl =
+    String(config?.bookingUrl || "");
+
+  return roadDiscoveryV141.showSponsor(config, key);
+};
+
+
+rd131TrySponsor = async function (key, attempt = 0) {
+  const completionKey = String(key || "");
+
+  if (
+    !completionKey ||
+    rd131SponsorState.seenKeys.has(completionKey)
+  ) {
+    rd131SponsorState.pendingKeys.delete(completionKey);
+    return;
+  }
+
+  if (rd131ActivityIsRunning()) {
+    rd131SponsorState.pendingKeys.delete(completionKey);
+    return;
+  }
+
+  const config = await rd131LoadSponsorConfig();
+
+  if (!config?.sponsors?.length) {
+    rd131SponsorState.pendingKeys.delete(completionKey);
+    return;
+  }
+
+  if (
+    rd131CompletionUiBusy() ||
+    rd131SponsorState.activeKey
+  ) {
+    if (attempt < 240) {
+      window.setTimeout(
+        () => void rd131TrySponsor(completionKey, attempt + 1),
+        500
+      );
+    } else {
+      rd131SponsorState.pendingKeys.delete(completionKey);
+    }
+    return;
+  }
+
+  let selected = null;
+
+  for (let index = 0; index < config.sponsors.length; index++) {
+    const choice = rd141ChooseSponsor(config);
+
+    if (!choice) break;
+
+    const imageReady = await rd131PreloadSponsorImage(
+      choice.sponsor.imageUrl
+    );
+
+    if (imageReady) {
+      selected = choice;
+      break;
+    }
+
+    rd141CommitSponsor(
+      choice.rotation,
+      choice.sponsor.id
+    );
+  }
+
+  rd131SponsorState.pendingKeys.delete(completionKey);
+
+  if (
+    !selected ||
+    rd131ActivityIsRunning() ||
+    rd131SponsorState.activeKey
+  ) {
+    return;
+  }
+
+  const shown = rd131ShowSponsor(
+    {
+      ...selected.sponsor,
+      bookingUrl: config.bookingUrl
+    },
+    completionKey
+  );
+
+  if (shown) {
+    rd141CommitSponsor(
+      selected.rotation,
+      selected.sponsor.id
+    );
+  }
+};
+
+
+createMultiplayerRoom = async function () {
+  const previousRoomId = String(
+    state.multiplayer.roomId || ""
+  );
+  const result = await roadDiscoveryV141
+    .createMultiplayerRoom();
+  const roomId = String(
+    state.multiplayer.roomId || ""
+  );
+
+  if (roomId && roomId !== previousRoomId) {
+    rd131QueueSponsor(
+      `room-created:${roomId}`,
+      500
+    );
+  }
+
+  return result;
+};
+
+
+leaveHideSeekRound = async function (options = {}) {
+  const roundId = String(
+    state.hideSeek.roundId || ""
+  );
+  const phase = String(
+    state.hideSeek.phase || ""
+  );
+  const quiet = options.quiet === true;
+  const result = await roadDiscoveryV141
+    .leaveHideSeekRound(options);
+
+  if (
+    roundId &&
+    !quiet &&
+    !["finished", "cancelled"].includes(phase)
+  ) {
+    rd131QueueSponsor(
+      `hide-seek-left:${roundId}`,
+      450
+    );
+  }
+
+  return result;
+};
+
+
+leaveMultiplayerRoom = async function (options = {}) {
+  const roomId = String(
+    state.multiplayer.roomId || ""
+  );
+  const quiet = options.quiet === true;
+  const result = await roadDiscoveryV141
+    .leaveMultiplayerRoom(options);
+
+  if (roomId && !quiet) {
+    rd131QueueSponsor(
+      `room-left:${roomId}`,
+      500
+    );
+  }
+
+  return result;
+};
+
+
+rd86LeaveConquestRound = async function (options = {}) {
+  const roundId = String(
+    state.conquest.roundId || ""
+  );
+  const phase = String(
+    state.conquest.phase || ""
+  );
+  const quiet = options.quiet === true;
+  const result = await roadDiscoveryV141
+    .leaveConquestRound(options);
+
+  if (
+    roundId &&
+    !quiet &&
+    !["finished", "cancelled"].includes(phase)
+  ) {
+    rd131QueueSponsor(
+      `conquest-left:${roundId}`,
+      450
+    );
+  }
+
+  return result;
+};
+
+
+function rd141InitSponsors() {
+  rd131SponsorState.configPromise = null;
+  rd141InstallBookingStyles();
+  rd141InstallBookingCta();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd141InitSponsors,
+    { once: true }
+  );
+} else {
+  rd141InitSponsors();
+}
