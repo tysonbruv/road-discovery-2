@@ -774,6 +774,9 @@ function createRoadDiscoveryBaseLayer(
         maxZoom: 20,
         maxDataZoom: 14,
         noWrap: true,
+        updateWhenZooming: false,
+        updateWhenIdle: true,
+        keepBuffer: 2,
         backgroundColor: palette.background,
         paintRules:
           roadDiscoveryBasePaintRules(
@@ -834,6 +837,9 @@ function rd134CreateLabelLayer(
     maxZoom: 20,
     maxDataZoom: 14,
     noWrap: true,
+    updateWhenZooming: false,
+    updateWhenIdle: true,
+    keepBuffer: 2,
     paintRules: [],
     labelRules:
       roadDiscoveryBaseLabelRules(
@@ -49260,4 +49266,257 @@ if (document.readyState === "loading") {
   );
 } else {
   rd137InitTrailBrightness();
+}
+
+/* ================================================== */
+/* Road Discovery AU v138                             */
+/* Batched + Viewport-Culled Saved Trail Rendering    */
+/* ================================================== */
+
+const RD138_CULL_FROM_ZOOM = 10;
+const RD138_VIEW_PADDING = 0.35;
+const RD138_REBUILD_DELAY_MS = 90;
+
+const roadDiscoveryV138 = {
+  resetDiscoveredRoads
+};
+
+Object.assign(state, {
+  rd138SavedTrailBase: null,
+  rd138SavedTrailLive: null,
+  rd138SavedTrailLiveCoords: [],
+  rd138TrailRebuildTimer: null
+});
+
+
+function rd138SavedTrailOptions() {
+  return {
+    color: rd71SelectedTrailColour().trail,
+    ...rd53SavedRoadStyle(),
+    lineCap: "round",
+    lineJoin: "round",
+    interactive: false,
+    smoothFactor: 1.2
+  };
+}
+
+
+function rd138EnsureSavedTrailLayers() {
+  if (!window.L || !state.savedLayer) return false;
+
+  const options = rd138SavedTrailOptions();
+
+  if (!state.rd138SavedTrailBase) {
+    state.rd138SavedTrailBase = L.polyline(
+      [],
+      options
+    ).addTo(state.savedLayer);
+  }
+
+  if (!state.rd138SavedTrailLive) {
+    state.rd138SavedTrailLive = L.polyline(
+      [],
+      options
+    ).addTo(state.savedLayer);
+  }
+
+  return true;
+}
+
+
+function rd138SegmentTouchesBounds(segment, bounds) {
+  if (!bounds) return true;
+
+  return segment.coords.some((coordinate) =>
+    bounds.contains(coordinate)
+  );
+}
+
+
+function rd138VisibleSavedSegments() {
+  const segments = Object.values(
+    state.savedSegments || {}
+  ).filter((segment) =>
+    segment?.id && validCoords(segment.coords)
+  );
+
+  const zoom = Number(state.map?.getZoom?.());
+
+  if (
+    !state.map ||
+    !Number.isFinite(zoom) ||
+    zoom < RD138_CULL_FROM_ZOOM
+  ) {
+    return segments;
+  }
+
+  const bounds = state.map
+    .getBounds?.()
+    ?.pad?.(RD138_VIEW_PADDING);
+
+  if (!bounds) return segments;
+
+  return segments.filter((segment) =>
+    rd138SegmentTouchesBounds(segment, bounds)
+  );
+}
+
+
+function rd138ApplySavedTrailStyle() {
+  const style = rd138SavedTrailOptions();
+
+  state.rd138SavedTrailBase?.setStyle?.(style);
+  state.rd138SavedTrailLive?.setStyle?.(style);
+}
+
+
+function rd138RebuildSavedTrail() {
+  if (!state.savedLayer) return;
+
+  state.savedLayer.clearLayers();
+  state.rd138SavedTrailBase = null;
+  state.rd138SavedTrailLive = null;
+  state.rd138SavedTrailLiveCoords = [];
+  state.savedDrawnIds.clear();
+
+  const allSegments = Object.values(
+    state.savedSegments || {}
+  );
+
+  allSegments.forEach((segment) => {
+    if (segment?.id && validCoords(segment.coords)) {
+      state.savedDrawnIds.add(segment.id);
+    }
+  });
+
+  if (!rd138EnsureSavedTrailLayers()) return;
+
+  state.rd138SavedTrailBase.setLatLngs(
+    rd138VisibleSavedSegments().map(
+      (segment) => segment.coords
+    )
+  );
+
+  state.rd138SavedTrailLive.setLatLngs([]);
+  rd138ApplySavedTrailStyle();
+}
+
+
+function rd138RebuildTrailLayers() {
+  rd138RebuildSavedTrail();
+  rd102RebuildTrailCore();
+  rd102KeepCorrectLayerOrder();
+}
+
+
+function rd138ScheduleTrailRebuild() {
+  if (state.rd138TrailRebuildTimer !== null) {
+    window.clearTimeout(
+      state.rd138TrailRebuildTimer
+    );
+  }
+
+  state.rd138TrailRebuildTimer =
+    window.setTimeout(() => {
+      state.rd138TrailRebuildTimer = null;
+      rd138RebuildTrailLayers();
+    }, RD138_REBUILD_DELAY_MS);
+}
+
+
+drawSavedSegments = function () {
+  rd138RebuildTrailLayers();
+};
+
+
+drawSavedSegment = function (segment) {
+  if (
+    !segment?.id ||
+    !validCoords(segment.coords) ||
+    state.savedDrawnIds.has(segment.id) ||
+    !rd138EnsureSavedTrailLayers()
+  ) {
+    return;
+  }
+
+  state.savedDrawnIds.add(segment.id);
+
+  const bounds = state.map
+    ?.getBounds?.()
+    ?.pad?.(RD138_VIEW_PADDING);
+
+  if (rd138SegmentTouchesBounds(segment, bounds)) {
+    state.rd138SavedTrailLiveCoords.push(
+      segment.coords
+    );
+
+    state.rd138SavedTrailLive.setLatLngs(
+      state.rd138SavedTrailLiveCoords
+    );
+  }
+
+  rd102AddTrailCoreSegment(segment);
+  rd138ApplySavedTrailStyle();
+};
+
+
+rd102RebuildTrailCore = function () {
+  if (!rd102CreateTrailCoreLayers()) return;
+
+  const allSegments = Object.values(
+    state.savedSegments || {}
+  ).filter((segment) =>
+    segment?.id && validCoords(segment.coords)
+  );
+
+  state.rd102TrailCoreKnownIds = new Set(
+    allSegments.map((segment) => segment.id)
+  );
+  state.rd102TrailCoreLiveCoords = [];
+
+  state.rd102TrailCoreBase.setLatLngs(
+    rd138VisibleSavedSegments().map(
+      (segment) => segment.coords
+    )
+  );
+  state.rd102TrailCoreLive.setLatLngs([]);
+
+  rd102ApplyTrailCoreStyle();
+  rd102SyncTrailCoreVisibility();
+  rd102KeepCorrectLayerOrder();
+};
+
+
+resetDiscoveredRoads = function () {
+  const result =
+    roadDiscoveryV138.resetDiscoveredRoads();
+
+  rd138RebuildTrailLayers();
+  return result;
+};
+
+
+function rd138InitPerformanceRendering() {
+  if (!state.map) return;
+
+  rd138RebuildTrailLayers();
+
+  state.map.on(
+    "moveend zoomend",
+    rd138ScheduleTrailRebuild
+  );
+
+  document.documentElement.dataset
+    .roadDiscoveryPerformance = "v138";
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd138InitPerformanceRendering,
+    { once: true }
+  );
+} else {
+  rd138InitPerformanceRendering();
 }
