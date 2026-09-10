@@ -50416,8 +50416,8 @@ if (document.readyState === "loading") {
 
 
 /* =====================================================
-   Road Discovery AU v142
-   Eight-week sponsor calendar + verified web checkout
+   Road Discovery AU v143
+   Sponsor status tracking + protected admin workflow
    ===================================================== */
 
 const RD142_SPONSOR_BOOKING_API =
@@ -50429,6 +50429,20 @@ const roadDiscoveryV142 = {
 };
 
 let rd142BookingReturnFocus = null;
+const RD143_RECENT_BOOKINGS_KEY =
+  "roadDiscoveryAU.sponsorBookingSessions.v1";
+
+function rd143RecentSessions() {
+  try {
+    const value = JSON.parse(localStorage.getItem(RD143_RECENT_BOOKINGS_KEY) || "[]");
+    return Array.isArray(value) ? value.filter(id => /^cs_(test_|live_)?[A-Za-z0-9]+$/.test(id)).slice(0, 10) : [];
+  } catch (_) { return []; }
+}
+
+function rd143RememberSession(sessionId) {
+  const next = [sessionId, ...rd143RecentSessions().filter(id => id !== sessionId)].slice(0, 10);
+  localStorage.setItem(RD143_RECENT_BOOKINGS_KEY, JSON.stringify(next));
+}
 
 
 function rd142IsNativeApp() {
@@ -50853,6 +50867,17 @@ function rd142RenderWeeks(weeks) {
     "Select a week to continue to secure Stripe checkout.";
   content.appendChild(status);
 
+  const recent = rd143RecentSessions()[0];
+  if (recent) {
+    const recentButton = document.createElement("button");
+    recentButton.className = "rd142-contact-button";
+    recentButton.type = "button";
+    recentButton.style.margin = "0 0 14px";
+    recentButton.textContent = "Check my recent booking";
+    recentButton.addEventListener("click", () => void rd142VerifyCheckout(recent));
+    content.appendChild(recentButton);
+  }
+
   const list = document.createElement("div");
   list.className = "rd142-week-list";
 
@@ -50999,6 +51024,27 @@ function rd142ShowCheckoutResult(booking, verified) {
     `Hi, my sponsor booking is for ${dates}, position ${booking.slot_number} of 5. I have attached my advertisement image. My destination website is: `
   );
 
+  if (verified && booking.status === "needs_changes") {
+    const reason = rd142Escape(booking.change_reason || "Please contact Quartz Software for the requested changes.");
+    content.innerHTML = `<div class="rd142-booking-message"><h3>Artwork changes requested</h3><p><strong>${rd142Escape(dates)}</strong></p><p><strong>Please fix:</strong> ${reason}</p><p>Your paid position remains reserved while you send the revised artwork.</p><a class="rd142-contact-button" href="mailto:${RD142_SPONSOR_EMAIL}?subject=${subject}&body=${body}">Send revised advertisement</a></div>`;
+    return;
+  }
+
+  if (verified && booking.status === "refund_pending") {
+    content.innerHTML = `<div class="rd142-booking-message"><h3>Refund processing</h3><p><strong>${rd142Escape(dates)}</strong></p><p>Stripe is processing the refund. You do not need to make another request.</p></div>`;
+    return;
+  }
+
+  if (verified && booking.status === "refunded") {
+    content.innerHTML = `<div class="rd142-booking-message success"><h3>Refund completed</h3><p><strong>${rd142Escape(dates)}</strong></p><p>Stripe has confirmed the refund. Your bank may take additional time to display it.</p></div>`;
+    return;
+  }
+
+  if (verified && booking.status === "approved") {
+    content.innerHTML = `<div class="rd142-booking-message success"><h3>Advertisement approved</h3><p><strong>${rd142Escape(dates)}</strong><br>Rotation position ${rd142Escape(booking.slot_number)} of 5</p><p>${booking.published_at ? "Your advertisement has been marked published." : "Your advertisement is approved and queued for its booked week."}</p></div>`;
+    return;
+  }
+
   if (verified) {
     content.innerHTML = `
       <div class="rd142-booking-message success">
@@ -51053,7 +51099,7 @@ async function rd142VerifyCheckout(sessionId) {
         throw new Error("Booking confirmation was not found.");
       }
 
-      if (["pending_artwork", "approved"].includes(booking.status)) {
+      if (["pending_artwork", "needs_changes", "approved", "refund_pending", "refunded"].includes(booking.status)) {
         rd142ShowCheckoutResult(booking, true);
         return;
       }
@@ -51144,6 +51190,7 @@ function rd142HandleCheckoutReturn() {
     result === "success" &&
     /^cs_(test_|live_)?[A-Za-z0-9]+$/.test(sessionId)
   ) {
+    rd143RememberSession(sessionId);
     void rd142VerifyCheckout(sessionId);
     return;
   }
