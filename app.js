@@ -49269,8 +49269,8 @@ if (document.readyState === "loading") {
 }
 
 /* ================================================== */
-/* Road Discovery AU v138                             */
-/* Batched + Viewport-Culled Saved Trail Rendering    */
+/* Road Discovery AU v139                             */
+/* Adaptive Trail Level of Detail                     */
 /* ================================================== */
 
 const RD138_CULL_FROM_ZOOM = 10;
@@ -49285,8 +49285,99 @@ Object.assign(state, {
   rd138SavedTrailBase: null,
   rd138SavedTrailLive: null,
   rd138SavedTrailLiveCoords: [],
-  rd138TrailRebuildTimer: null
+  rd138TrailRebuildTimer: null,
+  rd139TrailLodCache: null
 });
+
+
+function rd139TrailMaximumSegments(zoom) {
+  if (zoom <= 8) return 2000;
+  if (zoom === 9) return 3000;
+  if (zoom === 10) return 4500;
+  if (zoom === 11) return 7000;
+  if (zoom === 12) return 12000;
+  return Number.POSITIVE_INFINITY;
+}
+
+
+function rd139TrailPixelBucketSize(zoom) {
+  if (zoom <= 7) return 2.5;
+  if (zoom === 8) return 1.75;
+  if (zoom === 9) return 1.25;
+  if (zoom === 10) return 1;
+  if (zoom === 11) return 0.8;
+  return 0.6;
+}
+
+
+function rd139WorldPixel(coordinate, zoom) {
+  const latitude = Math.max(
+    -85.05112878,
+    Math.min(85.05112878, Number(coordinate[0]))
+  );
+  const longitude = Number(coordinate[1]);
+  const scale = 256 * (2 ** zoom);
+  const radians = latitude * Math.PI / 180;
+
+  return {
+    x: (longitude + 180) / 360 * scale,
+    y: (
+      1 -
+      Math.asinh(Math.tan(radians)) / Math.PI
+    ) / 2 * scale
+  };
+}
+
+
+function rd139ReducedTrailSegments(segments, zoom) {
+  if (zoom >= 13) return segments;
+
+  const cacheKey = `${zoom}:${segments.length}`;
+
+  if (state.rd139TrailLodCache?.key === cacheKey) {
+    return state.rd139TrailLodCache.segments;
+  }
+
+  const bucketSize = rd139TrailPixelBucketSize(zoom);
+  const occupied = new Set();
+  const reduced = [];
+
+  for (const segment of segments) {
+    const first = segment.coords[0];
+    const last = segment.coords[segment.coords.length - 1];
+    const midpoint = [
+      (Number(first[0]) + Number(last[0])) / 2,
+      (Number(first[1]) + Number(last[1])) / 2
+    ];
+    const pixel = rd139WorldPixel(midpoint, zoom);
+    const key =
+      `${Math.floor(pixel.x / bucketSize)}:` +
+      `${Math.floor(pixel.y / bucketSize)}`;
+
+    if (occupied.has(key)) continue;
+
+    occupied.add(key);
+    reduced.push(segment);
+  }
+
+  const maximum = rd139TrailMaximumSegments(zoom);
+  let displayed = reduced;
+
+  if (reduced.length > maximum) {
+    const step = reduced.length / maximum;
+    displayed = Array.from(
+      { length: maximum },
+      (_, index) => reduced[Math.floor(index * step)]
+    );
+  }
+
+  state.rd139TrailLodCache = {
+    key: cacheKey,
+    segments: displayed
+  };
+
+  return displayed;
+}
 
 
 function rd138SavedTrailOptions() {
@@ -49342,21 +49433,23 @@ function rd138VisibleSavedSegments() {
 
   const zoom = Number(state.map?.getZoom?.());
 
-  if (
-    !state.map ||
-    !Number.isFinite(zoom) ||
-    zoom < RD138_CULL_FROM_ZOOM
-  ) {
+  if (!state.map || !Number.isFinite(zoom)) {
     return segments;
   }
+
+  const integerZoom = Math.max(0, Math.floor(zoom));
+  const detailed = rd139ReducedTrailSegments(
+    segments,
+    integerZoom
+  );
 
   const bounds = state.map
     .getBounds?.()
     ?.pad?.(RD138_VIEW_PADDING);
 
-  if (!bounds) return segments;
+  if (!bounds) return detailed;
 
-  return segments.filter((segment) =>
+  return detailed.filter((segment) =>
     rd138SegmentTouchesBounds(segment, bounds)
   );
 }
@@ -49474,10 +49567,14 @@ rd102RebuildTrailCore = function () {
   );
   state.rd102TrailCoreLiveCoords = [];
 
+  const zoom = Number(state.map?.getZoom?.());
+  const coreSegments =
+    Number.isFinite(zoom) && zoom >= 13
+      ? rd138VisibleSavedSegments()
+      : [];
+
   state.rd102TrailCoreBase.setLatLngs(
-    rd138VisibleSavedSegments().map(
-      (segment) => segment.coords
-    )
+    coreSegments.map((segment) => segment.coords)
   );
   state.rd102TrailCoreLive.setLatLngs([]);
 
