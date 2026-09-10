@@ -49329,6 +49329,188 @@ function rd139WorldPixel(coordinate, zoom) {
 }
 
 
+function rd140CoordinateKey(coordinate) {
+  return (
+    `${Number(coordinate[0]).toFixed(6)}:` +
+    `${Number(coordinate[1]).toFixed(6)}`
+  );
+}
+
+
+function rd140JoinTrailSegments(segments) {
+  const edges = segments.map((segment, index) => ({
+    index,
+    coords: segment.coords,
+    startKey: rd140CoordinateKey(segment.coords[0]),
+    endKey: rd140CoordinateKey(
+      segment.coords[segment.coords.length - 1]
+    )
+  }));
+
+  const adjacency = new Map();
+
+  for (const edge of edges) {
+    for (const key of [edge.startKey, edge.endKey]) {
+      if (!adjacency.has(key)) adjacency.set(key, []);
+      adjacency.get(key).push(edge.index);
+    }
+  }
+
+  const visited = new Set();
+  const paths = [];
+
+  function trace(firstEdge, fromKey) {
+    const path = [];
+    let edge = firstEdge;
+    let entryKey = fromKey;
+
+    while (edge && !visited.has(edge.index)) {
+      visited.add(edge.index);
+
+      const forward = edge.startKey === entryKey;
+      const coordinates = forward
+        ? edge.coords
+        : [...edge.coords].reverse();
+
+      if (path.length === 0) {
+        path.push(...coordinates);
+      } else {
+        path.push(...coordinates.slice(1));
+      }
+
+      const exitKey = forward
+        ? edge.endKey
+        : edge.startKey;
+      const connected = adjacency.get(exitKey) || [];
+
+      if (connected.length !== 2) break;
+
+      const nextIndex = connected.find(
+        (index) => !visited.has(index)
+      );
+
+      if (nextIndex === undefined) break;
+
+      edge = edges[nextIndex];
+      entryKey = exitKey;
+    }
+
+    if (path.length >= 2) paths.push(path);
+  }
+
+  for (const edge of edges) {
+    const startDegree =
+      adjacency.get(edge.startKey)?.length || 0;
+    const endDegree =
+      adjacency.get(edge.endKey)?.length || 0;
+
+    if (startDegree !== 2 || endDegree !== 2) {
+      const fromKey = startDegree !== 2
+        ? edge.startKey
+        : edge.endKey;
+      trace(edge, fromKey);
+    }
+  }
+
+  for (const edge of edges) {
+    if (!visited.has(edge.index)) {
+      trace(edge, edge.startKey);
+    }
+  }
+
+  return paths;
+}
+
+
+function rd140PointLineDistance(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(
+      point.x - start.x,
+      point.y - start.y
+    );
+  }
+
+  const amount = Math.max(
+    0,
+    Math.min(
+      1,
+      (
+        (point.x - start.x) * dx +
+        (point.y - start.y) * dy
+      ) / (dx * dx + dy * dy)
+    )
+  );
+
+  return Math.hypot(
+    point.x - (start.x + amount * dx),
+    point.y - (start.y + amount * dy)
+  );
+}
+
+
+function rd140SimplifyTrailPath(path, zoom, tolerance) {
+  if (path.length <= 2) return path;
+
+  const pixels = path.map((coordinate) =>
+    rd139WorldPixel(coordinate, zoom)
+  );
+  const keep = new Uint8Array(path.length);
+  const stack = [[0, path.length - 1]];
+
+  keep[0] = 1;
+  keep[path.length - 1] = 1;
+
+  while (stack.length > 0) {
+    const [startIndex, endIndex] = stack.pop();
+    let furthestIndex = -1;
+    let furthestDistance = tolerance;
+
+    for (
+      let index = startIndex + 1;
+      index < endIndex;
+      index++
+    ) {
+      const distance = rd140PointLineDistance(
+        pixels[index],
+        pixels[startIndex],
+        pixels[endIndex]
+      );
+
+      if (distance > furthestDistance) {
+        furthestDistance = distance;
+        furthestIndex = index;
+      }
+    }
+
+    if (furthestIndex >= 0) {
+      keep[furthestIndex] = 1;
+      stack.push(
+        [startIndex, furthestIndex],
+        [furthestIndex, endIndex]
+      );
+    }
+  }
+
+  return path.filter((_, index) => keep[index]);
+}
+
+
+function rd140TrailPathPixelLength(path, zoom) {
+  let length = 0;
+
+  for (let index = 1; index < path.length; index++) {
+    const start = rd139WorldPixel(path[index - 1], zoom);
+    const end = rd139WorldPixel(path[index], zoom);
+    length += Math.hypot(end.x - start.x, end.y - start.y);
+  }
+
+  return length;
+}
+
+
 function rd139ReducedTrailSegments(segments, zoom) {
   if (zoom >= 13) return segments;
 
@@ -49338,37 +49520,43 @@ function rd139ReducedTrailSegments(segments, zoom) {
     return state.rd139TrailLodCache.segments;
   }
 
-  const bucketSize = rd139TrailPixelBucketSize(zoom);
-  const occupied = new Set();
-  const reduced = [];
+  const joinedPaths = rd140JoinTrailSegments(segments);
+  const tolerance = rd139TrailPixelBucketSize(zoom);
+  const candidates = joinedPaths.map((path, index) => ({
+    id: `rd140:${zoom}:${index}`,
+    length: rd140TrailPathPixelLength(path, zoom),
+    coords: rd140SimplifyTrailPath(
+      path,
+      zoom,
+      tolerance
+    )
+  }));
+  const maximumPoints = rd139TrailMaximumSegments(zoom);
+  const totalPoints = candidates.reduce(
+    (total, candidate) => total + candidate.coords.length,
+    0
+  );
+  let displayed = candidates;
 
-  for (const segment of segments) {
-    const first = segment.coords[0];
-    const last = segment.coords[segment.coords.length - 1];
-    const midpoint = [
-      (Number(first[0]) + Number(last[0])) / 2,
-      (Number(first[1]) + Number(last[1])) / 2
-    ];
-    const pixel = rd139WorldPixel(midpoint, zoom);
-    const key =
-      `${Math.floor(pixel.x / bucketSize)}:` +
-      `${Math.floor(pixel.y / bucketSize)}`;
+  if (totalPoints > maximumPoints) {
+    displayed = [];
+    let usedPoints = 0;
 
-    if (occupied.has(key)) continue;
+    for (const candidate of [...candidates].sort(
+      (a, b) => b.length - a.length
+    )) {
+      if (
+        usedPoints + candidate.coords.length > maximumPoints &&
+        displayed.length > 0
+      ) {
+        continue;
+      }
 
-    occupied.add(key);
-    reduced.push(segment);
-  }
+      displayed.push(candidate);
+      usedPoints += candidate.coords.length;
 
-  const maximum = rd139TrailMaximumSegments(zoom);
-  let displayed = reduced;
-
-  if (reduced.length > maximum) {
-    const step = reduced.length / maximum;
-    displayed = Array.from(
-      { length: maximum },
-      (_, index) => reduced[Math.floor(index * step)]
-    );
+      if (usedPoints >= maximumPoints) break;
+    }
   }
 
   state.rd139TrailLodCache = {
@@ -49418,8 +49606,19 @@ function rd138EnsureSavedTrailLayers() {
 function rd138SegmentTouchesBounds(segment, bounds) {
   if (!bounds) return true;
 
-  return segment.coords.some((coordinate) =>
+  if (segment.coords.some((coordinate) =>
     bounds.contains(coordinate)
+  )) {
+    return true;
+  }
+
+  const segmentBounds = window.L?.latLngBounds?.(
+    segment.coords
+  );
+
+  return Boolean(
+    segmentBounds?.isValid?.() &&
+    bounds.intersects?.(segmentBounds)
   );
 }
 
@@ -49604,7 +49803,7 @@ function rd138InitPerformanceRendering() {
   );
 
   document.documentElement.dataset
-    .roadDiscoveryPerformance = "v138";
+    .roadDiscoveryPerformance = "v140";
 }
 
 
