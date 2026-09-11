@@ -3,45 +3,151 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
   <title>Road Discovery AU · Sponsor Admin</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    :root{color-scheme:dark;--bg:#07090c;--panel:#11161d;--line:#2b3541;--muted:#a8b1bd;--orange:#ff8615;--green:#4ee39a;--red:#ff6978}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0,rgba(255,134,21,.12),transparent 35rem),var(--bg);color:#f6f8fb;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}button,input,textarea{font:inherit}.wrap{width:min(1180px,calc(100% - 28px));margin:auto;padding:28px 0 70px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}h1,h2,h3,p{margin:0}.top p,.muted{color:var(--muted)}.panel,.card{border:1px solid var(--line);border-radius:18px;background:rgba(17,22,29,.96)}.login{width:min(470px,100%);margin:12vh auto;padding:25px}.field{display:grid;gap:6px;margin-top:14px}.field span{color:#cbd2dc;font-size:12px;font-weight:750}.field input,.field textarea{width:100%;border:1px solid #394654;border-radius:10px;padding:11px;background:#090d12;color:#fff}.field textarea{min-height:76px;resize:vertical}.btn{min-height:41px;border:1px solid #3b4653;border-radius:10px;padding:8px 14px;background:#202833;color:#fff;font-weight:800;cursor:pointer}.btn.primary{border-color:var(--orange);background:var(--orange);color:#0b0d10}.btn.danger{border-color:#8b3340;background:#35151b;color:#ffb5bd}.btn.good{border-color:#24744f;background:#123524;color:#94f2c3}.login .btn{width:100%;margin-top:18px}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}.summary div{padding:15px}.summary strong{display:block;font-size:22px}.summary span{color:var(--muted);font-size:12px}.grid{display:grid;gap:13px}.card{padding:17px}.card-head{display:flex;justify-content:space-between;gap:14px}.badge{height:fit-content;border:1px solid #45515e;border-radius:999px;padding:5px 9px;color:#dce3eb;font-size:11px;font-weight:850;text-transform:uppercase}.badge.approved{border-color:#287952;color:#76e9ad}.badge.needs_changes{border-color:#9c5d22;color:#ffb15f}.badge.refunded{border-color:#41678d;color:#8dc7ff}.meta{margin-top:5px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.wide{grid-column:1/-1}.reason{margin-top:12px;padding:11px;border-left:3px solid var(--orange);background:#1a1510;color:#ffd3a7}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.message{margin-top:12px;color:var(--red)}.email{color:#78bdff}dialog{width:min(520px,calc(100% - 28px));border:1px solid var(--line);border-radius:18px;padding:20px;background:#11161d;color:#fff}dialog::backdrop{background:rgba(0,0,0,.75)}dialog textarea{width:100%;min-height:120px;margin:14px 0;border:1px solid #394654;border-radius:10px;padding:11px;background:#090d12;color:#fff}.dialog-actions{display:flex;justify-content:flex-end;gap:8px}@media(max-width:680px){.summary{grid-template-columns:1fr 1fr}.fields{grid-template-columns:1fr}.wide{grid-column:auto}.top{align-items:flex-start}.card-head{display:block}.badge{display:inline-block;margin-top:8px}}
+    :root{color-scheme:dark;--bg:#07090c;--panel:#11161d;--line:#2b3541;--muted:#a8b1bd;--orange:#ff8615;--green:#4ee39a;--red:#ff6978;--blue:#78bdff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0,rgba(255,134,21,.12),transparent 35rem),var(--bg);color:#f6f8fb;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}button,input,textarea{font:inherit}.wrap{width:min(1220px,calc(100% - 28px));margin:auto;padding:28px 0 70px}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}h1,h2,h3,p{margin:0}.top p,.muted{color:var(--muted)}.panel,.card{border:1px solid var(--line);border-radius:18px;background:rgba(17,22,29,.96)}.login{width:min(470px,100%);margin:12vh auto;padding:25px}.field{display:grid;gap:6px;margin-top:13px}.field span{color:#cbd2dc;font-size:12px;font-weight:750}.field input,.field textarea,.search{width:100%;border:1px solid #394654;border-radius:10px;padding:11px;background:#090d12;color:#fff}.field textarea{min-height:76px;resize:vertical}.btn{min-height:41px;border:1px solid #3b4653;border-radius:10px;padding:8px 14px;background:#202833;color:#fff;font-weight:800;cursor:pointer;text-decoration:none}.btn:hover{filter:brightness(1.12)}.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}.btn.primary{border-color:var(--orange);background:var(--orange);color:#0b0d10}.btn.danger{border-color:#8b3340;background:#35151b;color:#ffb5bd}.btn.good{border-color:#24744f;background:#123524;color:#94f2c3}.login .btn{width:100%;margin-top:18px}.tools{display:grid;grid-template-columns:minmax(240px,1fr) auto;gap:10px;margin-bottom:14px}.summary{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}.summary div{padding:15px}.summary strong{display:block;font-size:22px}.summary span{color:var(--muted);font-size:12px}.grid{display:grid;gap:13px}.card{padding:17px}.card-head{display:flex;justify-content:space-between;gap:14px}.card-head h2{font-size:21px}.badges{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}.badge{height:fit-content;border:1px solid #45515e;border-radius:999px;padding:5px 9px;color:#dce3eb;font-size:10px;font-weight:850;text-transform:uppercase}.badge.verified{border-color:#24744f;color:#94f2c3}.badge.approved,.badge.published{border-color:#287952;color:#76e9ad}.badge.needs_changes{border-color:#9c5d22;color:#ffb15f}.badge.refunded{border-color:#41678d;color:#8dc7ff}.badge.refund_pending{border-color:#8b3340;color:#ffb5bd}.meta{margin-top:5px;color:var(--muted)}.code-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px}.booking-code{font:800 15px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.025em;color:#fff}.mini{min-height:30px;padding:4px 9px;font-size:11px}.reason{margin-top:12px;padding:11px;border-left:3px solid var(--orange);background:#1a1510;color:#ffd3a7}.artwork{display:grid;grid-template-columns:minmax(180px,310px) minmax(0,1fr);gap:15px;margin-top:14px}.preview{display:grid;place-items:center;min-height:170px;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:#05070a}.preview img{display:block;width:100%;max-height:310px;object-fit:contain}.preview.empty{color:var(--muted);padding:16px;text-align:center}.fields{display:grid;grid-template-columns:1fr 1fr;align-content:start;gap:10px}.wide{grid-column:1/-1}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.message{margin-top:12px;color:var(--red)}.email{color:var(--blue)}.empty-state{padding:24px;color:var(--muted)}dialog{width:min(520px,calc(100% - 28px));border:1px solid var(--line);border-radius:18px;padding:20px;background:#11161d;color:#fff}dialog::backdrop{background:rgba(0,0,0,.75)}dialog textarea{width:100%;min-height:120px;margin:14px 0;border:1px solid #394654;border-radius:10px;padding:11px;background:#090d12;color:#fff}.dialog-actions{display:flex;justify-content:flex-end;gap:8px}@media(max-width:850px){.summary{grid-template-columns:repeat(2,1fr)}.artwork{grid-template-columns:1fr}.preview{min-height:130px}}@media(max-width:680px){.fields{grid-template-columns:1fr}.wide{grid-column:auto}.top{display:block}.top>div:last-child{margin-top:12px}.card-head{display:block}.badges{justify-content:flex-start;margin-top:9px}.tools{grid-template-columns:1fr}.card-head h2{font-size:18px}}
   </style>
 </head>
 <body>
 <main class="wrap">
   <section id="login" class="panel login">
-    <h1>Sponsor admin</h1><p class="muted">Sign in with the Supabase account authorised for Road Discovery AU.</p>
+    <h1>Sponsor admin</h1>
+    <p class="muted">Sign in with the Supabase account authorised for Road Discovery AU.</p>
     <label class="field"><span>Email</span><input id="email" type="email" autocomplete="username"></label>
     <label class="field"><span>Password</span><input id="password" type="password" autocomplete="current-password"></label>
-    <button id="signIn" class="btn primary">Sign in</button><p id="loginMessage" class="message"></p>
+    <button id="signIn" class="btn primary" type="button">Sign in</button>
+    <p id="loginMessage" class="message" role="status"></p>
   </section>
+
   <section id="dashboard" hidden>
-    <header class="top"><div><h1>Road Discovery AU</h1><p>Sponsor approvals and refunds</p></div><div><button id="refresh" class="btn">Refresh</button> <button id="signOut" class="btn">Sign out</button></div></header>
-    <section id="summary" class="summary"></section><section id="bookings" class="grid"></section>
+    <header class="top">
+      <div><h1>Road Discovery AU</h1><p>Verified paid sponsor approvals, publishing and refunds</p></div>
+      <div><button id="refresh" class="btn" type="button">Refresh</button> <button id="signOut" class="btn" type="button">Sign out</button></div>
+    </header>
+    <section class="tools">
+      <input id="search" class="search" type="search" placeholder="Search booking number, paid email or business…" aria-label="Search paid bookings">
+      <span id="lastUpdated" class="muted"></span>
+    </section>
+    <section id="summary" class="summary"></section>
+    <section id="bookings" class="grid"></section>
   </section>
 </main>
-<dialog id="reasonDialog"><h2 id="reasonTitle">Reason</h2><p id="reasonHelp" class="muted"></p><textarea id="reasonText" maxlength="1000"></textarea><div class="dialog-actions"><button id="reasonCancel" class="btn">Cancel</button><button id="reasonConfirm" class="btn primary">Confirm</button></div></dialog>
+
+<dialog id="reasonDialog">
+  <h2 id="reasonTitle">Reason</h2>
+  <p id="reasonHelp" class="muted"></p>
+  <textarea id="reasonText" maxlength="1000"></textarea>
+  <div class="dialog-actions"><button id="reasonCancel" class="btn" type="button">Cancel</button><button id="reasonConfirm" class="btn primary" type="button">Confirm</button></div>
+</dialog>
+
 <script>
 const SUPABASE_URL="https://tancfzqmzvaalqotmvks.supabase.co";
 const SUPABASE_KEY="sb_publishable_LnMT-vhl4xvj4idb91dNdA_EdQMJutI";
 const API=SUPABASE_URL+"/functions/v1/sponsor-admin";
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-const $=id=>document.getElementById(id);let bookings=[];
-const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const fmt=v=>v?new Intl.DateTimeFormat("en-AU",{day:"numeric",month:"short",year:"numeric",timeZone:"Australia/Sydney"}).format(new Date(v+(/T/.test(v)?"":"T12:00:00Z"))):"—";
+const $=id=>document.getElementById(id);
+let bookings=[];
+
+const esc=value=>String(value??"").replace(/[&<>"']/g,character=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[character]));
+const fmt=value=>value?new Intl.DateTimeFormat("en-AU",{day:"numeric",month:"short",year:"numeric",timeZone:"Australia/Sydney"}).format(new Date(value+(/T/.test(value)?"":"T12:00:00Z"))):"—";
+const statusLabel=value=>String(value||"unknown").replaceAll("_"," ");
+
 async function token(){const {data}=await sb.auth.getSession();return data.session?.access_token||""}
-async function api(method="GET",body){const response=await fetch(API,{method,headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+await token(),"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Request failed.");return data}
-function endDate(start){const d=new Date(start+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+6);return d.toISOString().slice(0,10)}
-function render(){const active=bookings.filter(b=>!["refunded"].includes(b.status));$("summary").innerHTML=[[active.length,"Active"],[bookings.filter(b=>b.status==="pending_artwork").length,"Awaiting artwork"],[bookings.filter(b=>b.status==="needs_changes").length,"Needs changes"],[bookings.filter(b=>b.refund_status==="pending").length,"Refund pending"]].map(x=>`<div class="panel"><strong>${x[0]}</strong><span>${x[1]}</span></div>`).join("");$("bookings").innerHTML=bookings.length?bookings.map(b=>`<article class="card" data-id="${b.id}"><div class="card-head"><div><h2>${fmt(b.week_start)} – ${fmt(endDate(b.week_start))}</h2><p class="meta">Position ${b.slot_number} of 5 · <a class="email" href="mailto:${esc(b.customer_email)}">${esc(b.customer_email||"No email")}</a> · Paid ${fmt(b.paid_at)}</p></div><span class="badge ${esc(b.status)}">${esc(b.status.replaceAll("_"," "))}</span></div>${b.change_reason?`<p class="reason"><strong>Advertiser must fix:</strong> ${esc(b.change_reason)}</p>`:""}<div class="fields"><label class="field"><span>Artwork HTTPS URL</span><input data-field="artwork_url" value="${esc(b.artwork_url)}"></label><label class="field"><span>Click HTTPS URL (optional)</span><input data-field="click_url" value="${esc(b.click_url)}"></label><label class="field wide"><span>Accessible description / alt text</span><input data-field="alt_text" value="${esc(b.alt_text)}"></label><label class="field wide"><span>Private admin notes</span><textarea data-field="admin_notes">${esc(b.admin_notes)}</textarea></label></div><p class="meta">Refund: ${esc(b.refund_status||"not requested")}${b.refund_reason?" · "+esc(b.refund_reason):""}${b.published_at?" · Published "+fmt(b.published_at):""}</p><div class="actions"><button class="btn" data-action="save_artwork">Save details</button><button class="btn" data-action="needs_changes">Request changes</button><button class="btn good" data-action="approve">Approve</button><button class="btn primary" data-action="publish">Mark published</button><button class="btn danger" data-action="refund">Reject & refund</button><a class="btn emailAdvertiser" href="#">Email advertiser</a></div><p class="message"></p></article>`).join(""):`<div class="panel" style="padding:20px">No paid sponsor bookings yet.</div>`;bindCards()}
-function values(card){return Object.fromEntries([...card.querySelectorAll("[data-field]")].map(el=>[el.dataset.field,el.value]))}
-function ask(title,help,confirmLabel){return new Promise(resolve=>{const d=$("reasonDialog");$("reasonTitle").textContent=title;$("reasonHelp").textContent=help;$("reasonText").value="";$("reasonConfirm").textContent=confirmLabel;d.showModal();const done=value=>{d.close();resolve(value)};$("reasonCancel").onclick=()=>done(null);$("reasonConfirm").onclick=()=>{const v=$("reasonText").value.trim();if(v.length<5){$("reasonText").focus();return}done(v)}})}
-function bindCards(){document.querySelectorAll(".card").forEach(card=>{const b=bookings.find(x=>x.id===card.dataset.id);card.querySelector(".emailAdvertiser").onclick=e=>{e.preventDefault();const subject=encodeURIComponent("Road Discovery AU sponsor booking – "+b.week_start);const text=b.change_reason?`Hi, we reviewed your Road Discovery AU advertisement. Please fix the following: ${b.change_reason}\n\nReply with the updated artwork when ready.`:`Hi, regarding your Road Discovery AU sponsor booking for ${b.week_start}: `;location.href=`mailto:${b.customer_email}?subject=${subject}&body=${encodeURIComponent(text)}`};card.querySelectorAll("button[data-action]").forEach(btn=>btn.onclick=async()=>{const action=btn.dataset.action;let reason;if(action==="needs_changes")reason=await ask("Request artwork changes","Write exactly what the advertiser needs to fix. Their paid slot stays reserved.","Save reason");if(action==="refund")reason=await ask("Reject and issue full refund","This sends a real full refund through Stripe. Explain why.","Refund payment");if((action==="needs_changes"||action==="refund")&&!reason)return;const msg=card.querySelector(".message");msg.textContent="Working…";try{const payload={id:b.id,action,...values(card),reason};const data=await api("PATCH",payload);bookings=bookings.map(x=>x.id===b.id?data.booking:x);render()}catch(err){msg.textContent=err.message}})})}
-async function load(){try{const data=await api();bookings=data.bookings||[];render()}catch(err){$("bookings").innerHTML=`<div class="panel" style="padding:20px;color:var(--red)">${esc(err.message)}</div>`}}
+async function api(method="GET",body){const response=await fetch(API,{method,cache:"no-store",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+await token(),"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Request failed.");return data}
+function endDate(start){const date=new Date(start+"T12:00:00Z");date.setUTCDate(date.getUTCDate()+6);return date.toISOString().slice(0,10)}
+
+function summary(){
+  const values=[
+    [bookings.length,"Paid bookings"],
+    [bookings.filter(item=>item.status==="pending_artwork").length,"Awaiting artwork"],
+    [bookings.filter(item=>item.status==="pending_review").length,"Awaiting review"],
+    [bookings.filter(item=>item.status==="needs_changes").length,"Needs changes"],
+    [bookings.filter(item=>item.status==="refund_pending"||item.refund_status==="pending").length,"Refund pending"]
+  ];
+  $("summary").innerHTML=values.map(item=>`<div class="panel"><strong>${item[0]}</strong><span>${item[1]}</span></div>`).join("");
+}
+
+function filteredBookings(){
+  const query=$("search").value.trim().toLowerCase();
+  if(!query)return bookings;
+  return bookings.filter(item=>[item.booking_code,item.customer_email,item.business_name,item.status,item.week_start].some(value=>String(value||"").toLowerCase().includes(query)));
+}
+
+function render(){
+  summary();
+  const visible=filteredBookings();
+  $("bookings").innerHTML=visible.length?visible.map(cardHtml).join(""):`<div class="panel empty-state">${bookings.length?"No paid bookings match that search.":"No paid sponsor bookings yet. Unpaid or abandoned Stripe checkouts never appear here."}</div>`;
+  bindCards();
+}
+
+function cardHtml(booking){
+  const refundable=!['refunded','refund_pending'].includes(booking.status)&&booking.refund_status!=="succeeded";
+  const canChange=['pending_review','needs_changes','approved','published'].includes(booking.status);
+  const canApprove=['pending_review','needs_changes'].includes(booking.status)&&booking.artwork_storage_path;
+  const canPublish=booking.status==="approved"&&booking.artwork_storage_path;
+  const preview=booking.preview_url?`<a class="preview" href="${esc(booking.preview_url)}" target="_blank" rel="noopener"><img src="${esc(booking.preview_url)}" alt="${esc(booking.alt_text||"Submitted sponsor artwork")}"></a>`:`<div class="preview empty">No secure artwork uploaded yet</div>`;
+  return `<article class="card" data-id="${booking.id}">
+    <div class="card-head"><div><h2>${fmt(booking.week_start)} – ${fmt(endDate(booking.week_start))}</h2><p class="meta">Position ${booking.slot_number} of 5 · <a class="email" href="mailto:${esc(booking.customer_email)}">${esc(booking.customer_email||"Paid email unavailable")}</a> · Paid ${fmt(booking.paid_at)}</p><div class="code-line"><span class="booking-code">${esc(booking.booking_code||"No booking number")}</span><button class="btn mini copy" type="button">Copy</button></div></div><div class="badges"><span class="badge verified">Verified Stripe payment</span><span class="badge ${esc(booking.status)}">${esc(statusLabel(booking.status))}</span></div></div>
+    ${booking.change_reason?`<p class="reason"><strong>Advertiser must fix / rejection reason:</strong> ${esc(booking.change_reason)}</p>`:""}
+    <div class="artwork">${preview}<div class="fields">
+      <label class="field"><span>Business / advertiser</span><input data-field="business_name" maxlength="100" value="${esc(booking.business_name)}"></label>
+      <label class="field"><span>Click HTTPS URL (optional)</span><input data-field="click_url" maxlength="2000" value="${esc(booking.click_url)}"></label>
+      <label class="field wide"><span>Accessible description / alt text</span><input data-field="alt_text" maxlength="240" value="${esc(booking.alt_text)}"></label>
+      <label class="field wide"><span>Private admin notes</span><textarea data-field="admin_notes" maxlength="1500">${esc(booking.admin_notes)}</textarea></label>
+    </div></div>
+    <p class="meta">Submission v${Number(booking.submission_version||0)} · Confirmation email: ${esc(statusLabel(booking.confirmation_email_status))} · Refund: ${esc(statusLabel(booking.refund_status||"not requested"))}${booking.refund_reason?" · "+esc(booking.refund_reason):""}${booking.published_at?" · Published "+fmt(booking.published_at):""}</p>
+    <div class="actions">
+      <button class="btn" data-action="save_details" type="button">Save details</button>
+      <button class="btn" data-action="needs_changes" type="button" ${canChange?"":"disabled"}>Request changes</button>
+      <button class="btn good" data-action="approve" type="button" ${canApprove?"":"disabled"}>Approve</button>
+      <button class="btn primary" data-action="publish" type="button" ${canPublish?"":"disabled"}>Publish to app</button>
+      <button class="btn danger" data-action="refund" type="button" ${refundable?"":"disabled"}>Reject & refund</button>
+      <button class="btn" data-action="resend_confirmation" type="button">Resend paid email</button>
+      <a class="btn emailAdvertiser" href="#">Email advertiser</a>
+    </div><p class="message" role="status"></p>
+  </article>`;
+}
+
+function values(card){return Object.fromEntries([...card.querySelectorAll("[data-field]")].map(element=>[element.dataset.field,element.value]))}
+function ask(title,help,confirmLabel){return new Promise(resolve=>{const dialog=$("reasonDialog");$("reasonTitle").textContent=title;$("reasonHelp").textContent=help;$("reasonText").value="";$("reasonConfirm").textContent=confirmLabel;dialog.showModal();const done=value=>{dialog.close();resolve(value)};$("reasonCancel").onclick=()=>done(null);$("reasonConfirm").onclick=()=>{const value=$("reasonText").value.trim();if(value.length<5){$("reasonText").focus();return}done(value)}})}
+
+function bindCards(){
+  document.querySelectorAll(".card").forEach(card=>{
+    const booking=bookings.find(item=>item.id===card.dataset.id);
+    card.querySelector(".copy").onclick=async event=>{try{await navigator.clipboard.writeText(booking.booking_code);event.currentTarget.textContent="Copied";setTimeout(()=>event.currentTarget.textContent="Copy",1200)}catch(_){prompt("Copy booking number:",booking.booking_code)}};
+    card.querySelector(".emailAdvertiser").onclick=event=>{event.preventDefault();const subject=encodeURIComponent(`Road Discovery AU ${booking.booking_code}`);const message=booking.change_reason?`Hi, we reviewed booking ${booking.booking_code}. Please fix: ${booking.change_reason}\n\nUse the secure upload link from your paid booking email to send the revised artwork.`:`Hi, regarding your paid Road Discovery AU sponsor booking ${booking.booking_code}: `;location.href=`mailto:${booking.customer_email}?subject=${subject}&body=${encodeURIComponent(message)}`};
+    card.querySelectorAll("button[data-action]").forEach(button=>button.onclick=async()=>{
+      const action=button.dataset.action;
+      let reason;
+      if(action==="needs_changes")reason=await ask("Request artwork changes","Write exactly what needs fixing. The reason appears in the advertiser's status and is emailed when email delivery is configured.","Request changes");
+      if(action==="refund")reason=await ask("Reject and issue full refund","This sends a real full refund through Stripe. Give the advertiser a clear reason.","Reject & refund");
+      if((action==="needs_changes"||action==="refund")&&!reason)return;
+      const message=card.querySelector(".message");
+      message.textContent="Working…";
+      card.querySelectorAll("button[data-action]").forEach(item=>item.disabled=true);
+      try{
+        const data=await api("PATCH",{id:booking.id,action,...values(card),reason});
+        bookings=bookings.map(item=>item.id===booking.id?data.booking:item);
+        render();
+      }catch(error){message.textContent=error.message;card.querySelectorAll("button[data-action]").forEach(item=>item.disabled=false)}
+    });
+  });
+}
+
+async function load(){
+  $("bookings").innerHTML=`<div class="panel empty-state">Loading verified paid bookings…</div>`;
+  try{const data=await api();bookings=data.bookings||[];$("lastUpdated").textContent="Updated "+new Date().toLocaleTimeString("en-AU",{hour:"numeric",minute:"2-digit"});render()}catch(error){$("bookings").innerHTML=`<div class="panel empty-state" style="color:var(--red)">${esc(error.message)}</div>`}
+}
+
 async function showSession(){const {data}=await sb.auth.getSession();const signed=Boolean(data.session);$("login").hidden=signed;$("dashboard").hidden=!signed;if(signed)await load()}
-$("signIn").onclick=async()=>{try{$("loginMessage").textContent="Signing in…";const {error}=await sb.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});if(error)throw error;$("loginMessage").textContent="";await showSession()}catch(err){$("loginMessage").textContent=err.message}};
-$("signOut").onclick=async()=>{await sb.auth.signOut();showSession()};$("refresh").onclick=load;showSession();
+$("signIn").onclick=async()=>{try{$("loginMessage").textContent="Signing in…";const {error}=await sb.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});if(error)throw error;$("loginMessage").textContent="";await showSession()}catch(error){$("loginMessage").textContent=error.message}};
+$("password").addEventListener("keydown",event=>{if(event.key==="Enter")$("signIn").click()});
+$("signOut").onclick=async()=>{await sb.auth.signOut();showSession()};
+$("refresh").onclick=load;
+$("search").addEventListener("input",render);
+showSession();
 </script>
 </body>
 </html>
