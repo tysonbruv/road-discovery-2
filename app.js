@@ -51946,3 +51946,718 @@ if (document.readyState === "loading") {
 } else {
   rd144InitSponsors();
 }
+
+
+/* =====================================================
+   Road Discovery AU v145
+   Account booking numbers + expiry countdowns
+   ===================================================== */
+
+const rd145BookingsState = {
+  items: [],
+  requestId: 0,
+  countdownTimer: 0,
+  activeUserId: "",
+  claimedForUsers: new Set()
+};
+
+const rd145OriginalBookingHeaders = rd142BookingHeaders;
+const rd145OriginalOpenBookingShell = rd142OpenBookingShell;
+const rd145OriginalShowCheckoutResult = rd142ShowCheckoutResult;
+const rd145OriginalStartCheckout = rd142StartCheckout;
+const rd145OriginalClosePanels = closePanels;
+const rd145OriginalRenderAuthState = renderAuthState;
+
+
+rd142BookingHeaders = function () {
+  const accessToken = String(
+    state.auth.session?.access_token || SUPABASE_ANON_KEY
+  );
+  return {
+    ...rd145OriginalBookingHeaders(),
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json"
+  };
+};
+
+
+function rd145InstallStyles() {
+  if ($("rd145BookingNumbersStyles")) return;
+  const style = document.createElement("style");
+  style.id = "rd145BookingNumbersStyles";
+  style.textContent = `
+    .rd-general-menu-icon.bookings {
+      border-color: rgba(255, 138, 24, 0.38);
+      background: rgba(255, 138, 24, 0.12);
+      color: #ffad5c;
+      font-size: 21px;
+      font-weight: 950;
+    }
+
+    .rd145-bookings-heading {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .rd145-bookings-heading > div {
+      min-width: 0;
+    }
+
+    .rd145-bookings-back {
+      font-size: 34px;
+      font-weight: 500;
+      line-height: 0.8;
+    }
+
+    .rd145-bookings-content {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .rd145-bookings-intro,
+    .rd145-bookings-empty,
+    .rd145-booking-item {
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: rgba(255, 255, 255, 0.038);
+    }
+
+    .rd145-bookings-intro {
+      padding: 13px;
+      border-color: rgba(75, 179, 255, 0.26);
+      background: rgba(75, 179, 255, 0.07);
+      color: #c7e8ff;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .rd145-bookings-loading,
+    .rd145-bookings-error {
+      margin: 8px 2px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .rd145-bookings-error {
+      color: #ffb2b2;
+    }
+
+    .rd145-bookings-empty {
+      padding: 24px 16px;
+      text-align: center;
+    }
+
+    .rd145-bookings-empty strong {
+      display: block;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 950;
+    }
+
+    .rd145-bookings-empty p {
+      margin: 7px auto 0;
+      max-width: 290px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .rd145-bookings-empty button,
+    .rd145-booking-actions button,
+    .rd145-booking-copy,
+    .rd145-bookings-refresh {
+      min-height: 40px;
+      border: 1px solid rgba(255, 255, 255, 0.17);
+      border-radius: 12px;
+      padding: 0 13px;
+      background: #1b222c;
+      color: #ffffff;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd145-bookings-empty button {
+      margin-top: 13px;
+      border-color: #ff8a18;
+      background: #ff8a18;
+      color: #090b0f;
+    }
+
+    .rd145-booking-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .rd145-booking-item {
+      padding: 13px;
+    }
+
+    .rd145-booking-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .rd145-booking-meta strong {
+      color: #ffffff;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .rd145-booking-status {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      border: 1px solid rgba(255, 138, 24, 0.32);
+      border-radius: 999px;
+      background: rgba(255, 138, 24, 0.09);
+      color: #ffba76;
+      font-size: 8px;
+      font-weight: 950;
+      letter-spacing: 0.055em;
+      text-transform: uppercase;
+    }
+
+    .rd145-booking-number-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .rd145-booking-number {
+      min-width: 0;
+      padding: 10px 11px;
+      overflow-wrap: anywhere;
+      border: 1px solid rgba(255, 138, 24, 0.3);
+      border-radius: 12px;
+      background: rgba(255, 138, 24, 0.075);
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 950;
+      letter-spacing: 0.025em;
+      line-height: 1.35;
+    }
+
+    .rd145-booking-timer {
+      min-width: 76px;
+      text-align: right;
+    }
+
+    .rd145-booking-copy {
+      margin-top: 7px;
+    }
+
+    .rd145-booking-timer small,
+    .rd145-booking-timer strong {
+      display: block;
+    }
+
+    .rd145-booking-timer small {
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .rd145-booking-timer strong {
+      margin-top: 3px;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    .rd145-booking-detail {
+      margin: 9px 1px 0;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .rd145-booking-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .rd145-booking-actions .primary {
+      border-color: #ff8a18;
+      background: #ff8a18;
+      color: #090b0f;
+    }
+
+    .rd145-bookings-refresh {
+      align-self: flex-start;
+    }
+
+    .rd145-bookings-note {
+      margin: 2px 2px 0;
+      color: var(--faint);
+      font-size: 9px;
+      font-weight: 650;
+      line-height: 1.45;
+      text-align: center;
+    }
+
+    .rd142-booking-card.rd145-confirmation-only {
+      padding: 16px;
+    }
+
+    .rd142-booking-card.rd145-confirmation-only > .rd142-booking-kicker,
+    .rd142-booking-card.rd145-confirmation-only > #rd142BookingTitle,
+    .rd142-booking-card.rd145-confirmation-only > .rd142-booking-lead,
+    .rd142-booking-card.rd145-confirmation-only > .rd142-booking-facts {
+      display: none;
+    }
+
+    .rd142-booking-card.rd145-confirmation-only .rd144-progress-panel {
+      margin-top: 0;
+      padding-right: 58px;
+    }
+
+    @media (max-width: 420px) {
+      .rd145-booking-number-row {
+        grid-template-columns: minmax(0, 1fr) 72px;
+        gap: 7px;
+      }
+
+      .rd145-booking-number {
+        font-size: 10.5px;
+      }
+
+      .rd145-booking-actions button {
+        flex: 1 1 auto;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+
+function rd145SetConfirmationOnly(enabled) {
+  document.querySelector(".rd142-booking-card")
+    ?.classList.toggle("rd145-confirmation-only", Boolean(enabled));
+}
+
+
+rd142OpenBookingShell = function () {
+  const result = rd145OriginalOpenBookingShell();
+  rd145SetConfirmationOnly(false);
+  return result;
+};
+
+
+rd142ShowCheckoutResult = function (booking, verified = true) {
+  const result = rd145OriginalShowCheckoutResult(booking, verified);
+  rd145SetConfirmationOnly(Boolean(verified && booking?.booking_code));
+  return result;
+};
+
+
+rd142StartCheckout = async function (week, button, status) {
+  if (!state.auth.user || !state.auth.session?.access_token) {
+    status.textContent = "Sign in to your Road Profile before booking.";
+    showToast("Sign in so the booking number can be saved to your account");
+    window.setTimeout(() => {
+      rd142CloseBooking();
+      openFriendsPanel();
+    }, 450);
+    return;
+  }
+  return await rd145OriginalStartCheckout(week, button, status);
+};
+
+
+function rd145CreateGeneralMenuButton() {
+  if ($("rd145OpenBookingNumbersBtn")) return;
+  const settingsButton = $("rd73OpenSettingsBtn");
+  const list = settingsButton?.parentElement;
+  if (!list) return;
+
+  const button = document.createElement("button");
+  button.id = "rd145OpenBookingNumbersBtn";
+  button.className = "rd-general-menu-item";
+  button.type = "button";
+  button.innerHTML = `
+    <span class="rd-general-menu-icon bookings" aria-hidden="true">#</span>
+    <span class="rd-general-menu-copy">
+      <strong>Booking Numbers</strong>
+      <small id="rd145GeneralMenuBookingStatus">Paid sponsor bookings</small>
+    </span>
+    <span class="rd-general-menu-arrow" aria-hidden="true">›</span>
+  `;
+  list.insertBefore(button, settingsButton);
+  button.addEventListener("click", rd145OpenBookingNumbers);
+}
+
+
+function rd145CreateBookingNumbersPanel() {
+  if ($("rd145BookingNumbersPanel")) return;
+  const panel = document.createElement("aside");
+  panel.id = "rd145BookingNumbersPanel";
+  panel.className = "side-panel rd145-bookings-panel hidden";
+  panel.setAttribute("aria-hidden", "true");
+  panel.setAttribute("aria-label", "Booking Numbers");
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="rd145-bookings-heading">
+        <button id="rd145BookingsBackBtn" class="panel-close-btn rd145-bookings-back"
+          type="button" aria-label="Back to General Menu">‹</button>
+        <div>
+          <h2>Booking Numbers</h2>
+          <p>Your paid sponsor bookings</p>
+        </div>
+      </div>
+      <button id="rd145BookingsCloseBtn" class="panel-close-btn" type="button"
+        aria-label="Close Booking Numbers">×</button>
+    </div>
+    <div id="rd145BookingNumbersContent" class="panel-content rd145-bookings-content"></div>
+  `;
+  ($("appShell") || document.body).appendChild(panel);
+  els.rd145BookingNumbersPanel = panel;
+
+  $("rd145BookingsBackBtn")?.addEventListener("click", () => {
+    rd145CloseBookingNumbersOnly();
+    rd73OpenGeneralMenu();
+  });
+  $("rd145BookingsCloseBtn")?.addEventListener("click", () => closePanels());
+  $("rd145BookingNumbersContent")?.addEventListener("click", rd145HandleBookingAction);
+}
+
+
+function rd145CloseBookingNumbersOnly() {
+  const panel = $("rd145BookingNumbersPanel");
+  panel?.classList.add("hidden");
+  panel?.setAttribute("aria-hidden", "true");
+  if (rd145BookingsState.countdownTimer) {
+    window.clearInterval(rd145BookingsState.countdownTimer);
+    rd145BookingsState.countdownTimer = 0;
+  }
+}
+
+
+closePanels = function (hideBackdrop = true) {
+  rd145OriginalClosePanels(hideBackdrop);
+  rd145CloseBookingNumbersOnly();
+};
+
+
+renderAuthState = function () {
+  const result = rd145OriginalRenderAuthState();
+  const userId = String(state.auth.user?.id || "");
+  if (rd145BookingsState.activeUserId !== userId) {
+    rd145BookingsState.activeUserId = userId;
+    rd145BookingsState.items = [];
+    rd145BookingsState.requestId++;
+  }
+  if (!userId) {
+    rd145SetMenuStatus("Sign in to see paid bookings");
+  } else if (rd145BookingsState.items.length) {
+    rd145SetMenuStatus(
+      rd145BookingsState.items.length === 1
+        ? "1 active booking number"
+        : `${rd145BookingsState.items.length} active booking numbers`
+    );
+  } else {
+    rd145SetMenuStatus("Paid sponsor bookings");
+  }
+  return result;
+};
+
+
+function rd145RenderSignedOut() {
+  const content = $("rd145BookingNumbersContent");
+  if (!content) return;
+  content.innerHTML = `
+    <section class="rd145-bookings-empty">
+      <strong>Sign in to view booking numbers</strong>
+      <p>Paid bookings are stored safely on the Road Profile that opened Stripe Checkout.</p>
+      <button type="button" data-rd145-action="profile">Open Road Profile</button>
+    </section>
+  `;
+  rd145SetMenuStatus("Sign in to see paid bookings");
+}
+
+
+function rd145SetMenuStatus(value) {
+  const element = $("rd145GeneralMenuBookingStatus");
+  if (element) element.textContent = value;
+}
+
+
+function rd145StatusLabel(status) {
+  return ({
+    pending_artwork: "Awaiting artwork",
+    pending_review: "Awaiting review",
+    needs_changes: "Needs changes",
+    approved: "Approved",
+    published: "Published",
+    rejected: "Rejected",
+    refund_pending: "Refund pending",
+    refunded: "Refunded"
+  })[status] || String(status || "Paid booking").replaceAll("_", " ");
+}
+
+
+function rd145RefundIsOpen(booking) {
+  return ["pending", "failed", "requires_action"].includes(
+    String(booking?.refund_status || "")
+  ) || booking?.status === "refund_pending";
+}
+
+
+function rd145CountdownParts(visibleUntil, booking) {
+  const remaining = Date.parse(String(visibleUntil || "")) - Date.now();
+  const refundOpen = rd145RefundIsOpen(booking);
+  if (!Number.isFinite(remaining) || remaining <= 0) {
+    return refundOpen
+      ? ["Kept for", "refund"]
+      : ["Disappearing", "now"];
+  }
+  const totalMinutes = Math.max(1, Math.ceil(remaining / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return ["Disappears in", `${days}d ${hours}h`];
+  if (hours > 0) return ["Disappears in", `${hours}h ${minutes}m`];
+  return ["Disappears in", `${minutes}m`];
+}
+
+
+function rd145BookingCard(booking) {
+  const code = rd144NormalizeBookingCode(booking?.booking_code);
+  const [timerLabel, timerValue] = rd145CountdownParts(
+    booking?.visible_until,
+    booking
+  );
+  const dates = `${rd142FormatDate(booking.week_start)} – ${rd142FormatDate(booking.week_end)}`;
+  const canUpload = booking?.submission_token &&
+    ["pending_artwork", "pending_review", "needs_changes"].includes(booking.status);
+  return `
+    <article class="rd145-booking-item" data-rd145-code="${rd142Escape(code)}">
+      <div class="rd145-booking-meta">
+        <strong>${rd142Escape(dates)}</strong>
+        <span class="rd145-booking-status">${rd142Escape(rd145StatusLabel(booking.status))}</span>
+      </div>
+      <div class="rd145-booking-number-row">
+        <div>
+          <div class="rd145-booking-number">${rd142Escape(code)}</div>
+          <button class="rd145-booking-copy" type="button" data-rd145-action="copy"
+            data-rd145-code="${rd142Escape(code)}">Copy</button>
+        </div>
+        <span class="rd145-booking-timer" data-rd145-visible-until="${rd142Escape(booking.visible_until || "")}">
+          <small>${rd142Escape(timerLabel)}</small>
+          <strong>${rd142Escape(timerValue)}</strong>
+        </span>
+      </div>
+      <p class="rd145-booking-detail">Rotation position ${rd142Escape(booking.slot_number)} of 5 · ${rd142Escape(rd145StatusLabel(booking.status))}</p>
+      <div class="rd145-booking-actions">
+        <button type="button" data-rd145-action="view" data-rd145-code="${rd142Escape(code)}">View progress</button>
+        ${canUpload ? `<button class="primary" type="button" data-rd145-action="upload" data-rd145-code="${rd142Escape(code)}">${booking.status === "needs_changes" ? "Upload revised ad" : "Submit advertisement"}</button>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+
+function rd145RenderBookingNumbers(bookings) {
+  const content = $("rd145BookingNumbersContent");
+  if (!content) return;
+  rd145BookingsState.items = Array.isArray(bookings) ? bookings : [];
+
+  if (!rd145BookingsState.items.length) {
+    content.innerHTML = `
+      <section class="rd145-bookings-empty">
+        <strong>No booking numbers</strong>
+        <p>Paid sponsor bookings made from this Road Profile will appear here automatically.</p>
+      </section>
+      <p class="rd145-bookings-note">Opening or abandoning Stripe Checkout never creates a booking number.</p>
+    `;
+    rd145SetMenuStatus("No booking numbers");
+    return;
+  }
+
+  content.innerHTML = `
+    <p class="rd145-bookings-intro">These booking numbers are also sent to the email address used for Stripe payment once email delivery is enabled.</p>
+    <div class="rd145-booking-list">
+      ${rd145BookingsState.items.map(rd145BookingCard).join("")}
+    </div>
+    <button class="rd145-bookings-refresh" type="button" data-rd145-action="refresh">Refresh status</button>
+    <p class="rd145-bookings-note">Finished bookings leave this page after their advertising week. Private payment records are retained for refunds and support.</p>
+  `;
+  rd145SetMenuStatus(
+    rd145BookingsState.items.length === 1
+      ? "1 active booking number"
+      : `${rd145BookingsState.items.length} active booking numbers`
+  );
+  rd145StartCountdowns();
+}
+
+
+function rd145UpdateCountdowns() {
+  const visibleItems = rd145BookingsState.items.filter((booking) => {
+    const expiry = Date.parse(String(booking?.visible_until || ""));
+    return !Number.isFinite(expiry) || expiry > Date.now() || rd145RefundIsOpen(booking);
+  });
+  if (visibleItems.length !== rd145BookingsState.items.length) {
+    rd145RenderBookingNumbers(visibleItems);
+    return;
+  }
+
+  document.querySelectorAll("[data-rd145-visible-until]").forEach((element) => {
+    const card = element.closest("[data-rd145-code]");
+    const booking = rd145BookingsState.items.find(
+      (entry) => rd144NormalizeBookingCode(entry.booking_code) === card?.dataset.rd145Code
+    );
+    if (!booking) return;
+    const [label, value] = rd145CountdownParts(element.dataset.rd145VisibleUntil, booking);
+    const small = element.querySelector("small");
+    const strong = element.querySelector("strong");
+    if (small) small.textContent = label;
+    if (strong) strong.textContent = value;
+  });
+}
+
+
+function rd145StartCountdowns() {
+  if (rd145BookingsState.countdownTimer) {
+    window.clearInterval(rd145BookingsState.countdownTimer);
+  }
+  rd145UpdateCountdowns();
+  rd145BookingsState.countdownTimer = window.setInterval(
+    rd145UpdateCountdowns,
+    30000
+  );
+}
+
+
+async function rd145ClaimSavedBookings() {
+  const userId = String(state.auth.user?.id || "");
+  if (!userId || rd145BookingsState.claimedForUsers.has(userId)) return;
+  rd145BookingsState.claimedForUsers.add(userId);
+  const claimable = rd144SavedBookings().filter((entry) => entry.token);
+  await Promise.allSettled(claimable.map((entry) =>
+    rd142BookingRequest(RD142_SPONSOR_BOOKING_API, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "claim_booking",
+        bookingCode: entry.code,
+        token: entry.token
+      })
+    })
+  ));
+}
+
+
+async function rd145LoadBookingNumbers() {
+  const content = $("rd145BookingNumbersContent");
+  if (!content) return;
+  if (!state.auth.user || !state.auth.session?.access_token) {
+    rd145RenderSignedOut();
+    return;
+  }
+
+  rd145BookingsState.activeUserId = String(state.auth.user.id);
+  const requestId = ++rd145BookingsState.requestId;
+  content.innerHTML = `<p class="rd145-bookings-loading">Loading your paid booking numbers…</p>`;
+  try {
+    await rd145ClaimSavedBookings();
+    const url = new URL(RD142_SPONSOR_BOOKING_API);
+    url.searchParams.set("mine", "1");
+    const payload = await rd142BookingRequest(url.href);
+    if (requestId !== rd145BookingsState.requestId) return;
+    if (!Array.isArray(payload?.bookings)) {
+      throw new Error("Booking numbers could not be loaded.");
+    }
+    rd145RenderBookingNumbers(payload.bookings);
+  } catch (error) {
+    if (requestId !== rd145BookingsState.requestId) return;
+    content.innerHTML = `
+      <p class="rd145-bookings-error">${rd142Escape(error?.name === "AbortError"
+        ? "The booking server took too long to respond."
+        : error?.message || "Booking numbers are temporarily unavailable.")}</p>
+      <button class="rd145-bookings-refresh" type="button" data-rd145-action="refresh">Try again</button>
+    `;
+  }
+}
+
+
+function rd145OpenBookingNumbers() {
+  rd145CreateBookingNumbersPanel();
+  openPanel("rd145BookingNumbersPanel");
+  void rd145LoadBookingNumbers();
+}
+
+
+function rd145FindBooking(code) {
+  const normalized = rd144NormalizeBookingCode(code);
+  return rd145BookingsState.items.find(
+    (booking) => rd144NormalizeBookingCode(booking.booking_code) === normalized
+  );
+}
+
+
+function rd145HandleBookingAction(event) {
+  const button = event.target.closest("[data-rd145-action]");
+  if (!button) return;
+  const action = button.dataset.rd145Action;
+  const code = rd144NormalizeBookingCode(button.dataset.rd145Code || "");
+  const booking = rd145FindBooking(code);
+
+  if (action === "profile") {
+    closePanels();
+    openFriendsPanel();
+    return;
+  }
+  if (action === "refresh") {
+    void rd145LoadBookingNumbers();
+    return;
+  }
+  if (action === "copy" && code) {
+    void rd144CopyText(code, button);
+    return;
+  }
+  if (!booking) return;
+  if (action === "view") {
+    closePanels();
+    rd142OpenBookingShell();
+    rd144ShowBookingStatus(booking, { token: booking.submission_token || "" });
+    return;
+  }
+  if (action === "upload") {
+    closePanels();
+    rd144OpenSubmission(code, booking.submission_token || "");
+  }
+}
+
+
+function rd145InitBookingNumbers() {
+  rd145InstallStyles();
+  rd145CreateGeneralMenuButton();
+  rd145CreateBookingNumbersPanel();
+  $("rd144SponsorStatusSetting")?.remove();
+  els.panelBackdrop?.addEventListener("click", rd145CloseBookingNumbersOnly);
+  rd145SetMenuStatus(
+    state.auth.user ? "Paid sponsor bookings" : "Sign in to see paid bookings"
+  );
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", rd145InitBookingNumbers, { once: true });
+} else {
+  rd145InitBookingNumbers();
+}
