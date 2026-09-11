@@ -51218,3 +51218,731 @@ if (document.readyState === "loading") {
 } else {
   rd142InitSponsorBooking();
 }
+
+
+/* =====================================================
+   Road Discovery AU v144
+   Paid-only sponsor positions + booking number + upload
+   ===================================================== */
+
+const RD144_SPONSOR_SUBMIT_API =
+  `${SUPABASE_URL}/functions/v1/sponsor-submit`;
+const RD144_SAVED_BOOKINGS_KEY =
+  "roadDiscoveryAU.sponsorBookingCodes.v1";
+const rd144LegacySponsorFeed = rd131FetchSponsorConfig;
+
+
+function rd144SavedBookings() {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(RD144_SAVED_BOOKINGS_KEY) || "[]"
+    );
+    return Array.isArray(saved)
+      ? saved.filter((entry) =>
+          /^RDA-(?:[A-Z0-9]{4}-){4}[A-Z0-9]{4}$/.test(
+            String(entry?.code || "")
+          )
+        ).slice(0, 10)
+      : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+
+function rd144RememberBooking(code, token = "") {
+  const normalized = rd144NormalizeBookingCode(code);
+  if (!normalized) return;
+  const previous = rd144SavedBookings();
+  const existing = previous.find((entry) => entry.code === normalized);
+  const next = [{
+    code: normalized,
+    token: String(token || existing?.token || "")
+  }, ...previous.filter((entry) => entry.code !== normalized)].slice(0, 10);
+  localStorage.setItem(RD144_SAVED_BOOKINGS_KEY, JSON.stringify(next));
+}
+
+
+function rd144NormalizeBookingCode(value) {
+  const compact = String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  if (!/^RDA[A-Z0-9]{20}$/.test(compact)) return "";
+  const body = compact.slice(3);
+  return `RDA-${body.slice(0, 4)}-${body.slice(4, 8)}-` +
+    `${body.slice(8, 12)}-${body.slice(12, 16)}-${body.slice(16, 20)}`;
+}
+
+
+function rd144TokenFor(code) {
+  const normalized = rd144NormalizeBookingCode(code);
+  return rd144SavedBookings().find(
+    (entry) => entry.code === normalized
+  )?.token || "";
+}
+
+
+function rd144SetBookingHeading(title, lead, kicker = "Advertise in the app") {
+  const titleNode = $("rd142BookingTitle");
+  const leadNode = document.querySelector(".rd142-booking-lead");
+  const kickerNode = document.querySelector(".rd142-booking-kicker");
+  if (titleNode) titleNode.textContent = title;
+  if (leadNode) leadNode.textContent = lead;
+  if (kickerNode) kickerNode.textContent = kicker;
+}
+
+
+function rd144InstallSponsorStyles() {
+  if ($("rd144SponsorStyles")) return;
+  const style = document.createElement("style");
+  style.id = "rd144SponsorStyles";
+  style.textContent = `
+    .rd144-progress-panel,
+    .rd144-lookup-panel,
+    .rd144-upload-panel {
+      margin-top: 16px;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      border-radius: 17px;
+      background: #11161d;
+    }
+
+    .rd144-progress-panel h3,
+    .rd144-lookup-panel h3,
+    .rd144-upload-panel h3 {
+      margin: 0 0 6px;
+      color: #ffffff;
+      font-size: 17px;
+    }
+
+    .rd144-progress-panel p,
+    .rd144-lookup-panel p,
+    .rd144-upload-panel p {
+      margin: 6px 0;
+      color: #b8c0cc;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .rd144-lookup-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      margin-top: 11px;
+    }
+
+    .rd144-input,
+    .rd144-upload-panel input,
+    .rd144-upload-panel textarea {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 11px;
+      padding: 10px 12px;
+      background: #080b10;
+      color: #ffffff;
+      font: inherit;
+      font-size: 14px;
+    }
+
+    .rd144-upload-panel textarea {
+      min-height: 82px;
+      resize: vertical;
+    }
+
+    .rd144-field {
+      display: grid;
+      gap: 6px;
+      margin-top: 12px;
+      color: #d9dee6;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .rd144-primary-button,
+    .rd144-secondary-button {
+      min-height: 44px;
+      border-radius: 999px;
+      padding: 0 17px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 950;
+      cursor: pointer;
+    }
+
+    .rd144-primary-button {
+      border: 0;
+      background: #ff8a18;
+      color: #090b0f;
+    }
+
+    .rd144-secondary-button {
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: #1b222c;
+      color: #ffffff;
+    }
+
+    .rd144-primary-button:disabled,
+    .rd144-secondary-button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    .rd144-code {
+      display: block;
+      margin: 10px 0;
+      padding: 12px;
+      overflow-wrap: anywhere;
+      border: 1px solid rgba(255, 138, 24, 0.38);
+      border-radius: 12px;
+      background: rgba(255, 138, 24, 0.08);
+      color: #ffffff;
+      font-size: clamp(14px, 4vw, 18px);
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      text-align: center;
+    }
+
+    .rd144-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .rd144-alert {
+      margin-top: 10px !important;
+      padding: 10px;
+      border-left: 3px solid #ff8a18;
+      background: rgba(255, 138, 24, 0.08);
+      color: #ffd0a1 !important;
+    }
+
+    .rd144-file-help {
+      color: #8994a3 !important;
+      font-size: 11px !important;
+    }
+
+    #rd144SponsorStatusBtn {
+      min-height: 40px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 999px;
+      padding: 0 14px;
+      background: #1b222c;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    @media (max-width: 450px) {
+      .rd144-lookup-row { grid-template-columns: 1fr; }
+      .rd144-lookup-row button,
+      .rd144-actions button { width: 100%; }
+      #rd141SponsorBooking { flex-wrap: wrap; }
+      #rd144SponsorStatusBtn { width: 100%; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+
+function rd144StatusCopy(status) {
+  return ({
+    pending_artwork: ["Payment confirmed", "Your position is secured. Submit your advertisement for review."],
+    pending_review: ["Awaiting review", "Your advertisement was received securely and is waiting for review."],
+    needs_changes: ["Changes requested", "Your paid position remains secured while you upload a revised advertisement."],
+    approved: ["Advertisement approved", "Your advertisement is approved and queued for its booked week."],
+    published: ["Advertisement published", "Your advertisement is ready for its scheduled in-app rotation."],
+    rejected: ["Advertisement rejected", "Review the reason below and the accompanying refund status."],
+    refund_pending: ["Rejected — refund processing", "Stripe is processing the full refund."],
+    refunded: ["Refund completed", "Stripe has confirmed the refund. Your bank may take more time to display it."]
+  })[status] || ["Booking status", String(status || "Unknown").replaceAll("_", " ")];
+}
+
+
+async function rd144CopyText(value, button) {
+  try {
+    await navigator.clipboard.writeText(String(value || ""));
+    const previous = button.textContent;
+    button.textContent = "Copied";
+    window.setTimeout(() => { button.textContent = previous; }, 1300);
+  } catch (_) {
+    window.prompt("Copy your booking number:", String(value || ""));
+  }
+}
+
+
+function rd144ShowBookingStatus(booking, options = {}) {
+  const content = $("rd142BookingContent");
+  const code = rd144NormalizeBookingCode(booking?.booking_code);
+  const token = String(options.token || rd144TokenFor(code) || "");
+  const [heading, description] = rd144StatusCopy(booking?.status);
+  const dates = `${rd142FormatDate(booking.week_start)} – ${rd142FormatDate(booking.week_end)}`;
+  if (code) rd144RememberBooking(code, token);
+  rd144SetBookingHeading("Advertisement progress", "Keep your booking number private and use it whenever you want to check this order.", "Paid sponsor booking");
+  content.innerHTML = `
+    <section class="rd144-progress-panel">
+      <h3>${rd142Escape(heading)}</h3>
+      <p>${rd142Escape(description)}</p>
+      ${code ? `<strong class="rd144-code">${rd142Escape(code)}</strong>` : ""}
+      <p><strong>${rd142Escape(dates)}</strong><br>Rotation position ${rd142Escape(booking.slot_number)} of 5</p>
+      ${booking.business_name ? `<p>Advertiser: <strong>${rd142Escape(booking.business_name)}</strong></p>` : ""}
+      ${booking.change_reason ? `<p class="rd144-alert"><strong>What to fix:</strong> ${rd142Escape(booking.change_reason)}</p>` : ""}
+      ${booking.refund_reason && !booking.change_reason ? `<p class="rd144-alert"><strong>Reason:</strong> ${rd142Escape(booking.refund_reason)}</p>` : ""}
+      <p>Refund: ${rd142Escape(String(booking.refund_status || "not requested").replaceAll("_", " "))}</p>
+      <div class="rd144-actions">
+        ${code ? `<button id="rd144CopyCodeBtn" class="rd144-secondary-button" type="button">Copy booking number</button>` : ""}
+        ${token && ["pending_artwork", "pending_review", "needs_changes"].includes(booking.status)
+          ? `<button id="rd144OpenUploadBtn" class="rd144-primary-button" type="button">${booking.status === "needs_changes" ? "Upload revised ad" : "Submit advertisement"}</button>`
+          : ""}
+        <button id="rd144CheckAnotherBtn" class="rd144-secondary-button" type="button">Check another booking</button>
+      </div>
+      ${!token && ["pending_artwork", "needs_changes"].includes(booking.status)
+        ? `<p class="rd144-file-help">Open the secure submission link in the payment email to upload artwork from this device.</p>`
+        : ""}
+    </section>
+  `;
+  $("rd144CopyCodeBtn")?.addEventListener("click", (event) => {
+    void rd144CopyText(code, event.currentTarget);
+  });
+  $("rd144OpenUploadBtn")?.addEventListener("click", () => {
+    rd144OpenSubmission(code, token);
+  });
+  $("rd144CheckAnotherBtn")?.addEventListener("click", () => {
+    rd144RenderStatusLookup();
+  });
+}
+
+
+function rd144RenderStatusLookup(prefill = "") {
+  rd142OpenBookingShell();
+  rd144SetBookingHeading("Check advertisement progress", "Enter the permanent booking number sent after successful Stripe payment.", "Sponsor booking status");
+  const content = $("rd142BookingContent");
+  const remembered = rd144NormalizeBookingCode(prefill) || rd144SavedBookings()[0]?.code || "";
+  content.innerHTML = `
+    <section class="rd144-lookup-panel">
+      <h3>Find a paid booking</h3>
+      <p>Booking numbers begin with RDA. Opening checkout without paying never creates one.</p>
+      <div class="rd144-lookup-row">
+        <input id="rd144BookingCodeInput" class="rd144-input" type="text" inputmode="text"
+          autocomplete="off" autocapitalize="characters" spellcheck="false"
+          maxlength="32" placeholder="RDA-XXXX-XXXX-XXXX-XXXX-XXXX"
+          value="${rd142Escape(remembered)}" aria-label="Booking number">
+        <button id="rd144LookupBtn" class="rd144-primary-button" type="button">Check progress</button>
+      </div>
+      <p id="rd144LookupMessage" role="status"></p>
+    </section>
+    <div class="rd144-actions">
+      <button id="rd144BackToWeeksBtn" class="rd144-secondary-button" type="button">View available weeks</button>
+    </div>
+  `;
+  const input = $("rd144BookingCodeInput");
+  const submit = () => void rd144LookupBooking(input.value);
+  $("rd144LookupBtn")?.addEventListener("click", submit);
+  input?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") submit();
+  });
+  $("rd144BackToWeeksBtn")?.addEventListener("click", () => {
+    void rd142OpenBooking();
+  });
+  window.setTimeout(() => input?.focus(), 0);
+}
+
+
+async function rd144LookupBooking(code) {
+  const normalized = rd144NormalizeBookingCode(code);
+  let message = $("rd144LookupMessage");
+  let button = $("rd144LookupBtn");
+  if (!message || !button) {
+    rd144RenderStatusLookup(normalized);
+    message = $("rd144LookupMessage");
+    button = $("rd144LookupBtn");
+  }
+  if (!normalized) {
+    message.textContent = "Enter the complete RDA booking number.";
+    return;
+  }
+  button.disabled = true;
+  message.textContent = "Checking securely…";
+  try {
+    const url = new URL(RD142_SPONSOR_BOOKING_API);
+    url.searchParams.set("booking_code", normalized);
+    const payload = await rd142BookingRequest(url.href);
+    if (!payload?.booking) throw new Error("That booking number was not found.");
+    rd144RememberBooking(normalized);
+    rd144ShowBookingStatus(payload.booking);
+  } catch (error) {
+    message.textContent = error?.name === "AbortError"
+      ? "The status server took too long. Please try again."
+      : String(error?.message || "Booking status is unavailable.");
+    button.disabled = false;
+  }
+}
+
+
+function rd144OpenSubmission(code, token) {
+  const normalized = rd144NormalizeBookingCode(code);
+  if (!normalized || !/^[A-Za-z0-9_-]{40,60}$/.test(String(token || ""))) {
+    rd144RenderStatusLookup(normalized);
+    const message = $("rd144LookupMessage");
+    if (message) message.textContent = "Use the secure submission link from your payment email.";
+    return;
+  }
+  rd144RememberBooking(normalized, token);
+  rd142OpenBookingShell();
+  rd144SetBookingHeading("Submit your advertisement", "Upload the image directly. It stays private until an administrator approves and publishes it.", "Verified paid booking");
+  const content = $("rd142BookingContent");
+  content.innerHTML = `
+    <form id="rd144UploadForm" class="rd144-upload-panel">
+      <h3>${rd142Escape(normalized)}</h3>
+      <label class="rd144-field">Business or advertiser name
+        <input name="business_name" maxlength="100" required autocomplete="organization">
+      </label>
+      <label class="rd144-field">Advertisement image
+        <input name="artwork" type="file" accept="image/jpeg,image/png" required>
+      </label>
+      <p class="rd144-file-help">JPEG or PNG, maximum 5 MB. Landscape or square artwork is easiest to read in the app.</p>
+      <label class="rd144-field">Website opened when the ad is tapped (optional)
+        <input name="click_url" type="url" maxlength="2000" inputmode="url" placeholder="https://example.com">
+      </label>
+      <label class="rd144-field">Short description for accessibility
+        <textarea name="alt_text" minlength="10" maxlength="240" required placeholder="Describe the business and the important words shown in the ad."></textarea>
+      </label>
+      <div class="rd144-actions">
+        <button id="rd144UploadBtn" class="rd144-primary-button" type="submit">Upload for review</button>
+        <button id="rd144UploadStatusBtn" class="rd144-secondary-button" type="button">Check progress</button>
+      </div>
+      <p id="rd144UploadMessage" role="status"></p>
+    </form>
+  `;
+  $("rd144UploadForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void rd144SubmitArtwork(event.currentTarget, normalized, token);
+  });
+  $("rd144UploadStatusBtn")?.addEventListener("click", () => {
+    rd144RenderStatusLookup(normalized);
+    void rd144LookupBooking(normalized);
+  });
+}
+
+
+async function rd144SubmitArtwork(form, code, token) {
+  const button = $("rd144UploadBtn");
+  const message = $("rd144UploadMessage");
+  const file = form.elements.artwork?.files?.[0];
+  if (!file || !["image/jpeg", "image/png"].includes(file.type)) {
+    message.textContent = "Choose a JPEG or PNG image.";
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    message.textContent = "The image must be 5 MB or smaller.";
+    return;
+  }
+  const payload = new FormData(form);
+  payload.set("booking_code", code);
+  payload.set("token", token);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 60000);
+  button.disabled = true;
+  button.textContent = "Uploading…";
+  message.textContent = "Keep this window open while the image uploads securely.";
+  try {
+    const response = await fetch(RD144_SPONSOR_SUBMIT_API, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+      },
+      body: payload,
+      cache: "no-store",
+      signal: controller.signal
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result?.error || "The advertisement could not be uploaded.");
+    rd144ShowBookingStatus({
+      ...result.booking,
+      booking_code: code,
+      week_end: (() => {
+        const date = new Date(`${result.booking.week_start}T12:00:00Z`);
+        date.setUTCDate(date.getUTCDate() + 6);
+        return date.toISOString().slice(0, 10);
+      })(),
+      refund_status: "not_requested"
+    }, { token });
+  } catch (error) {
+    message.textContent = error?.name === "AbortError"
+      ? "The upload took too long. Check your connection and try again."
+      : String(error?.message || "The advertisement could not be uploaded.");
+    button.disabled = false;
+    button.textContent = "Upload for review";
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+
+rd142RenderWeeks = function (weeks) {
+  rd144SetBookingHeading("Book a weekly sponsor slot", "Choose an available Monday–Sunday week. Your ad joins a fair, persistent rotation with up to four other sponsors.");
+  const content = $("rd142BookingContent");
+  content.replaceChildren();
+  const status = document.createElement("p");
+  status.className = "rd142-booking-status";
+  status.textContent = "Select a week to open secure Stripe checkout.";
+  content.appendChild(status);
+  const list = document.createElement("div");
+  list.className = "rd142-week-list";
+  weeks.forEach((week) => {
+    const available = Math.max(0, Math.min(5, Number(week.available_slots) || 0));
+    const row = document.createElement("article");
+    row.className = "rd142-week";
+    const details = document.createElement("div");
+    const title = document.createElement("strong");
+    title.className = "rd142-week-title";
+    title.textContent = `${rd142FormatDate(week.week_start)} – ${rd142FormatDate(week.week_end)}`;
+    const slots = document.createElement("span");
+    slots.className = "rd142-week-slots";
+    slots.textContent = available === 0 ? "Sold out" : `${available} of 5 paid positions available`;
+    details.append(title, slots);
+    const button = document.createElement("button");
+    button.className = "rd142-week-button";
+    button.type = "button";
+    button.disabled = available === 0;
+    button.textContent = available === 0 ? "Sold out" : "Book for $20";
+    button.addEventListener("click", () => void rd142StartCheckout(week, button, status));
+    row.append(details, button);
+    list.appendChild(row);
+  });
+  content.appendChild(list);
+  const note = document.createElement("p");
+  note.className = "rd142-booking-note";
+  note.textContent = "Opening checkout does not reserve or occupy a position. A position is assigned only after confirmed payment. If the final position is bought while your payment is completing, your payment is automatically refunded.";
+  content.appendChild(note);
+  const lookup = document.createElement("section");
+  lookup.className = "rd144-lookup-panel";
+  lookup.innerHTML = `<h3>Already paid?</h3><p>Use your permanent booking number to check review, requested changes, publication or refund progress.</p><button id="rd144WeeksLookupBtn" class="rd144-secondary-button" type="button">Check advertisement progress</button>`;
+  content.appendChild(lookup);
+  $("rd144WeeksLookupBtn")?.addEventListener("click", () => rd144RenderStatusLookup());
+};
+
+
+rd142StartCheckout = async function (week, button, status) {
+  document.querySelectorAll(".rd142-week-button").forEach((entry) => { entry.disabled = true; });
+  button.textContent = "Opening…";
+  status.textContent = "Opening secure checkout — no position is taken unless payment succeeds.";
+  try {
+    const payload = await rd142BookingRequest(RD142_SPONSOR_BOOKING_API, {
+      method: "POST",
+      body: JSON.stringify({ weekStart: String(week.week_start || "") })
+    });
+    const checkoutUrl = new URL(String(payload?.checkoutUrl || ""));
+    if (checkoutUrl.protocol !== "https:" || checkoutUrl.hostname !== "checkout.stripe.com") {
+      throw new Error("The secure checkout address was invalid.");
+    }
+    window.location.assign(checkoutUrl.href);
+  } catch (error) {
+    status.textContent = error?.name === "AbortError"
+      ? "Checkout took too long to start. Please try again."
+      : String(error?.message || "Checkout could not be started.");
+    window.setTimeout(() => void rd142OpenBooking(), 1000);
+  }
+};
+
+
+rd142ShowCheckoutResult = function (booking, verified = true) {
+  if (!verified) {
+    $("rd142BookingContent").innerHTML = `<div class="rd142-booking-message"><h3>Payment is being verified</h3><p>Do not pay again. No duplicate booking will be created.</p></div>`;
+    return;
+  }
+  rd144ShowBookingStatus(booking, {
+    token: booking?._submission_token || ""
+  });
+  if (booking?.booking_code && booking.status === "pending_artwork") {
+    const panel = document.querySelector(".rd144-progress-panel");
+    const notice = document.createElement("p");
+    notice.className = "rd144-alert";
+    notice.textContent = booking.confirmation_email_status === "sent"
+      ? "Booking number sent to the email address used for the Stripe payment. The email also contains your secure upload link."
+      : "Copy this booking number now. Email delivery is not configured or has not completed yet.";
+    panel?.insertBefore(notice, panel.querySelector(".rd144-actions"));
+  }
+};
+
+
+rd142VerifyCheckout = async function (sessionId) {
+  rd142OpenBookingShell();
+  rd144SetBookingHeading("Confirming your payment", "Stripe payment is checked on the server before any sponsor position is created.", "Secure sponsor checkout");
+  const content = $("rd142BookingContent");
+  content.innerHTML = `<p class="rd142-booking-status">Verifying your payment securely…</p>`;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const url = new URL(RD142_SPONSOR_BOOKING_API);
+      url.searchParams.set("session_id", sessionId);
+      const payload = await rd142BookingRequest(url.href);
+      if (!payload?.booking) throw new Error("Booking confirmation was not found.");
+      const booking = {
+        ...payload.booking,
+        _submission_token: payload.submission_token || ""
+      };
+      rd144RememberBooking(booking.booking_code, payload.submission_token || "");
+      rd142ShowCheckoutResult(booking, true);
+      return;
+    } catch (error) {
+      if (attempt < 3 && /not confirmed|not be found|temporarily/i.test(String(error?.message || ""))) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1300));
+        continue;
+      }
+      if (/automatically refunded/i.test(String(error?.message || ""))) {
+        content.innerHTML = `<div class="rd142-booking-message"><h3>Week sold out — refund started</h3><p>${rd142Escape(error.message)}</p><p>No sponsor booking was created. Stripe and your bank may take additional time to display the refund.</p></div>`;
+        return;
+      }
+      content.innerHTML = rd142ContactMessage(
+        error?.name === "AbortError"
+          ? "Payment verification took too long. Do not pay again."
+          : error?.message
+      );
+      return;
+    }
+  }
+};
+
+
+function rd144PrepareStatusButton() {
+  rd144InstallSponsorStyles();
+  const section = $("rd141SponsorBooking");
+  if (!section || $("rd144SponsorStatusBtn") || rd142IsNativeApp()) return;
+  const button = document.createElement("button");
+  button.id = "rd144SponsorStatusBtn";
+  button.type = "button";
+  button.textContent = "Check booking";
+  button.addEventListener("click", () => rd144RenderStatusLookup());
+  section.appendChild(button);
+}
+
+
+function rd144InsertStatusSetting() {
+  if ($("rd144SponsorStatusSetting")) return;
+  const settingsContent = document.querySelector(
+    "#settingsPanel .panel-content"
+  );
+  if (!settingsContent) return;
+  const section = document.createElement("section");
+  section.id = "rd144SponsorStatusSetting";
+  section.className = "panel-section";
+  section.innerHTML = `
+    <h3>Sponsor advertising</h3>
+    <button id="rd144SettingsStatusBtn" class="wide-btn ghost-btn" type="button">
+      Check advertisement progress
+    </button>
+    <p class="small-note">
+      Enter the permanent RDA booking number sent after a successful sponsor payment.
+    </p>
+  `;
+  const dataSection = [...settingsContent.querySelectorAll(".panel-section")]
+    .find((candidate) => candidate.querySelector("h3")?.textContent?.trim() === "Data");
+  settingsContent.insertBefore(section, dataSection || null);
+  $("rd144SettingsStatusBtn")?.addEventListener("click", () => {
+    closePanels();
+    rd144RenderStatusLookup();
+  });
+}
+
+
+const rd144SponsorShow = rd131ShowSponsor;
+rd131ShowSponsor = function (config, key) {
+  const shown = rd144SponsorShow(config, key);
+  rd144PrepareStatusButton();
+  return shown;
+};
+
+
+rd131FetchSponsorConfig = async function () {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 3500);
+  try {
+    const url = new URL(RD142_SPONSOR_BOOKING_API);
+    url.searchParams.set("active", "1");
+    url.searchParams.set("rd-feed", String(Date.now()));
+    const response = await fetch(url.href, {
+      cache: "no-store",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+      },
+      signal: controller.signal
+    });
+    const supplied = response.ok ? await response.json() : null;
+    const ids = new Set();
+    const sponsors = (Array.isArray(supplied?.sponsors) ? supplied.sponsors : [])
+      .slice(0, 5)
+      .map((entry, index) => {
+        let id = String(entry?.id || `paid-sponsor-${index + 1}`)
+          .replace(/[^a-z0-9._-]/gi, "-").slice(0, 80);
+        if (!id || ids.has(id)) id = `paid-sponsor-${index + 1}`;
+        ids.add(id);
+        const version = String(entry?.version || supplied?.version || "");
+        const imageUrl = rd131SafeSponsorUrl(entry?.imageUrl || "", window.location.href);
+        return {
+          id,
+          active: entry?.active !== false,
+          imageUrl: imageUrl ? rd131VersionedSponsorImage(imageUrl, version) : "",
+          clickUrl: rd131SafeSponsorUrl(entry?.clickUrl || "", window.location.href),
+          alt: String(entry?.alt || "Weekly sponsor advertisement").trim().slice(0, 180),
+          startsAt: "",
+          endsAt: "",
+          version
+        };
+      })
+      .filter((entry) => entry.active && entry.imageUrl);
+    if (sponsors.length) {
+      return {
+        version: String(supplied?.version || ""),
+        bookingUrl: window.location.href,
+        sponsors
+      };
+    }
+  } catch (_) {
+    // The existing R2 sponsor configuration remains a safe fallback.
+  } finally {
+    window.clearTimeout(timeout);
+  }
+  return await rd144LegacySponsorFeed();
+};
+
+
+function rd144HandleSponsorLinks() {
+  const url = new URL(window.location.href);
+  const submitCode = String(url.searchParams.get("sponsor_submit") || "");
+  const submitToken = String(url.searchParams.get("token") || "");
+  const statusCode = String(url.searchParams.get("sponsor_status") || "");
+  if (!submitCode && !statusCode) return false;
+  url.searchParams.delete("sponsor_submit");
+  url.searchParams.delete("sponsor_status");
+  url.searchParams.delete("token");
+  window.history.replaceState(window.history.state, "", url.href);
+  if (submitCode && submitToken) {
+    rd144OpenSubmission(submitCode, submitToken);
+  } else if (statusCode) {
+    rd144RenderStatusLookup(statusCode);
+    void rd144LookupBooking(statusCode);
+  } else {
+    rd144RenderStatusLookup(submitCode);
+  }
+  return true;
+}
+
+
+function rd144InitSponsors() {
+  rd144InstallSponsorStyles();
+  rd131SponsorState.configPromise = null;
+  rd144PrepareStatusButton();
+  rd144InsertStatusSetting();
+  rd144HandleSponsorLinks();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", rd144InitSponsors, { once: true });
+} else {
+  rd144InitSponsors();
+}
