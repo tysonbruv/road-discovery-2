@@ -54643,6 +54643,10 @@ function rd154InstallStyles() {
       gap: 14px;
     }
 
+    .rd142-booking-card.rd154-rules-only > .rd142-booking-facts {
+      display: none;
+    }
+
     .rd154-rules-week {
       margin: 0;
       padding: 12px 14px;
@@ -54790,6 +54794,8 @@ function rd154InstallStyles() {
 function rd154RenderSponsorRules(week) {
   rd142OpenBookingShell();
   rd145SetConfirmationOnly(false);
+  document.querySelector(".rd142-booking-card")
+    ?.classList.add("rd154-rules-only");
   rd144SetBookingHeading(
     "Advertisement rules",
     "Confirm both statements before Road Discovery AU opens secure Stripe Checkout.",
@@ -54892,3 +54898,22 @@ rd144OpenSubmission = async function (code, token) {
 
 rd154InstallStyles();
 document.documentElement.dataset.roadDiscoverySponsorReviewRules = "v154";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v155
+   Cleaner Advertisement rules header
+   -------------------------------------------------- */
+
+const rd155OpenBookingShellWithRuleReset = rd142OpenBookingShell;
+
+
+rd142OpenBookingShell = function () {
+  const result = rd155OpenBookingShellWithRuleReset();
+  document.querySelector(".rd142-booking-card")
+    ?.classList.remove("rd154-rules-only");
+  return result;
+};
+
+
+document.documentElement.dataset.roadDiscoverySponsorRulesLayout = "v155";
