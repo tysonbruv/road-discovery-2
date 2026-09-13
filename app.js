@@ -51816,8 +51816,11 @@ function rd144ShowBookingStatus(booking, options = {}) {
       <p>Refund: ${rd142Escape(String(booking.refund_status || "not requested").replaceAll("_", " "))}</p>
       <div class="rd144-actions">
         ${code ? `<button id="rd144CopyCodeBtn" class="rd144-secondary-button" type="button">Copy booking number</button>` : ""}
-        ${token && ["pending_artwork", "pending_review", "needs_changes"].includes(booking.status)
+        ${token && ["pending_artwork", "needs_changes"].includes(booking.status)
           ? `<button id="rd144OpenUploadBtn" class="rd144-primary-button" type="button">${booking.status === "needs_changes" ? "Upload revised ad" : "Submit advertisement"}</button>`
+          : ""}
+        ${booking.status === "pending_review"
+          ? `<span class="rd154-submission-locked" role="status">&#10003; Advertisement submitted</span>`
           : ""}
         <button id="rd144CheckAnotherBtn" class="rd144-secondary-button" type="button">Check another booking</button>
       </div>
@@ -51914,11 +51917,15 @@ function rd144OpenSubmission(code, token) {
   }
   rd144RememberBooking(normalized, token);
   rd142OpenBookingShell();
-  rd144SetBookingHeading("Submit your advertisement", "Upload the image directly. It stays private until an administrator approves and publishes it.", "Verified paid booking");
+  rd144SetBookingHeading("Submit your advertisement", "Upload the image directly. It stays private and is manually reviewed before anything is published.", "Verified paid booking");
   const content = $("rd142BookingContent");
   content.innerHTML = `
     <form id="rd144UploadForm" class="rd144-upload-panel">
       <h3>${rd142Escape(normalized)}</h3>
+      <div class="rd154-upload-review-warning" role="note">
+        <strong>Manual review required</strong>
+        <span>All artwork is manually reviewed before publication. Inappropriate or non-compliant content will be rejected.</span>
+      </div>
       <label class="rd144-field">Business or advertiser name
         <input name="business_name" maxlength="100" required autocomplete="organization">
       </label>
@@ -52872,7 +52879,7 @@ function rd145BookingCard(booking) {
   );
   const dates = `${rd142FormatDate(booking.week_start)} – ${rd142FormatDate(booking.week_end)}`;
   const canUpload = booking?.submission_token &&
-    ["pending_artwork", "pending_review", "needs_changes"].includes(booking.status);
+    ["pending_artwork", "needs_changes"].includes(booking.status);
   return `
     <article class="rd145-booking-item rd153-status-${rd142Escape(statusView.tone)}" data-rd145-code="${rd142Escape(code)}">
       <div class="rd145-booking-meta">
@@ -52894,6 +52901,7 @@ function rd145BookingCard(booking) {
       <div class="rd145-booking-actions">
         <button type="button" data-rd145-action="view" data-rd145-code="${rd142Escape(code)}">View progress</button>
         ${canUpload ? `<button class="primary" type="button" data-rd145-action="upload" data-rd145-code="${rd142Escape(code)}">${booking.status === "needs_changes" ? "Upload revised ad" : "Submit advertisement"}</button>` : ""}
+        ${booking.status === "pending_review" ? `<span class="rd154-submission-locked" role="status">&#10003; Advertisement submitted</span>` : ""}
       </div>
     </article>
   `;
@@ -54614,3 +54622,273 @@ document.documentElement.dataset.roadDiscoverySponsorCta =
 
 document.documentElement.dataset.roadDiscoveryBookingStatusColours =
   "v153";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v154
+   Sponsor rules acknowledgement and review lock
+   -------------------------------------------------- */
+
+const rd154StartCheckoutAfterRules = rd142StartCheckout;
+const rd154OpenSubmissionWithoutStatusGuard = rd144OpenSubmission;
+
+
+function rd154InstallStyles() {
+  if ($("rd154SponsorRulesStyles")) return;
+  const style = document.createElement("style");
+  style.id = "rd154SponsorRulesStyles";
+  style.textContent = `
+    .rd154-rules-panel {
+      display: grid;
+      gap: 14px;
+    }
+
+    .rd154-rules-week {
+      margin: 0;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 138, 24, 0.35);
+      border-radius: 13px;
+      background: rgba(255, 138, 24, 0.07);
+      color: #ffbd78;
+      font-size: 13px;
+      font-weight: 850;
+      line-height: 1.45;
+    }
+
+    .rd154-rules-list {
+      min-width: 0;
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+
+    .rd154-rules-list legend {
+      margin-bottom: 10px;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    .rd154-rule-choice {
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr);
+      gap: 11px;
+      align-items: start;
+      padding: 13px;
+      border: 1px solid #34404d;
+      border-radius: 14px;
+      background: #10161d;
+      color: #eaf1f9;
+      cursor: pointer;
+    }
+
+    .rd154-rule-choice:has(input:checked) {
+      border-color: rgba(85, 237, 150, 0.55);
+      background: rgba(85, 237, 150, 0.07);
+    }
+
+    .rd154-rule-choice input {
+      width: 20px;
+      height: 20px;
+      margin: 1px 0 0;
+      accent-color: #55ed96;
+    }
+
+    .rd154-rule-choice span {
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.55;
+    }
+
+    .rd154-rules-notice,
+    .rd154-upload-review-warning {
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 173, 92, 0.3);
+      border-radius: 13px;
+      background: rgba(255, 138, 24, 0.075);
+      color: #dce5ef;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .rd154-rules-notice strong,
+    .rd154-upload-review-warning strong,
+    .rd154-upload-review-warning span {
+      display: block;
+    }
+
+    .rd154-rules-notice strong,
+    .rd154-upload-review-warning strong {
+      margin-bottom: 3px;
+      color: #ffad5c;
+      font-weight: 900;
+    }
+
+    .rd154-rules-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+    }
+
+    .rd154-rules-actions button {
+      min-height: 44px;
+    }
+
+    #rd154ContinueStripeBtn:disabled {
+      border-color: #303944;
+      background: #222a33;
+      color: #7f8b99;
+      cursor: not-allowed;
+      opacity: 0.78;
+    }
+
+    .rd154-rules-status {
+      min-height: 18px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .rd154-submission-locked {
+      display: inline-flex;
+      min-height: 39px;
+      align-items: center;
+      padding: 8px 11px;
+      border: 1px solid rgba(98, 186, 255, 0.38);
+      border-radius: 11px;
+      background: rgba(98, 186, 255, 0.08);
+      color: #a9d8ff;
+      font-size: 11px;
+      font-weight: 850;
+      line-height: 1.3;
+    }
+
+    .rd154-upload-review-warning {
+      margin-bottom: 2px;
+    }
+
+    @media (max-width: 520px) {
+      .rd154-rule-choice {
+        padding: 12px 11px;
+      }
+
+      .rd154-rules-actions button,
+      .rd154-submission-locked {
+        flex: 1 1 100%;
+        justify-content: center;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+
+function rd154RenderSponsorRules(week) {
+  rd142OpenBookingShell();
+  rd145SetConfirmationOnly(false);
+  rd144SetBookingHeading(
+    "Advertisement rules",
+    "Confirm both statements before Road Discovery AU opens secure Stripe Checkout.",
+    "Before payment"
+  );
+
+  const content = $("rd142BookingContent");
+  if (!content) return;
+  const dates = `${rd142FormatDate(week.week_start)} – ${rd142FormatDate(week.week_end)}`;
+  content.innerHTML = `
+    <section class="rd154-rules-panel" aria-labelledby="rd154RulesLegend">
+      <p class="rd154-rules-week">${rd142Escape(dates)} · $20 AUD · one of five rotating positions</p>
+      <fieldset class="rd154-rules-list">
+        <legend id="rd154RulesLegend">Confirm both before payment</legend>
+        <label class="rd154-rule-choice">
+          <input id="rd154ContentRulesCheck" type="checkbox">
+          <span>My advertisement will not contain illegal, sexually explicit, hateful, violent, deceptive, infringing or unsafe content, and I have permission to use its images, logos and text.</span>
+        </label>
+        <label class="rd154-rule-choice">
+          <input id="rd154ManualReviewCheck" type="checkbox">
+          <span>I understand every advertisement is manually reviewed, Stripe payment does not guarantee publication, and non-compliant advertisements may be rejected and refunded under the displayed refund policy.</span>
+        </label>
+      </fieldset>
+      <div class="rd154-rules-notice" role="note">
+        <strong>Payment and review are separate</strong>
+        Stripe securely processes the payment. Road Discovery AU performs the content review. Submission details are retained for security, moderation and dispute handling.
+      </div>
+      <div class="rd154-rules-actions">
+        <button id="rd154RulesBackBtn" class="rd144-secondary-button" type="button">Back to weeks</button>
+        <button id="rd154ContinueStripeBtn" class="rd144-primary-button" type="button" disabled>Continue to Stripe</button>
+      </div>
+      <p id="rd154RulesStatus" class="rd154-rules-status" role="status">Both confirmations are required before Stripe Checkout can open.</p>
+    </section>
+  `;
+
+  const contentCheck = $("rd154ContentRulesCheck");
+  const reviewCheck = $("rd154ManualReviewCheck");
+  const continueButton = $("rd154ContinueStripeBtn");
+  const backButton = $("rd154RulesBackBtn");
+  const status = $("rd154RulesStatus");
+
+  const updateContinueState = () => {
+    const ready = Boolean(contentCheck?.checked && reviewCheck?.checked);
+    if (continueButton) continueButton.disabled = !ready;
+    if (status) {
+      status.textContent = ready
+        ? "Confirmed. You can continue to secure Stripe Checkout."
+        : "Both confirmations are required before Stripe Checkout can open.";
+    }
+  };
+
+  contentCheck?.addEventListener("change", updateContinueState);
+  reviewCheck?.addEventListener("change", updateContinueState);
+  backButton?.addEventListener("click", () => void rd142OpenBooking());
+  continueButton?.addEventListener("click", async () => {
+    if (!contentCheck?.checked || !reviewCheck?.checked) {
+      updateContinueState();
+      return;
+    }
+    continueButton.disabled = true;
+    if (backButton) backButton.disabled = true;
+    await rd154StartCheckoutAfterRules(week, continueButton, status);
+  });
+  window.setTimeout(() => contentCheck?.focus(), 0);
+}
+
+
+rd142StartCheckout = function (week, button, status) {
+  if (!state.auth.user || !state.auth.session?.access_token) {
+    return rd154StartCheckoutAfterRules(week, button, status);
+  }
+  rd154RenderSponsorRules(week);
+};
+
+
+rd144OpenSubmission = async function (code, token) {
+  const normalized = rd144NormalizeBookingCode(code);
+  if (!normalized) {
+    rd154OpenSubmissionWithoutStatusGuard(code, token);
+    return;
+  }
+
+  try {
+    const url = new URL(RD142_SPONSOR_BOOKING_API);
+    url.searchParams.set("booking_code", normalized);
+    const payload = await rd142BookingRequest(url.href);
+    if (payload?.booking && !["pending_artwork", "needs_changes"].includes(payload.booking.status)) {
+      rd144RememberBooking(normalized, token);
+      rd142OpenBookingShell();
+      rd144ShowBookingStatus(payload.booking, { token });
+      return;
+    }
+  } catch (_) {
+    // The upload endpoint remains the authority if the status lookup is temporarily unavailable.
+  }
+
+  rd154OpenSubmissionWithoutStatusGuard(normalized, token);
+};
+
+
+rd154InstallStyles();
+document.documentElement.dataset.roadDiscoverySponsorReviewRules = "v154";
