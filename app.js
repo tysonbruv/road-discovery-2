@@ -50488,7 +50488,7 @@ function rd141InstallBookingStyles() {
         background: rgba(255, 138, 24, 0.035);
       }
 
-      .rd141-sponsor-booking-copy,
+      .rd141-sponsor-booking > .rd141-sponsor-booking-copy,
       .rd151-sponsor-booking-desktop-action {
         display: none;
       }
@@ -54495,9 +54495,9 @@ document.documentElement.dataset.roadDiscoveryStorage = "indexeddb-v150";
 
 
 /* --------------------------------------------------
-   Road Discovery AU v151
-   Compact mobile sponsor footer
+   Road Discovery AU v152
+   Compact mobile sponsor footer correction
    -------------------------------------------------- */
 
 document.documentElement.dataset.roadDiscoverySponsorCta =
-  "compact-mobile-v151";
+  "compact-mobile-v152";
