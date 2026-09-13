@@ -50354,16 +50354,23 @@ function rd141InstallBookingCta() {
   booking.id = "rd141SponsorBooking";
   booking.className = "rd141-sponsor-booking";
   booking.innerHTML = `
-    <div>
+    <div class="rd141-sponsor-booking-copy">
       <strong>Your ad here</strong>
       <span>Five weekly positions · $20 per week</span>
     </div>
 
+    <strong
+      class="rd151-sponsor-booking-mobile-copy"
+      aria-hidden="true"
+    >Advertise · $20/week</strong>
+
     <button
       id="rd141SponsorBookBtn"
       type="button"
+      aria-label="Book weekly sponsor advertising"
     >
-      Book now
+      <span class="rd151-sponsor-booking-desktop-action">Book now</span>
+      <span class="rd151-sponsor-booking-mobile-action" aria-hidden="true">Book</span>
     </button>
   `;
 
@@ -50424,6 +50431,11 @@ function rd141InstallBookingStyles() {
       min-width: 0;
     }
 
+    .rd151-sponsor-booking-mobile-copy,
+    .rd151-sponsor-booking-mobile-action {
+      display: none;
+    }
+
     .rd141-sponsor-booking strong {
       color: #ffffff;
       font-size: 14px;
@@ -50450,19 +50462,61 @@ function rd141InstallBookingStyles() {
       -webkit-tap-highlight-color: transparent;
     }
 
+    #rd141SponsorBookBtn .rd151-sponsor-booking-desktop-action,
+    #rd141SponsorBookBtn .rd151-sponsor-booking-mobile-action {
+      color: inherit;
+      font: inherit;
+      line-height: inherit;
+    }
+
     #rd141SponsorBookBtn:focus-visible {
       outline: 3px solid #4bb3ff;
       outline-offset: 2px;
     }
 
-    @media (max-width: 420px) {
+    @media (max-width: 600px) {
       .rd141-sponsor-booking {
-        align-items: stretch;
-        flex-direction: column;
+        min-height: 52px;
+        align-items: center;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 8px;
+        margin-top: 7px;
+        padding: 6px 7px 6px 10px;
+        border-color: rgba(255, 138, 24, 0.24);
+        border-radius: 12px;
+        background: rgba(255, 138, 24, 0.035);
+      }
+
+      .rd141-sponsor-booking-copy,
+      .rd151-sponsor-booking-desktop-action {
+        display: none;
+      }
+
+      .rd151-sponsor-booking-mobile-copy {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        color: #d7dce3;
+        font-size: 12px;
+        font-weight: 850;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #rd141SponsorBookBtn .rd151-sponsor-booking-mobile-action {
+        display: inline;
       }
 
       #rd141SponsorBookBtn {
-        width: 100%;
+        width: auto;
+        min-height: 40px;
+        padding: 0 14px;
+        border: 1px solid rgba(255, 138, 24, 0.58);
+        background: rgba(255, 138, 24, 0.08);
+        color: #ffad5c;
+        font-size: 12px;
       }
     }
   `;
@@ -51701,12 +51755,15 @@ function rd144InstallSponsorStyles() {
       cursor: pointer;
     }
 
+    @media (max-width: 600px) {
+      #rd141SponsorBooking { flex-wrap: nowrap; }
+      #rd144SponsorStatusBtn { display: none; }
+    }
+
     @media (max-width: 450px) {
       .rd144-lookup-row { grid-template-columns: 1fr; }
       .rd144-lookup-row button,
       .rd144-actions button { width: 100%; }
-      #rd141SponsorBooking { flex-wrap: wrap; }
-      #rd144SponsorStatusBtn { width: 100%; }
     }
   `;
   document.head.appendChild(style);
@@ -54435,3 +54492,12 @@ window.addEventListener("pagehide", () => {
 });
 
 document.documentElement.dataset.roadDiscoveryStorage = "indexeddb-v150";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v151
+   Compact mobile sponsor footer
+   -------------------------------------------------- */
+
+document.documentElement.dataset.roadDiscoverySponsorCta =
+  "compact-mobile-v151";
