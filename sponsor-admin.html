@@ -29,6 +29,7 @@
     .folder-panel{padding:15px}.folder-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:11px}.folder-head h2{font-size:19px}.compact-list{display:grid;gap:8px}.compact-booking{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:11px;width:100%;padding:10px;border:1px solid #34404c;border-radius:12px;background:#0b1016;color:#fff;text-align:left;cursor:pointer}.compact-booking:hover{border-color:#617181;background:#121923}.compact-icon{display:grid;width:44px;height:44px;place-items:center;overflow:hidden;border-radius:10px;background:#202833;color:#dbe5f0;font-weight:900}.compact-icon img{width:100%;height:100%;object-fit:cover}.compact-copy{min-width:0}.compact-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.compact-copy span{display:block;margin-top:3px;color:var(--muted);font-size:11px}.compact-status{border:1px solid #46515e;border-radius:999px;padding:5px 8px;color:#dfe6ee;font-size:9px;font-weight:850;text-transform:uppercase}.folder-group-title{margin:17px 2px 8px;color:#ffad5c;font-size:13px}.folder-empty{padding:22px;color:var(--muted);text-align:center}.detail-back{margin-bottom:12px}.archive-year{margin:18px 2px 9px;color:#fff;font-size:17px}
     @media(max-width:900px){.summary.workflow-folders{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:520px){.summary.workflow-folders{grid-template-columns:1fr}.compact-booking{grid-template-columns:40px minmax(0,1fr)}.compact-status{grid-column:2;justify-self:start}.workflow-folder{min-height:66px}}
+    .delete-confirm-code{width:100%;margin:14px 0;border:1px solid #5b4650;border-radius:10px;padding:11px;background:#090d12;color:#fff;font:700 13px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;text-transform:uppercase}
   </style>
 </head>
 <body>
@@ -61,6 +62,14 @@
   <p id="reasonHelp" class="muted"></p>
   <textarea id="reasonText" maxlength="1000"></textarea>
   <div class="dialog-actions"><button id="reasonCancel" class="btn" type="button">Cancel</button><button id="reasonConfirm" class="btn primary" type="button">Confirm</button></div>
+</dialog>
+
+<dialog id="deleteTestDialog">
+  <h2>Delete test booking permanently?</h2>
+  <p class="muted">This removes the test booking, its stored test artwork and its link reports. Stripe will be checked first, and live payments cannot be deleted.</p>
+  <p id="deleteTestCode" class="booking-code" style="margin-top:14px"></p>
+  <input id="deleteTestInput" class="delete-confirm-code" type="text" autocomplete="off" placeholder="Type the booking number">
+  <div class="dialog-actions"><button id="deleteTestCancel" class="btn" type="button">Cancel</button><button id="deleteTestConfirm" class="btn danger" type="button">Delete test booking</button></div>
 </dialog>
 
 <script>
@@ -188,6 +197,7 @@ function cardHtml(booking){
       <button class="btn good" data-action="approve" type="button" ${canApprove?"":"disabled"}>Approve</button>
       <button class="btn primary" data-action="publish" type="button" ${canPublish?"":"disabled"}>Publish to app</button>
       <button class="btn danger" data-action="refund" type="button" ${refundable?"":"disabled"}>Reject & refund</button>
+      ${booking.is_test_booking&&workflowFolderFor(booking)==="archive"?`<button class="btn danger" data-action="delete_test" type="button">Delete test booking</button>`:""}
       <button class="btn linkReports" type="button">Link reports: ${reportTotal}</button>
       ${booking.click_url?`<button class="btn" data-action="${linkEnabled?"disable_link":"enable_link"}" type="button">${linkEnabled?"Temporarily disable link":"Enable link"}</button>`:""}
       <button class="btn" data-action="resend_confirmation" type="button">Resend paid email</button>
@@ -198,6 +208,7 @@ function cardHtml(booking){
 
 function values(card){return Object.fromEntries([...card.querySelectorAll("[data-field]")].map(element=>[element.dataset.field,element.value]))}
 function ask(title,help,confirmLabel){return new Promise(resolve=>{const dialog=$("reasonDialog");$("reasonTitle").textContent=title;$("reasonHelp").textContent=help;$("reasonText").value="";$("reasonConfirm").textContent=confirmLabel;dialog.showModal();const done=value=>{dialog.close();resolve(value)};$("reasonCancel").onclick=()=>done(null);$("reasonConfirm").onclick=()=>{const value=$("reasonText").value.trim();if(value.length<5){$("reasonText").focus();return}done(value)}})}
+function confirmTestDeletion(booking){return new Promise(resolve=>{const dialog=$("deleteTestDialog");$("deleteTestCode").textContent=booking.booking_code;$("deleteTestInput").value="";dialog.showModal();$("deleteTestInput").focus();const done=value=>{dialog.close();resolve(value)};$("deleteTestCancel").onclick=()=>done("");$("deleteTestConfirm").onclick=()=>{const value=$("deleteTestInput").value.trim().toUpperCase();if(value!==booking.booking_code){$("deleteTestInput").setCustomValidity("Type the complete matching booking number.");$("deleteTestInput").reportValidity();return}$("deleteTestInput").setCustomValidity("");done(value)}})}
 
 function bindCards(){
   document.querySelectorAll(".card").forEach(card=>{
@@ -211,12 +222,16 @@ function bindCards(){
       let reason;
       if(action==="needs_changes")reason=await ask("Request artwork changes","Write exactly what needs fixing. The reason appears in the advertiser's status and is emailed when email delivery is configured.","Request changes");
       if(action==="refund")reason=await ask("Reject and issue full refund","This sends a real full refund through Stripe. Give the advertiser a clear reason.","Reject & refund");
+      let confirmation_code="";
+      if(action==="delete_test")confirmation_code=await confirmTestDeletion(booking);
       if((action==="needs_changes"||action==="refund")&&!reason)return;
+      if(action==="delete_test"&&!confirmation_code)return;
       const message=card.querySelector(".message");
       message.textContent="Working…";
       card.querySelectorAll("button[data-action]").forEach(item=>item.disabled=true);
       try{
-        const data=await api("PATCH",{id:booking.id,action,...values(card),reason});
+        const data=await api("PATCH",{id:booking.id,action,...values(card),reason,confirmation_code});
+        if(data.deleted){bookings=bookings.filter(item=>item.id!==booking.id);selectedBookingId="";render();return}
         bookings=bookings.map(item=>item.id===booking.id?data.booking:item);
         if(["needs_changes","approve","publish","refund"].includes(action))selectedBookingId="";
         render();
