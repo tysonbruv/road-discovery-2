@@ -50655,7 +50655,7 @@ function rd142InstallBookingUi() {
 
     .rd142-week-title {
       display: block;
-      color: #ffffff;
+      color: #ffad5c;
       font-size: 14px;
       line-height: 1.35;
     }
@@ -52110,7 +52110,7 @@ function rd145InstallStyles() {
     }
 
     .rd145-booking-meta strong {
-      color: #ffffff;
+      color: #ffad5c;
       font-size: 12px;
       line-height: 1.35;
     }
