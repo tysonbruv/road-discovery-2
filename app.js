@@ -53367,3 +53367,1071 @@ if (document.readyState === "loading") {
 } else {
   rd149InitSeparatedPanels();
 }
+
+
+/* =====================================================
+   Road Discovery AU v150
+   Scalable per-account road storage with IndexedDB
+   ===================================================== */
+
+const RD150_DB_NAME = "roadDiscoveryAU.progress.v2";
+const RD150_DB_VERSION = 1;
+const RD150_SEGMENT_STORE = "segments";
+const RD150_DAILY_STORE = "dailyRoads";
+const RD150_ACCOUNT_STORE = "accounts";
+const RD150_SEGMENT_USER_INDEX = "userId";
+const RD150_DAILY_USER_INDEX = "userId";
+const RD150_DAILY_USER_DATE_INDEX = "userDate";
+const RD150_WRITE_BATCH_SIZE = 600;
+
+const roadDiscoveryV150 = {
+  ensureRoadProfile,
+  signOutRoadProfile,
+  startDrive,
+  finishDrive,
+  resetDiscoveredRoads,
+  rememberSavedSegment,
+  rd69ActivateAccount,
+  rd69WriteAccountPart,
+  rd65ReconcileBackup,
+  rd65BackupFinishedDrive,
+  rd65DownloadPrivateRoads
+};
+
+state.indexedProgress = {
+  dbPromise: null,
+  activeUserId: "",
+  readyUserId: "",
+  loadingByUser: new Map(),
+  migratingUsers: new Set(),
+  pendingSegmentsByUser: new Map(),
+  pendingDailyByUser: new Map(),
+  visitedOnlyByUser: new Map(),
+  flushByUser: new Map(),
+  flushScheduled: false,
+  warningShown: false,
+  persistenceRequested: false,
+  persistenceGranted: false,
+  generationByUser: new Map(),
+  retryAfterByUser: new Map()
+};
+
+
+function rd150Request(request) {
+  return new Promise((resolve, reject) => {
+    request.addEventListener("success", () => resolve(request.result), {
+      once: true
+    });
+    request.addEventListener("error", () => {
+      reject(request.error || new Error("IndexedDB request failed"));
+    }, { once: true });
+  });
+}
+
+
+function rd150TransactionDone(transaction) {
+  return new Promise((resolve, reject) => {
+    transaction.addEventListener("complete", () => resolve(true), {
+      once: true
+    });
+    transaction.addEventListener("abort", () => {
+      reject(transaction.error || new Error("IndexedDB transaction was aborted"));
+    }, { once: true });
+    transaction.addEventListener("error", () => {
+      reject(transaction.error || new Error("IndexedDB transaction failed"));
+    }, { once: true });
+  });
+}
+
+
+function rd150OpenDatabase() {
+  if (state.indexedProgress.dbPromise) {
+    return state.indexedProgress.dbPromise;
+  }
+
+  state.indexedProgress.dbPromise = new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) {
+      reject(new Error("IndexedDB is unavailable in this browser"));
+      return;
+    }
+
+    const request = indexedDB.open(
+      RD150_DB_NAME,
+      RD150_DB_VERSION
+    );
+
+    request.addEventListener("upgradeneeded", () => {
+      const database = request.result;
+
+      if (!database.objectStoreNames.contains(RD150_SEGMENT_STORE)) {
+        const store = database.createObjectStore(
+          RD150_SEGMENT_STORE,
+          { keyPath: "key" }
+        );
+        store.createIndex(
+          RD150_SEGMENT_USER_INDEX,
+          "userId",
+          { unique: false }
+        );
+      }
+
+      if (!database.objectStoreNames.contains(RD150_ACCOUNT_STORE)) {
+        database.createObjectStore(
+          RD150_ACCOUNT_STORE,
+          { keyPath: "userId" }
+        );
+      }
+
+      if (!database.objectStoreNames.contains(RD150_DAILY_STORE)) {
+        const dailyStore = database.createObjectStore(
+          RD150_DAILY_STORE,
+          { keyPath: "key" }
+        );
+        dailyStore.createIndex(
+          RD150_DAILY_USER_INDEX,
+          "userId",
+          { unique: false }
+        );
+        dailyStore.createIndex(
+          RD150_DAILY_USER_DATE_INDEX,
+          "userDate",
+          { unique: false }
+        );
+      }
+    });
+
+    request.addEventListener("success", () => {
+      const database = request.result;
+      database.addEventListener("versionchange", () => database.close());
+      resolve(database);
+    }, { once: true });
+
+    request.addEventListener("error", () => {
+      state.indexedProgress.dbPromise = null;
+      reject(request.error || new Error("Could not open IndexedDB"));
+    }, { once: true });
+
+    request.addEventListener("blocked", () => {
+      console.warn("Road progress database upgrade is blocked by another tab");
+    });
+  });
+
+  return state.indexedProgress.dbPromise;
+}
+
+
+function rd150UserGeneration(userId) {
+  return Number(
+    state.indexedProgress.generationByUser.get(String(userId || "")) || 0
+  );
+}
+
+
+function rd150AdvanceUserGeneration(userId) {
+  const id = String(userId || "");
+  const next = rd150UserGeneration(id) + 1;
+  state.indexedProgress.generationByUser.set(id, next);
+  return next;
+}
+
+
+function rd150SegmentKey(userId, segmentId) {
+  return `${String(userId)}\u001f${String(segmentId)}`;
+}
+
+
+function rd150UserDateKey(userId, date) {
+  return `${String(userId)}\u001f${String(date)}`;
+}
+
+
+function rd150DailyKey(userId, date, segmentId) {
+  return `${rd150UserDateKey(userId, date)}\u001f${String(segmentId)}`;
+}
+
+
+function rd150DailyRow(userId, date, segmentId, lengthM) {
+  const id = String(userId || "");
+  const day = String(date || "");
+  const roadId = String(segmentId || "");
+  const length = Math.max(1, Math.round(Number(lengthM) || SEGMENT_SIZE_M));
+
+  if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !roadId) return null;
+
+  return {
+    key: rd150DailyKey(id, day, roadId),
+    userId: id,
+    userDate: rd150UserDateKey(id, day),
+    date: day,
+    segmentId: roadId,
+    lengthM: length
+  };
+}
+
+
+function rd150DailyRowsFromToday(userId, todayUnlocks) {
+  const today = rd69NormaliseToday(todayUnlocks);
+
+  return Object.entries(today.keys || {})
+    .map(([segmentId, lengthM]) =>
+      rd150DailyRow(userId, today.date, segmentId, lengthM)
+    )
+    .filter(Boolean);
+}
+
+
+function rd150SegmentRow(userId, segment) {
+  const id = String(segment?.id || "");
+
+  if (!id || !validCoords(segment?.coords)) return null;
+
+  const normalised = normaliseSavedSegment(id, segment);
+  if (!normalised) return null;
+
+  return {
+    key: rd150SegmentKey(userId, normalised.id),
+    userId: String(userId),
+    segmentId: normalised.id,
+    name: normalised.name,
+    highway: normalised.highway,
+    coords: compactCoords(normalised.coords),
+    lengthM: Math.max(1, Math.round(Number(normalised.lengthM) || 0)),
+    unlockedAt: Math.max(1, Number(normalised.unlockedAt) || Date.now()),
+    updatedAt: Date.now()
+  };
+}
+
+
+function rd150SegmentFromRow(row) {
+  const id = String(row?.segmentId || "");
+  if (!id) return null;
+
+  return normaliseSavedSegment(id, {
+    id,
+    name: row?.name,
+    highway: row?.highway,
+    coords: row?.coords,
+    lengthM: row?.lengthM,
+    unlockedAt: row?.unlockedAt
+  });
+}
+
+
+async function rd150ReadIndexedProgress(userId) {
+  const id = String(userId || "");
+  const database = await rd150OpenDatabase();
+  const transaction = database.transaction(
+    [RD150_SEGMENT_STORE, RD150_DAILY_STORE, RD150_ACCOUNT_STORE],
+    "readonly"
+  );
+  const complete = rd150TransactionDone(transaction);
+  const segmentStore = transaction.objectStore(RD150_SEGMENT_STORE);
+  const accountStore = transaction.objectStore(RD150_ACCOUNT_STORE);
+  const index = segmentStore.index(RD150_SEGMENT_USER_INDEX);
+  const dailyIndex = transaction
+    .objectStore(RD150_DAILY_STORE)
+    .index(RD150_DAILY_USER_DATE_INDEX);
+  const today = getTodayKey();
+
+  const [rows, dailyRows, account] = await Promise.all([
+    rd150Request(index.getAll(id)),
+    rd150Request(dailyIndex.getAll(rd150UserDateKey(id, today))),
+    rd150Request(accountStore.get(id))
+  ]);
+  await complete;
+
+  const visitedOnly = rd69NormaliseVisited(account?.visitedOnly);
+  const visited = { ...visitedOnly };
+  const savedSegments = {};
+  const todayUnlocks = { date: today, keys: {} };
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const segment = rd150SegmentFromRow(row);
+    if (!segment) continue;
+
+    savedSegments[segment.id] = segment;
+    visited[segment.id] = Math.max(1, Number(segment.unlockedAt) || 1);
+  }
+
+  for (const row of Array.isArray(dailyRows) ? dailyRows : []) {
+    const segmentId = String(row?.segmentId || "");
+    if (!segmentId) continue;
+    todayUnlocks.keys[segmentId] = Math.max(
+      1,
+      Math.round(Number(row?.lengthM) || SEGMENT_SIZE_M)
+    );
+  }
+
+  return {
+    visited,
+    savedSegments,
+    todayUnlocks: rd150MergeToday(
+      todayUnlocks,
+      account?.todayUnlocks
+    ),
+    visitedOnly,
+    count: Object.keys(savedSegments).length
+  };
+}
+
+
+async function rd150WriteSegmentRows(userId, segments, expectedGeneration) {
+  const id = String(userId || "");
+  const source = Array.isArray(segments) ? segments : [];
+
+  for (let start = 0; start < source.length; start += RD150_WRITE_BATCH_SIZE) {
+    if (rd150UserGeneration(id) !== expectedGeneration) return false;
+
+    const rows = source
+      .slice(start, start + RD150_WRITE_BATCH_SIZE)
+      .map((segment) => rd150SegmentRow(id, segment))
+      .filter(Boolean);
+
+    if (rows.length === 0) continue;
+
+    const database = await rd150OpenDatabase();
+    const transaction = database.transaction(RD150_SEGMENT_STORE, "readwrite");
+    const complete = rd150TransactionDone(transaction);
+    const store = transaction.objectStore(RD150_SEGMENT_STORE);
+
+    for (const row of rows) store.put(row);
+    await complete;
+  }
+
+  return rd150UserGeneration(id) === expectedGeneration;
+}
+
+
+async function rd150WriteDailyRows(userId, rows, expectedGeneration) {
+  const id = String(userId || "");
+  const source = Array.isArray(rows) ? rows.filter(Boolean) : [];
+
+  for (let start = 0; start < source.length; start += RD150_WRITE_BATCH_SIZE) {
+    if (rd150UserGeneration(id) !== expectedGeneration) return false;
+
+    const batch = source.slice(start, start + RD150_WRITE_BATCH_SIZE);
+    if (batch.length === 0) continue;
+
+    const database = await rd150OpenDatabase();
+    const transaction = database.transaction(RD150_DAILY_STORE, "readwrite");
+    const complete = rd150TransactionDone(transaction);
+    const store = transaction.objectStore(RD150_DAILY_STORE);
+
+    for (const row of batch) store.put(row);
+    await complete;
+  }
+
+  return rd150UserGeneration(id) === expectedGeneration;
+}
+
+
+async function rd150WriteAccountMeta(
+  userId,
+  expectedGeneration,
+  visitedOnly = state.indexedProgress.visitedOnlyByUser.get(String(userId || ""))
+) {
+  const id = String(userId || "");
+  if (rd150UserGeneration(id) !== expectedGeneration) return false;
+
+  const database = await rd150OpenDatabase();
+  const transaction = database.transaction(RD150_ACCOUNT_STORE, "readwrite");
+  const complete = rd150TransactionDone(transaction);
+
+  transaction.objectStore(RD150_ACCOUNT_STORE).put({
+    userId: id,
+    visitedOnly: rd69NormaliseVisited(visitedOnly),
+    schemaVersion: 1,
+    updatedAt: new Date().toISOString()
+  });
+
+  await complete;
+  return rd150UserGeneration(id) === expectedGeneration;
+}
+
+
+async function rd150CountIndexedSegments(userId) {
+  const database = await rd150OpenDatabase();
+  const transaction = database.transaction(RD150_SEGMENT_STORE, "readonly");
+  const complete = rd150TransactionDone(transaction);
+  const count = await rd150Request(
+    transaction
+      .objectStore(RD150_SEGMENT_STORE)
+      .index(RD150_SEGMENT_USER_INDEX)
+      .count(String(userId || ""))
+  );
+  await complete;
+  return Math.max(0, Number(count) || 0);
+}
+
+
+async function rd150DeleteIndexedAccount(userId) {
+  const id = String(userId || "");
+  const database = await rd150OpenDatabase();
+  const transaction = database.transaction(
+    [RD150_SEGMENT_STORE, RD150_DAILY_STORE, RD150_ACCOUNT_STORE],
+    "readwrite"
+  );
+  const complete = rd150TransactionDone(transaction);
+  const segmentStore = transaction.objectStore(RD150_SEGMENT_STORE);
+  const request = segmentStore
+    .index(RD150_SEGMENT_USER_INDEX)
+    .openKeyCursor(IDBKeyRange.only(id));
+
+  request.addEventListener("success", () => {
+    const cursor = request.result;
+    if (!cursor) return;
+    segmentStore.delete(cursor.primaryKey);
+    cursor.continue();
+  });
+
+  const dailyStore = transaction.objectStore(RD150_DAILY_STORE);
+  const dailyRequest = dailyStore
+    .index(RD150_DAILY_USER_INDEX)
+    .openKeyCursor(IDBKeyRange.only(id));
+
+  dailyRequest.addEventListener("success", () => {
+    const cursor = dailyRequest.result;
+    if (!cursor) return;
+    dailyStore.delete(cursor.primaryKey);
+    cursor.continue();
+  });
+
+  transaction.objectStore(RD150_ACCOUNT_STORE).delete(id);
+  await complete;
+}
+
+
+async function rd150DeleteOldDailyRows(userId, keepDate = getTodayKey()) {
+  const id = String(userId || "");
+  const database = await rd150OpenDatabase();
+  const transaction = database.transaction(RD150_DAILY_STORE, "readwrite");
+  const complete = rd150TransactionDone(transaction);
+  const store = transaction.objectStore(RD150_DAILY_STORE);
+  const request = store
+    .index(RD150_DAILY_USER_INDEX)
+    .openCursor(IDBKeyRange.only(id));
+
+  request.addEventListener("success", () => {
+    const cursor = request.result;
+    if (!cursor) return;
+    if (String(cursor.value?.date || "") !== String(keepDate)) {
+      cursor.delete();
+    }
+    cursor.continue();
+  });
+
+  await complete;
+}
+
+
+function rd150MergeToday(...values) {
+  const today = getTodayKey();
+  const merged = { date: today, keys: {} };
+
+  for (const value of values) {
+    const normalised = rd69NormaliseToday(value);
+    if (normalised.date !== today) continue;
+
+    for (const [segmentId, lengthM] of Object.entries(normalised.keys || {})) {
+      const length = Math.max(1, Math.round(Number(lengthM) || SEGMENT_SIZE_M));
+      merged.keys[segmentId] = Math.max(
+        Number(merged.keys[segmentId]) || 0,
+        length
+      );
+    }
+  }
+
+  return merged;
+}
+
+
+function rd150MergeProgress(...sources) {
+  const merged = {
+    visited: {},
+    savedSegments: {},
+    todayUnlocks: rd150MergeToday(
+      ...sources.map((source) => source?.todayUnlocks)
+    )
+  };
+
+  for (const source of sources) {
+    for (const [segmentId, value] of Object.entries(source?.visited || {})) {
+      const timestamp = Math.max(1, Number(value) || 1);
+      if (!merged.visited[segmentId]) merged.visited[segmentId] = timestamp;
+    }
+
+    for (const [segmentId, value] of Object.entries(source?.savedSegments || {})) {
+      if (merged.savedSegments[segmentId]) continue;
+
+      const previousVisited = state.visited;
+      let segment = null;
+
+      try {
+        state.visited = source?.visited || {};
+        segment = normaliseSavedSegment(segmentId, value);
+      } finally {
+        state.visited = previousVisited;
+      }
+
+      if (!segment) continue;
+      merged.savedSegments[segment.id] = segment;
+      merged.visited[segment.id] = Math.max(
+        1,
+        Number(merged.visited[segment.id]) ||
+          Number(segment.unlockedAt) ||
+          1
+      );
+    }
+  }
+
+  return merged;
+}
+
+
+function rd150CurrentProgress(userId) {
+  if (String(state.accountProgress.activeUserId || "") !== String(userId || "")) {
+    return {
+      visited: {},
+      savedSegments: {},
+      todayUnlocks: { date: getTodayKey(), keys: {} }
+    };
+  }
+
+  return {
+    visited: state.visited || {},
+    savedSegments: state.savedSegments || {},
+    todayUnlocks: state.todayUnlocks
+  };
+}
+
+
+function rd150LegacyProgress(userId) {
+  const account = rd69ReadAccountProgress(userId);
+
+  if (
+    rd69LegacyProgress.available &&
+    (!rd69LegacyProgress.ownerId || rd69LegacyProgress.ownerId === String(userId))
+  ) {
+    const visited = rd69NormaliseVisited(rd69LegacyProgress.visitedRaw);
+    const savedSegments = rd69NormaliseSaved(
+      rd69LegacyProgress.savedRaw,
+      visited
+    );
+    const todayUnlocks = rd69NormaliseToday(rd69LegacyProgress.todayRaw);
+    return rd150MergeProgress(account, {
+      visited,
+      savedSegments,
+      todayUnlocks
+    });
+  }
+
+  return account;
+}
+
+
+function rd150RemoveVerifiedLegacyCopies(userId) {
+  const id = String(userId || "");
+  rd69RemoveRaw(rd69AccountKey(id, "saved"));
+  rd69RemoveRaw(rd69AccountKey(id, "visited"));
+  rd69RemoveRaw(rd69AccountKey(id, "today"));
+}
+
+
+function rd150StorageWarning(error) {
+  console.error(error);
+  if (state.indexedProgress.warningShown) return;
+
+  state.indexedProgress.warningShown = true;
+  showToast(
+    "Device storage needs attention. Keep the app open until Progress backup says Synced."
+  );
+}
+
+
+async function rd150MigrateAndLoadAccount(userId) {
+  const id = String(userId || "");
+  if (!id) return false;
+  const migrationGeneration = rd150UserGeneration(id);
+
+  state.indexedProgress.migratingUsers.add(id);
+  state.accountProgress.switching = true;
+
+  try {
+    roadDiscoveryV150.rd69ActivateAccount(id);
+    state.accountProgress.switching = true;
+
+    const [indexed, legacy] = await Promise.all([
+      rd150ReadIndexedProgress(id),
+      Promise.resolve(rd150LegacyProgress(id))
+    ]);
+
+    const current = rd150CurrentProgress(id);
+    const merged = rd150MergeProgress(indexed, legacy, current);
+    const visitedOnly = {};
+
+    for (const [segmentId, unlockedAt] of Object.entries(merged.visited)) {
+      if (!merged.savedSegments[segmentId]) {
+        visitedOnly[segmentId] = unlockedAt;
+      }
+    }
+
+    state.indexedProgress.visitedOnlyByUser.set(id, visitedOnly);
+    const indexedIds = new Set(Object.keys(indexed.savedSegments));
+    const missingSegments = Object.values(merged.savedSegments).filter(
+      (segment) => !indexedIds.has(segment.id)
+    );
+
+    if (missingSegments.length > 0) {
+      const written = await rd150WriteSegmentRows(
+        id,
+        missingSegments,
+        migrationGeneration
+      );
+      if (!written) return false;
+    }
+
+    const dailyWritten = await rd150WriteDailyRows(
+      id,
+      rd150DailyRowsFromToday(id, merged.todayUnlocks),
+      migrationGeneration
+    );
+    if (!dailyWritten) return false;
+
+    const metaWritten = await rd150WriteAccountMeta(
+      id,
+      migrationGeneration,
+      visitedOnly
+    );
+    if (!metaWritten) return false;
+
+    const verifiedCount = await rd150CountIndexedSegments(id);
+    const expectedCount = Object.keys(merged.savedSegments).length;
+
+    if (verifiedCount !== expectedCount) {
+      throw new Error(
+        `Indexed road migration count mismatch (${verifiedCount} of ${expectedCount})`
+      );
+    }
+
+    if (
+      String(state.auth.user?.id || "") !== id ||
+      rd150UserGeneration(id) !== migrationGeneration
+    ) {
+      return false;
+    }
+
+    state.indexedProgress.activeUserId = id;
+    state.indexedProgress.readyUserId = id;
+    rd69ApplyProgress(merged, id);
+
+    /*
+      The old large localStorage values are removed only after the
+      IndexedDB transaction has completed and its per-user count has
+      been checked. A crash before this point leaves the old copy intact.
+    */
+    rd150RemoveVerifiedLegacyCopies(id);
+    void rd150DeleteOldDailyRows(id).catch((error) => console.warn(
+      "Could not clear old daily road counters",
+      error
+    ));
+    return true;
+  } catch (error) {
+    state.indexedProgress.retryAfterByUser.set(id, Date.now() + 30000);
+    rd150StorageWarning(error);
+    return false;
+  } finally {
+    state.indexedProgress.migratingUsers.delete(id);
+    state.accountProgress.switching = false;
+    if (state.indexedProgress.readyUserId === id) {
+      void rd150FlushUser(id);
+    }
+  }
+}
+
+
+function rd150EnsureAccountReady(userId = state.auth.user?.id) {
+  const id = String(userId || "");
+  if (!id) return Promise.resolve(false);
+
+  if (
+    state.indexedProgress.readyUserId === id &&
+    state.accountProgress.activeUserId === id
+  ) {
+    return Promise.resolve(true);
+  }
+
+  if (state.indexedProgress.loadingByUser.has(id)) {
+    return state.indexedProgress.loadingByUser.get(id);
+  }
+
+  if (
+    Date.now() <
+      Number(state.indexedProgress.retryAfterByUser.get(id) || 0) &&
+    state.accountProgress.activeUserId === id
+  ) {
+    return Promise.resolve(false);
+  }
+
+  const loading = rd150MigrateAndLoadAccount(id).finally(() => {
+    state.indexedProgress.loadingByUser.delete(id);
+  });
+
+  state.indexedProgress.loadingByUser.set(id, loading);
+  return loading;
+}
+
+
+function rd150PendingSegments(userId) {
+  const id = String(userId || "");
+  if (!state.indexedProgress.pendingSegmentsByUser.has(id)) {
+    state.indexedProgress.pendingSegmentsByUser.set(id, new Map());
+  }
+  return state.indexedProgress.pendingSegmentsByUser.get(id);
+}
+
+
+function rd150PendingDaily(userId) {
+  const id = String(userId || "");
+  if (!state.indexedProgress.pendingDailyByUser.has(id)) {
+    state.indexedProgress.pendingDailyByUser.set(id, new Map());
+  }
+  return state.indexedProgress.pendingDailyByUser.get(id);
+}
+
+
+function rd150QueueSegment(segment, userId = state.accountProgress.activeUserId) {
+  const id = String(userId || "");
+  if (!id || !segment?.id || !validCoords(segment.coords)) return;
+
+  rd150PendingSegments(id).set(String(segment.id), segment);
+
+  const today = rd69NormaliseToday(state.todayUnlocks);
+  if (Object.hasOwn(today.keys, String(segment.id))) {
+    const daily = rd150DailyRow(
+      id,
+      today.date,
+      segment.id,
+      today.keys[String(segment.id)]
+    );
+    if (daily) rd150PendingDaily(id).set(daily.key, daily);
+  }
+
+  const visitedOnly = state.indexedProgress.visitedOnlyByUser.get(id);
+  if (visitedOnly && Object.hasOwn(visitedOnly, String(segment.id))) {
+    delete visitedOnly[String(segment.id)];
+  }
+
+  rd150ScheduleFlush();
+}
+
+
+function rd150ScheduleFlush() {
+  if (state.indexedProgress.flushScheduled) return;
+  state.indexedProgress.flushScheduled = true;
+
+  queueMicrotask(() => {
+    state.indexedProgress.flushScheduled = false;
+    void rd150FlushAll();
+  });
+}
+
+
+async function rd150FlushUser(userId) {
+  const id = String(userId || "");
+  if (!id || state.indexedProgress.migratingUsers.has(id)) return false;
+
+  if (
+    Date.now() <
+    Number(state.indexedProgress.retryAfterByUser.get(id) || 0)
+  ) {
+    return false;
+  }
+
+  if (state.indexedProgress.flushByUser.has(id)) {
+    await state.indexedProgress.flushByUser.get(id);
+  }
+
+  const pending = state.indexedProgress.pendingSegmentsByUser.get(id);
+  const pendingDaily = state.indexedProgress.pendingDailyByUser.get(id);
+
+  if (
+    (!pending || pending.size === 0) &&
+    (!pendingDaily || pendingDaily.size === 0)
+  ) {
+    return true;
+  }
+
+  const segments = pending ? Array.from(pending.values()) : [];
+  const dailyRows = pendingDaily ? Array.from(pendingDaily.values()) : [];
+  state.indexedProgress.pendingSegmentsByUser.set(id, new Map());
+  state.indexedProgress.pendingDailyByUser.set(id, new Map());
+  const generation = rd150UserGeneration(id);
+
+  const writing = (async () => {
+    try {
+      if (segments.length > 0) {
+        const written = await rd150WriteSegmentRows(id, segments, generation);
+        if (!written) return false;
+      }
+
+      if (dailyRows.length > 0) {
+        const written = await rd150WriteDailyRows(id, dailyRows, generation);
+        if (!written) return false;
+      }
+
+      state.indexedProgress.retryAfterByUser.delete(id);
+      return true;
+    } catch (error) {
+      if (rd150UserGeneration(id) === generation) {
+        const retry = rd150PendingSegments(id);
+        for (const segment of segments) retry.set(String(segment.id), segment);
+        const dailyRetry = rd150PendingDaily(id);
+        for (const row of dailyRows) dailyRetry.set(row.key, row);
+      }
+      state.indexedProgress.retryAfterByUser.set(id, Date.now() + 30000);
+      rd150StorageWarning(error);
+      return false;
+    }
+  })();
+
+  state.indexedProgress.flushByUser.set(id, writing);
+
+  try {
+    return await writing;
+  } finally {
+    if (state.indexedProgress.flushByUser.get(id) === writing) {
+      state.indexedProgress.flushByUser.delete(id);
+    }
+
+    const more = state.indexedProgress.pendingSegmentsByUser.get(id);
+    const moreDaily = state.indexedProgress.pendingDailyByUser.get(id);
+    if (
+      !state.indexedProgress.migratingUsers.has(id) &&
+      Date.now() >= Number(state.indexedProgress.retryAfterByUser.get(id) || 0) &&
+      ((more && more.size > 0) || (moreDaily && moreDaily.size > 0))
+    ) {
+      rd150ScheduleFlush();
+    }
+  }
+}
+
+
+async function rd150FlushAll() {
+  const userIds = new Set([
+    ...state.indexedProgress.pendingSegmentsByUser.keys(),
+    ...state.indexedProgress.pendingDailyByUser.keys()
+  ]);
+
+  await Promise.all(Array.from(userIds).map(rd150FlushUser));
+}
+
+
+async function rd150PersistCurrentSnapshot(userId = state.auth.user?.id) {
+  const id = String(userId || "");
+  if (!id || String(state.accountProgress.activeUserId || "") !== id) {
+    return false;
+  }
+
+  const generation = rd150UserGeneration(id);
+  const segments = Object.values(state.savedSegments || {});
+  const written = await rd150WriteSegmentRows(id, segments, generation);
+  if (!written) return false;
+
+  const dailyWritten = await rd150WriteDailyRows(
+    id,
+    rd150DailyRowsFromToday(id, state.todayUnlocks),
+    generation
+  );
+  if (!dailyWritten) return false;
+
+  const metaWritten = await rd150WriteAccountMeta(id, generation);
+  if (!metaWritten) return false;
+  const count = await rd150CountIndexedSegments(id);
+
+  if (count !== segments.length) {
+    throw new Error(`Indexed road snapshot count mismatch (${count} of ${segments.length})`);
+  }
+
+  rd150RemoveVerifiedLegacyCopies(id);
+  return true;
+}
+
+
+async function rd150ClearAccount(userId) {
+  const id = String(userId || "");
+  if (!id) return;
+
+  rd150AdvanceUserGeneration(id);
+  state.indexedProgress.pendingSegmentsByUser.delete(id);
+  state.indexedProgress.pendingDailyByUser.delete(id);
+  state.indexedProgress.visitedOnlyByUser.delete(id);
+  rd150RemoveVerifiedLegacyCopies(id);
+
+  try {
+    await rd150DeleteIndexedAccount(id);
+  } catch (error) {
+    rd150StorageWarning(error);
+  }
+}
+
+
+async function rd150RequestPersistentStorage() {
+  if (state.indexedProgress.persistenceRequested) return;
+  state.indexedProgress.persistenceRequested = true;
+
+  try {
+    if (!navigator.storage?.persist) return;
+
+    state.indexedProgress.persistenceGranted = Boolean(
+      await navigator.storage.persist()
+    );
+  } catch (error) {
+    console.warn("Persistent browser storage request was unavailable", error);
+  }
+}
+
+
+/* --------------------------------------------------
+   Replace the large localStorage snapshot writers
+   -------------------------------------------------- */
+
+rd69WriteAccountPart = function (part, value) {
+  const userId = String(state.accountProgress.activeUserId || "");
+  if (!userId) return false;
+
+  /*
+    Visited timestamps live on the individual segment records, while
+    today's distance uses individual daily-road records. Saved roads are
+    queued by rememberSavedSegment, so no progress collection is ever
+    rewritten as one quota-limited JSON string.
+  */
+  return part === "visited" || part === "saved" || part === "today";
+};
+
+
+rememberSavedSegment = function (segment, saveNow = false) {
+  const segmentId = String(segment?.id || "");
+  const existed = Boolean(segmentId && state.savedSegmentIds.has(segmentId));
+  const result = roadDiscoveryV150.rememberSavedSegment(segment, saveNow);
+
+  if (!existed && segmentId && state.savedSegments[segmentId]) {
+    rd150QueueSegment(state.savedSegments[segmentId]);
+  }
+
+  return result;
+};
+
+
+/* --------------------------------------------------
+   Account, backup, drive, and reset lifecycle
+   -------------------------------------------------- */
+
+ensureRoadProfile = async function (options = {}) {
+  const userId = String(state.auth.user?.id || "");
+  if (userId) await rd150EnsureAccountReady(userId);
+
+  const profile = await roadDiscoveryV150.ensureRoadProfile(options);
+
+  const confirmedUserId = String(state.auth.user?.id || "");
+  if (confirmedUserId && confirmedUserId !== userId) {
+    await rd150EnsureAccountReady(confirmedUserId);
+  }
+
+  return profile;
+};
+
+
+signOutRoadProfile = async function () {
+  const userId = String(state.accountProgress.activeUserId || "");
+  if (userId && state.indexedProgress.loadingByUser.has(userId)) {
+    await state.indexedProgress.loadingByUser.get(userId);
+  }
+  await rd150FlushAll();
+
+  const result = await roadDiscoveryV150.signOutRoadProfile();
+  if (userId) await rd150FlushUser(userId);
+
+  if (!state.auth.user) {
+    state.indexedProgress.activeUserId = "";
+    state.indexedProgress.readyUserId = "";
+  }
+
+  return result;
+};
+
+
+startDrive = async function () {
+  const userId = String(state.auth.user?.id || "");
+
+  if (userId) {
+    void rd150RequestPersistentStorage();
+    await rd150EnsureAccountReady(userId);
+  }
+
+  return roadDiscoveryV150.startDrive();
+};
+
+
+finishDrive = function () {
+  const result = roadDiscoveryV150.finishDrive();
+  void rd150FlushAll();
+  return result;
+};
+
+
+resetDiscoveredRoads = function () {
+  const userId = String(state.accountProgress.activeUserId || "");
+  const before = Object.keys(state.savedSegments || {}).length;
+  const result = roadDiscoveryV150.resetDiscoveredRoads();
+  const after = Object.keys(state.savedSegments || {}).length;
+
+  if (userId && before > 0 && after === 0) {
+    void rd150ClearAccount(userId);
+  }
+
+  return result;
+};
+
+
+rd65ReconcileBackup = async function () {
+  const userId = String(state.auth.user?.id || "");
+  if (userId) await rd150EnsureAccountReady(userId);
+  return roadDiscoveryV150.rd65ReconcileBackup();
+};
+
+
+rd65BackupFinishedDrive = async function (segments) {
+  const userId = String(state.auth.user?.id || "");
+  if (userId) {
+    await rd150EnsureAccountReady(userId);
+    await rd150FlushUser(userId);
+  }
+  return roadDiscoveryV150.rd65BackupFinishedDrive(segments);
+};
+
+
+rd65DownloadPrivateRoads = async function () {
+  const result = await roadDiscoveryV150.rd65DownloadPrivateRoads();
+  const userId = String(state.auth.user?.id || "");
+
+  if (userId && Number(result?.added) > 0) {
+    try {
+      await rd150PersistCurrentSnapshot(userId);
+    } catch (error) {
+      rd150StorageWarning(error);
+    }
+  }
+
+  return result;
+};
+
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") void rd150FlushAll();
+});
+
+window.addEventListener("pagehide", () => {
+  void rd150FlushAll();
+});
+
+document.documentElement.dataset.roadDiscoveryStorage = "indexeddb-v150";
