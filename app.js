@@ -54757,6 +54757,66 @@ function rd154InstallStyles() {
       line-height: 1.45;
     }
 
+    .rd157-full-rules-link {
+      width: fit-content;
+      margin: -2px 0 0;
+      padding: 2px 0;
+      border: 0;
+      background: transparent;
+      color: #a9d8ff;
+      font-size: 12px;
+      font-weight: 850;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+    }
+
+    .rd157-full-rules-link:hover,
+    .rd157-full-rules-link:focus-visible {
+      color: #ffffff;
+    }
+
+    .rd157-policy {
+      display: grid;
+      gap: 12px;
+    }
+
+    .rd157-policy-section {
+      padding: 13px 14px;
+      border: 1px solid #34404d;
+      border-radius: 14px;
+      background: #10161d;
+      color: #dce5ef;
+    }
+
+    .rd157-policy-section h3 {
+      margin: 0 0 6px;
+      color: #ffffff;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .rd157-policy-section p {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .rd157-policy-section p + p {
+      margin-top: 8px;
+    }
+
+    .rd157-policy-section + .rd157-policy-section {
+      margin-top: 0;
+    }
+
+    .rd157-policy-version {
+      margin: 0;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.45;
+    }
+
     .rd154-submission-locked {
       display: inline-flex;
       min-height: 39px;
@@ -54812,17 +54872,18 @@ function rd154RenderSponsorRules(week) {
         <legend id="rd154RulesLegend">Confirm both before payment</legend>
         <label class="rd154-rule-choice">
           <input id="rd154ContentRulesCheck" type="checkbox">
-          <span>My advertisement will not contain illegal, sexually explicit, hateful, violent, deceptive, infringing or unsafe content, and I have permission to use its images, logos and text.</span>
+          <span>I have read and agree to the Full Advertising Rules. My advertisement and website will not contain prohibited content, and I have permission to use their images, logos and text.</span>
         </label>
         <label class="rd154-rule-choice">
           <input id="rd154ManualReviewCheck" type="checkbox">
-          <span>I understand every advertisement is manually reviewed, Stripe payment does not guarantee publication, and non-compliant advertisements may be rejected and refunded under the displayed refund policy.</span>
+          <span>I understand every advertisement is manually reviewed, Stripe payment does not guarantee publication, and a serious or deliberate breach may result in removal without a refund except where required by law.</span>
         </label>
       </fieldset>
       <div class="rd154-rules-notice" role="note">
         <strong>Payment and review are separate</strong>
         Stripe securely processes the payment. Road Discovery AU performs the content review. Submission details are retained for security, moderation and dispute handling.
       </div>
+      <button id="rd157FullAdvertisingRulesBtn" class="rd157-full-rules-link" type="button">Read full Advertising Rules</button>
       <div class="rd154-rules-actions">
         <button id="rd154RulesBackBtn" class="rd144-secondary-button" type="button">Back to weeks</button>
         <button id="rd154ContinueStripeBtn" class="rd144-primary-button" type="button" disabled>Continue to Stripe</button>
@@ -54836,6 +54897,7 @@ function rd154RenderSponsorRules(week) {
   const continueButton = $("rd154ContinueStripeBtn");
   const backButton = $("rd154RulesBackBtn");
   const status = $("rd154RulesStatus");
+  const fullRulesButton = $("rd157FullAdvertisingRulesBtn");
 
   const updateContinueState = () => {
     const ready = Boolean(contentCheck?.checked && reviewCheck?.checked);
@@ -54849,6 +54911,7 @@ function rd154RenderSponsorRules(week) {
 
   contentCheck?.addEventListener("change", updateContinueState);
   reviewCheck?.addEventListener("change", updateContinueState);
+  fullRulesButton?.addEventListener("click", () => rd157RenderFullAdvertisingRules(week));
   backButton?.addEventListener("click", () => void rd142OpenBooking());
   continueButton?.addEventListener("click", async () => {
     if (!contentCheck?.checked || !reviewCheck?.checked) {
@@ -54860,6 +54923,69 @@ function rd154RenderSponsorRules(week) {
     await rd154StartCheckoutAfterRules(week, continueButton, status);
   });
   window.setTimeout(() => contentCheck?.focus(), 0);
+}
+
+
+function rd157RenderFullAdvertisingRules(week) {
+  rd142OpenBookingShell();
+  rd145SetConfirmationOnly(false);
+  document.querySelector(".rd142-booking-card")
+    ?.classList.add("rd154-rules-only");
+  rd144SetBookingHeading(
+    "Full Advertising Rules",
+    "These rules apply to the advertisement and its destination website for the entire booked period.",
+    "Before payment"
+  );
+
+  const content = $("rd142BookingContent");
+  if (!content) return;
+  const dates = `${rd142FormatDate(week.week_start)} – ${rd142FormatDate(week.week_end)}`;
+  content.innerHTML = `
+    <section class="rd157-policy" aria-label="Full Advertising Rules">
+      <p class="rd154-rules-week">${rd142Escape(dates)} · $20 AUD · one of five rotating positions</p>
+
+      <section class="rd157-policy-section">
+        <h3>General-audience advertising</h3>
+        <p>Road Discovery AU is a general-audience application. Advertisements and linked websites must remain suitable for a general audience throughout the booked advertising period. Mainstream retail advertising for clothing, swimwear, underwear, health and beauty products may be accepted when presented in a conventional, non-explicit manner.</p>
+      </section>
+
+      <section class="rd157-policy-section">
+        <h3>Prohibited content</h3>
+        <p>Pornography, explicit nudity, sexual acts or services, fetish content, graphic violence, illegal content, hate content, scams, phishing, malware, deceptive redirects and content primarily intended for sexual gratification are prohibited. Advertisers must own, license or have permission to use every submitted image, logo and piece of text.</p>
+      </section>
+
+      <section class="rd157-policy-section">
+        <h3>Political neutrality</h3>
+        <p>Road Discovery AU does not endorse or favour any political party, candidate, independent, referendum position or lawful political viewpoint. Lawful political advertising from the left, centre or right—doves or hawks, major parties, minor parties or independents—may be submitted and will be assessed under the same price, content rules, review process and advertising rotation.</p>
+        <p>Approval and publication do not represent an endorsement by Road Discovery AU. Political advertisers are responsible for complying with all applicable Commonwealth, state and territory electoral laws, including authorisation, disclosure and funding requirements. Any legally required authorisation details must be clearly visible in the submitted advertisement.</p>
+      </section>
+
+      <section class="rd157-policy-section">
+        <h3>Website review and later changes</h3>
+        <p>Approval applies only to the submitted advertisement, exact destination URL and website content reviewed by Road Discovery AU. Ordinary business updates, including changes to prices, products, stock or contact information, are allowed. Advertisers must not materially change or redirect the approved website to prohibited, deceptive or substantially different content after approval.</p>
+      </section>
+
+      <section class="rd157-policy-section">
+        <h3>Removal and refunds</h3>
+        <p>Road Discovery AU may immediately suspend the website link or remove the advertisement where it reasonably believes these rules have been breached. A serious or deliberate breach—including changing an approved website to display prohibited content—may result in permanent removal for the remainder of the booking period. Except where required by the Australian Consumer Law or another applicable law, no refund will be provided for unused advertising time where removal results from the advertiser's serious or deliberate breach of these rules.</p>
+      </section>
+
+      <section class="rd157-policy-section">
+        <h3>Payment and review</h3>
+        <p>Stripe securely processes payment but does not review or approve advertisements. Payment does not guarantee publication. Road Discovery AU manually reviews each submission and may request changes, approve it, or reject it under these rules.</p>
+      </section>
+
+      <p class="rd157-policy-version">Advertising Rules version RD-AU-ADS-2026-09-13</p>
+      <div class="rd154-rules-actions">
+        <button id="rd157BackToConfirmationsBtn" class="rd144-secondary-button" type="button">Back to Advertisement Rules</button>
+      </div>
+    </section>
+  `;
+
+  $("rd157BackToConfirmationsBtn")?.addEventListener(
+    "click",
+    () => rd154RenderSponsorRules(week)
+  );
 }
 
 
@@ -54925,3 +55051,11 @@ document.documentElement.dataset.roadDiscoverySponsorRulesLayout = "v155";
    -------------------------------------------------- */
 
 document.documentElement.dataset.roadDiscoverySponsorWeekColour = "green-v156";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v157
+   Full Advertising Rules and political neutrality
+   -------------------------------------------------- */
+
+document.documentElement.dataset.roadDiscoveryAdvertisingRules = "full-v157";
