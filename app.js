@@ -52214,6 +52214,8 @@ rd131FetchSponsorConfig = async function () {
         const imageUrl = rd131SafeSponsorUrl(entry?.imageUrl || "", window.location.href);
         return {
           id,
+          bookingId: String(entry?.bookingId || ""),
+          linkVersion: Number(entry?.linkVersion || 1),
           active: entry?.active !== false,
           imageUrl: imageUrl ? rd131VersionedSponsorImage(imageUrl, version) : "",
           clickUrl: rd131SafeSponsorUrl(entry?.clickUrl || "", window.location.href),
@@ -55105,3 +55107,85 @@ rd144ShowBookingStatus = function (booking, options = {}) {
 
 rd158InstallProgressStyles();
 document.documentElement.dataset.roadDiscoverySponsorProgressLayout = "compact-v158";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v159
+   Advertiser-link warning and account-only reporting
+   -------------------------------------------------- */
+
+function rd159InstallLinkSafetyUi() {
+  if ($("rd159LinkSafetyStyles")) return;
+  const style = document.createElement("style");
+  style.id = "rd159LinkSafetyStyles";
+  style.textContent = `
+    .rd159-exit-layer{position:fixed;z-index:27000;inset:0;display:grid;place-items:center;padding:18px;background:rgba(3,6,9,.82);backdrop-filter:blur(8px)}
+    .rd159-exit-card{width:min(540px,100%);max-height:calc(100vh - 36px);overflow:auto;border:1px solid #35414d;border-radius:20px;background:#0d1218;color:#f7f9fc;padding:21px;box-shadow:0 24px 80px rgba(0,0,0,.58)}
+    .rd159-exit-card h2{margin:0 42px 8px 0;font-size:25px}.rd159-exit-card p{color:#bac4d0;line-height:1.55}.rd159-domain,.rd159-url{display:block;margin-top:11px;padding:11px;border:1px solid #3b4652;border-radius:11px;background:#080c11;overflow-wrap:anywhere}.rd159-domain{color:#fff;font-weight:850}.rd159-url{color:#9ecfff;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}
+    .rd159-exit-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:17px}.rd159-exit-actions button{min-height:44px;border:1px solid #46515e;border-radius:11px;padding:9px 14px;background:#202833;color:#fff;font-weight:850}.rd159-exit-actions .continue{border-color:#ff8615;background:#ff8615;color:#101317}.rd159-report{margin-top:16px;padding-top:15px;border-top:1px solid #303943}.rd159-report label{display:flex;gap:9px;margin:10px 0;color:#e5eaf0}.rd159-report-message{margin-top:11px;color:#ffb06a!important}.rd159-exit-close{float:right;width:40px;height:40px;border:1px solid #46515e;border-radius:50%;background:#161c24;color:#fff;font-size:22px}
+  `;
+  document.head.appendChild(style);
+}
+
+function rd159CloseExit() { $("rd159SponsorExit")?.remove(); }
+
+function rd159OpenSponsorExit(config) {
+  const destination = rd131SafeSponsorUrl(config?.clickUrl || "", window.location.href);
+  if (!destination) return;
+  const url = new URL(destination);
+  rd159CloseExit();
+  const layer = document.createElement("section");
+  layer.id = "rd159SponsorExit";
+  layer.className = "rd159-exit-layer";
+  layer.innerHTML = `<div class="rd159-exit-card" role="dialog" aria-modal="true" aria-labelledby="rd159ExitTitle">
+    <button class="rd159-exit-close" type="button" aria-label="Close">×</button>
+    <h2 id="rd159ExitTitle">You’re leaving Road Discovery AU</h2>
+    <p>This is an independent advertiser website. It may have changed since Road Discovery AU reviewed it. Road Discovery AU cannot control changes made after review. Check the destination and decide whether you want to continue.</p>
+    <strong class="rd159-domain">${rd142Escape(url.hostname)}</strong><span class="rd159-url">${rd142Escape(url.href)}</span>
+    <div class="rd159-exit-actions"><button class="back" type="button">Go back</button><button class="continue" type="button">Continue to website</button><button class="report-toggle" type="button">Report this link</button></div>
+    <form class="rd159-report" hidden><h3>Why are you reporting this link?</h3>
+      <label><input type="radio" name="reason" value="scam_phishing"> Scam or phishing</label>
+      <label><input type="radio" name="reason" value="malware_download"> Malware or suspicious download</label>
+      <label><input type="radio" name="reason" value="inappropriate_harmful"> Inappropriate or harmful content</label>
+      <label><input type="radio" name="reason" value="website_changed"> Website changed since review</label>
+      <label><input type="radio" name="reason" value="misleading_broken"> Misleading or broken link</label>
+      <div class="rd159-exit-actions"><button class="submit-report" type="submit">Send report</button></div><p class="rd159-report-message" role="status"></p>
+    </form></div>`;
+  document.body.appendChild(layer);
+  const form = layer.querySelector("form");
+  layer.querySelector(".rd159-exit-close").onclick = rd159CloseExit;
+  layer.querySelector(".back").onclick = rd159CloseExit;
+  layer.querySelector(".continue").onclick = () => { window.open(url.href, "_blank", "noopener,noreferrer"); rd159CloseExit(); };
+  layer.querySelector(".report-toggle").onclick = () => { form.hidden = false; form.querySelector("input")?.focus(); };
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const message = form.querySelector(".rd159-report-message");
+    const reason = new FormData(form).get("reason");
+    if (!state.auth.user || !state.auth.session?.access_token) { message.textContent = "Sign in to your Road Profile before reporting a link."; return; }
+    if (!config?.bookingId || !reason) { message.textContent = reason ? "This link cannot be reported right now." : "Select a reason first."; return; }
+    const button = form.querySelector(".submit-report"); button.disabled = true; message.textContent = "Sending report…";
+    try {
+      const response = await fetch(RD142_SPONSOR_BOOKING_API, {method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${state.auth.session.access_token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"report_link",bookingId:config.bookingId,reason})});
+      const result = await response.json().catch(()=>({}));
+      if (!response.ok) throw new Error(result.error || "Report could not be sent.");
+      message.textContent = "Report received. The advertiser’s website has not been opened. We’ll review the link.";
+    } catch (error) { message.textContent = error.message; button.disabled = false; }
+  };
+}
+
+const rd159ShowSponsorWithoutExitWarning = rd131ShowSponsor;
+rd131ShowSponsor = function (config, key) {
+  const shown = rd159ShowSponsorWithoutExitWarning(config, key);
+  const media = $("rd131SponsorMedia");
+  if (!shown || !media) return shown;
+  media.onclick = null; media.removeAttribute("href"); media.removeAttribute("target"); media.removeAttribute("rel");
+  if (config?.clickUrl) {
+    media.setAttribute("role", "button"); media.setAttribute("tabindex", "0");
+    media.onclick = event => { event.preventDefault(); rd159OpenSponsorExit(config); };
+    media.onkeydown = event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); rd159OpenSponsorExit(config); } };
+  } else { media.removeAttribute("role"); media.removeAttribute("tabindex"); media.onkeydown = null; }
+  return shown;
+};
+
+rd159InstallLinkSafetyUi();
+document.documentElement.dataset.roadDiscoverySponsorLinkReports = "v159";
