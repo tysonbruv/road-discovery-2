@@ -58,7 +58,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=67"
+    href="style.css?v=68"
   />
 </head>
 
@@ -1294,46 +1294,172 @@
               id="signedOutProfileCard"
               class="auth-card"
             >
-              <div class="auth-card-heading">
-                <h3>Road Profile</h3>
+              <div id="authDefaultView">
+                <div class="auth-card-heading">
+                  <h3>Road Profile</h3>
 
-                <p>
-                  You can keep using the map without an account. Friends
-                  features need a Road Profile.
-                </p>
-              </div>
+                  <p>
+                    You can keep using the map without an account. Friends
+                    features need a Road Profile.
+                  </p>
+                </div>
 
-              <div class="auth-mode-tabs">
-                <button
-                  id="authCreateModeBtn"
-                  class="auth-mode-btn active"
-                  type="button"
+                <div class="auth-mode-tabs">
+                  <button
+                    id="authCreateModeBtn"
+                    class="auth-mode-btn active"
+                    type="button"
+                  >
+                    Create Road Profile
+                  </button>
+
+                  <button
+                    id="authSignInModeBtn"
+                    class="auth-mode-btn"
+                    type="button"
+                  >
+                    Sign in
+                  </button>
+                </div>
+
+                <div
+                  id="createAuthForm"
+                  class="auth-form"
                 >
-                  Create Road Profile
-                </button>
+                  <label
+                    class="field-label"
+                    for="createEmailInput"
+                  >
+                    Email
+                  </label>
 
-                <button
-                  id="authSignInModeBtn"
-                  class="auth-mode-btn"
-                  type="button"
+                  <input
+                    id="createEmailInput"
+                    class="text-field"
+                    type="email"
+                    inputmode="email"
+                    autocomplete="email"
+                    placeholder="you@example.com"
+                  />
+
+                  <label
+                    class="field-label"
+                    for="createPasswordInput"
+                  >
+                    Password
+                  </label>
+
+                  <input
+                    id="createPasswordInput"
+                    class="text-field"
+                    type="password"
+                    autocomplete="new-password"
+                    placeholder="At least 6 characters"
+                  />
+
+                  <button
+                    id="createProfileBtn"
+                    class="wide-btn auth-submit-btn"
+                    type="button"
+                  >
+                    Create Road Profile
+                  </button>
+                </div>
+
+                <div
+                  id="signInAuthForm"
+                  class="auth-form hidden"
                 >
-                  Sign in
-                </button>
+                  <label
+                    class="field-label"
+                    for="signInEmailInput"
+                  >
+                    Email
+                  </label>
+
+                  <input
+                    id="signInEmailInput"
+                    class="text-field"
+                    type="email"
+                    inputmode="email"
+                    autocomplete="email"
+                    placeholder="you@example.com"
+                  />
+
+                  <label
+                    class="field-label"
+                    for="signInPasswordInput"
+                  >
+                    Password
+                  </label>
+
+                  <input
+                    id="signInPasswordInput"
+                    class="text-field"
+                    type="password"
+                    autocomplete="current-password"
+                    placeholder="Your password"
+                  />
+
+                  <button
+                    id="signInBtn"
+                    class="wide-btn auth-submit-btn"
+                    type="button"
+                  >
+                    Sign in
+                  </button>
+
+                  <button
+                    id="forgotPasswordBtn"
+                    class="ghost-btn wide-btn"
+                    type="button"
+                  >
+                    Forgot password
+                  </button>
+                </div>
+
+                <div class="privacy-note">
+                  Check your email and click the confirmation link after creating
+                  your Road Profile. This gives you your road username and friend
+                  code.
+                  <br /><br />
+                  Friends cannot see your live location, current drive,
+                  blue location marker, start point, finish point, speed,
+                  heading or live position. They can only see roads you have
+                  turned orange if you turn map sharing on.
+                </div>
               </div>
 
               <div
-                id="createAuthForm"
-                class="auth-form"
+                id="forgotPasswordView"
+                class="auth-flow-view hidden"
               >
+                <button
+                  id="backToSignInBtn"
+                  class="auth-flow-back-btn"
+                  type="button"
+                >
+                  ← Back to sign in
+                </button>
+
+                <div class="auth-card-heading auth-flow-heading">
+                  <span class="auth-flow-kicker">Password reset</span>
+                  <h3>Find your Road Profile</h3>
+                  <p>
+                    Enter the email address used to create your Road Profile.
+                    We will send a secure password-reset link to that address.
+                  </p>
+                </div>
+
                 <label
                   class="field-label"
-                  for="createEmailInput"
+                  for="resetEmailInput"
                 >
-                  Email
+                  Road Profile email
                 </label>
 
                 <input
-                  id="createEmailInput"
+                  id="resetEmailInput"
                   class="text-field"
                   type="email"
                   inputmode="email"
@@ -1341,86 +1467,35 @@
                   placeholder="you@example.com"
                 />
 
-                <label
-                  class="field-label"
-                  for="createPasswordInput"
-                >
-                  Password
-                </label>
-
-                <input
-                  id="createPasswordInput"
-                  class="text-field"
-                  type="password"
-                  autocomplete="new-password"
-                  placeholder="At least 6 characters"
-                />
-
                 <button
-                  id="createProfileBtn"
+                  id="sendResetEmailBtn"
                   class="wide-btn auth-submit-btn"
                   type="button"
                 >
-                  Create Road Profile
-                </button>
-              </div>
-
-              <div
-                id="signInAuthForm"
-                class="auth-form hidden"
-              >
-                <label
-                  class="field-label"
-                  for="signInEmailInput"
-                >
-                  Email
-                </label>
-
-                <input
-                  id="signInEmailInput"
-                  class="text-field"
-                  type="email"
-                  inputmode="email"
-                  autocomplete="email"
-                  placeholder="you@example.com"
-                />
-
-                <label
-                  class="field-label"
-                  for="signInPasswordInput"
-                >
-                  Password
-                </label>
-
-                <input
-                  id="signInPasswordInput"
-                  class="text-field"
-                  type="password"
-                  autocomplete="current-password"
-                  placeholder="Your password"
-                />
-
-                <button
-                  id="signInBtn"
-                  class="wide-btn auth-submit-btn"
-                  type="button"
-                >
-                  Sign in
-                </button>
-
-                <button
-                  id="forgotPasswordBtn"
-                  class="ghost-btn wide-btn"
-                  type="button"
-                >
-                  Forgot password
+                  Send reset link
                 </button>
               </div>
 
               <div
                 id="resetPasswordBox"
-                class="reset-password-box hidden"
+                class="reset-password-box auth-flow-view hidden"
               >
+                <button
+                  id="requestAnotherResetBtn"
+                  class="auth-flow-back-btn"
+                  type="button"
+                >
+                  ← Request another reset link
+                </button>
+
+                <div class="auth-card-heading auth-flow-heading">
+                  <span class="auth-flow-kicker">Secure password reset</span>
+                  <h3>Choose a new password</h3>
+                  <p>
+                    Enter the same new password twice to confirm it.
+                  </p>
+                </div>
+
                 <label
                   class="field-label"
                   for="newPasswordInput"
@@ -1428,20 +1503,71 @@
                   New password
                 </label>
 
-                <input
-                  id="newPasswordInput"
-                  class="text-field"
-                  type="password"
-                  autocomplete="new-password"
-                  placeholder="New password"
-                />
+                <div class="password-field-wrap">
+                  <input
+                    id="newPasswordInput"
+                    class="text-field"
+                    type="password"
+                    autocomplete="new-password"
+                    minlength="6"
+                    placeholder="At least 6 characters"
+                  />
+
+                  <button
+                    id="toggleNewPasswordBtn"
+                    class="password-visibility-btn"
+                    type="button"
+                    aria-label="Show new password"
+                    aria-pressed="false"
+                    title="Show password"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+                      <circle cx="12" cy="12" r="2.75"></circle>
+                      <path class="password-eye-slash" d="m4 4 16 16"></path>
+                    </svg>
+                  </button>
+                </div>
+
+                <label
+                  class="field-label"
+                  for="confirmNewPasswordInput"
+                >
+                  Confirm new password
+                </label>
+
+                <div class="password-field-wrap">
+                  <input
+                    id="confirmNewPasswordInput"
+                    class="text-field"
+                    type="password"
+                    autocomplete="new-password"
+                    minlength="6"
+                    placeholder="Type the new password again"
+                  />
+
+                  <button
+                    id="toggleConfirmPasswordBtn"
+                    class="password-visibility-btn"
+                    type="button"
+                    aria-label="Show confirmed password"
+                    aria-pressed="false"
+                    title="Show password"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+                      <circle cx="12" cy="12" r="2.75"></circle>
+                      <path class="password-eye-slash" d="m4 4 16 16"></path>
+                    </svg>
+                  </button>
+                </div>
 
                 <button
                   id="updatePasswordBtn"
                   class="wide-btn auth-submit-btn"
                   type="button"
                 >
-                  Update password
+                  Save new password
                 </button>
               </div>
 
@@ -1450,16 +1576,6 @@
                 class="auth-message hidden"
               ></div>
 
-              <div class="privacy-note">
-                Check your email and click the confirmation link after creating
-                your Road Profile. This gives you your road username and friend
-                code.
-                <br /><br />
-                Friends cannot see your live location, current drive,
-                blue location marker, start point, finish point, speed,
-                heading or live position. They can only see roads you have
-                turned orange if you turn map sharing on.
-              </div>
             </div>
 
             <div
@@ -2008,7 +2124,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=146"></script>
+  <script src="app.js?v=147"></script>
 
   <script>
     const isCapacitorNative = Boolean(
