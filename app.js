@@ -52927,3 +52927,237 @@ if (document.readyState === "loading") {
 } else {
   rd145InitBookingNumbers();
 }
+
+
+/* =====================================================
+   Road Discovery AU v148
+   General Menu account + Friends entry points
+   ===================================================== */
+
+const rd148OriginalRenderAuthState = renderAuthState;
+
+
+function rd148InstallGeneralMenuStyles() {
+  if ($("rd148GeneralMenuStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd148GeneralMenuStyles";
+  style.textContent = `
+    .rd-general-menu-icon.account {
+      border-color: rgba(75, 179, 255, 0.38);
+      background: rgba(75, 179, 255, 0.11);
+      color: #7bc7ff;
+    }
+
+    .rd-general-menu-icon.friends {
+      border-color: rgba(85, 237, 150, 0.34);
+      background: rgba(85, 237, 150, 0.1);
+      color: #72e8a5;
+    }
+
+    .rd-general-menu-icon.account svg,
+    .rd-general-menu-icon.friends svg {
+      width: 27px;
+      height: 27px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+
+function rd148AccountButtonMarkup() {
+  return `
+    <span class="rd-general-menu-icon account" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <circle cx="12" cy="8" r="3.5"></circle>
+        <path d="M5.5 19c.8-4.1 3-6.1 6.5-6.1s5.7 2 6.5 6.1"></path>
+      </svg>
+    </span>
+    <span class="rd-general-menu-copy">
+      <strong id="rd148AccountMenuLabel">Sign in</strong>
+      <small id="rd148AccountMenuStatus">Access or create your Road Profile</small>
+    </span>
+    <span class="rd-general-menu-arrow" aria-hidden="true">›</span>
+  `;
+}
+
+
+function rd148FriendsButtonMarkup() {
+  return `
+    <span class="rd-general-menu-icon friends" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <circle cx="9" cy="8" r="3"></circle>
+        <circle cx="16.5" cy="9.5" r="2.4"></circle>
+        <path d="M3.8 19c.6-4 2.4-6 5.2-6s4.6 2 5.2 6"></path>
+        <path d="M14.2 14.3c3.3-.8 5.3.8 6 4.2"></path>
+      </svg>
+    </span>
+    <span class="rd-general-menu-copy">
+      <strong>Friends</strong>
+      <small id="rd148FriendsMenuStatus">Friend codes, requests and shared roads</small>
+    </span>
+    <span class="rd-general-menu-arrow" aria-hidden="true">›</span>
+  `;
+}
+
+
+function rd148SetFriendsPanelHeading(title, description) {
+  const heading = $("friendsPanel")?.querySelector(".panel-header > div");
+  const titleElement = heading?.querySelector("h2");
+  const descriptionElement = heading?.querySelector("p");
+
+  if (titleElement) titleElement.textContent = title;
+  if (descriptionElement) descriptionElement.textContent = description;
+}
+
+
+function rd148ScrollFriendsPanel(target = null) {
+  window.requestAnimationFrame(() => {
+    const content = $("friendsPanel")?.querySelector(".panel-content");
+    if (!content) return;
+
+    if (!target) {
+      content.scrollTo({ top: 0, behavior: "auto" });
+      return;
+    }
+
+    const contentRect = content.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const top = content.scrollTop + targetRect.top - contentRect.top - 10;
+    content.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  });
+}
+
+
+function rd148OpenAccountFromMenu() {
+  openFriendsPanel();
+  rd148SetFriendsPanelHeading(
+    "Road Profile",
+    state.auth.user
+      ? "Your account and privacy controls."
+      : "Sign in or create your Road Profile."
+  );
+
+  if (!state.auth.user && !state.auth.passwordRecovery) {
+    setAuthMode("signin");
+  }
+
+  rd148ScrollFriendsPanel();
+}
+
+
+function rd148OpenFriendsFromMenu() {
+  openFriendsPanel();
+  rd148SetFriendsPanelHeading(
+    "Friends",
+    "Friend codes, requests and shared roads."
+  );
+
+  if (!state.auth.user || state.auth.passwordRecovery) {
+    if (!state.auth.passwordRecovery) setAuthMode("signin");
+    rd148ScrollFriendsPanel();
+    showToast("Sign in to use Friends");
+    return;
+  }
+
+  rd148ScrollFriendsPanel($("showAddFriendBtn"));
+}
+
+
+function rd148EnsureGeneralMenuItems() {
+  const hiddenDiscoveriesButton = $("rd73OpenHiddenDiscoveriesBtn");
+  const list = hiddenDiscoveriesButton?.parentElement;
+  if (!list) return;
+
+  let accountButton = $("rd148OpenAccountBtn");
+  if (!accountButton) {
+    accountButton = document.createElement("button");
+    accountButton.id = "rd148OpenAccountBtn";
+    accountButton.className = "rd-general-menu-item";
+    accountButton.type = "button";
+    accountButton.innerHTML = rd148AccountButtonMarkup();
+  }
+
+  let friendsButton = $("rd148OpenFriendsBtn");
+  if (!friendsButton) {
+    friendsButton = document.createElement("button");
+    friendsButton.id = "rd148OpenFriendsBtn";
+    friendsButton.className = "rd-general-menu-item";
+    friendsButton.type = "button";
+    friendsButton.innerHTML = rd148FriendsButtonMarkup();
+  }
+
+  list.insertBefore(friendsButton, hiddenDiscoveriesButton);
+  list.insertBefore(accountButton, friendsButton);
+
+  if (accountButton.dataset.rd148Bound !== "true") {
+    accountButton.dataset.rd148Bound = "true";
+    accountButton.addEventListener("click", rd148OpenAccountFromMenu);
+  }
+
+  if (friendsButton.dataset.rd148Bound !== "true") {
+    friendsButton.dataset.rd148Bound = "true";
+    friendsButton.addEventListener("click", rd148OpenFriendsFromMenu);
+  }
+}
+
+
+function rd148UpdateGeneralMenuAccount() {
+  const signedIn = Boolean(state.auth.user) && !state.auth.passwordRecovery;
+  const label = $("rd148AccountMenuLabel");
+  const accountStatus = $("rd148AccountMenuStatus");
+  const friendsStatus = $("rd148FriendsMenuStatus");
+
+  if (label) label.textContent = signedIn ? "Road Profile" : "Sign in";
+
+  if (accountStatus) {
+    const identity = String(
+      state.auth.profile?.username || state.auth.user?.email || ""
+    ).trim();
+    accountStatus.textContent = signedIn
+      ? identity
+        ? `Signed in as ${identity}`
+        : "Manage your Road Profile"
+      : "Access or create your Road Profile";
+  }
+
+  if (friendsStatus) {
+    friendsStatus.textContent = signedIn
+      ? "Friend codes, requests and shared roads"
+      : "Sign in to add and view friends";
+  }
+}
+
+
+function rd148RemoveMainFriendsShortcut() {
+  const button = $("friendsBtn");
+  if (button) button.remove();
+  els.friendsBtn = null;
+}
+
+
+renderAuthState = function () {
+  const result = rd148OriginalRenderAuthState();
+  rd148UpdateGeneralMenuAccount();
+  return result;
+};
+
+
+function rd148InitGeneralMenuAccount() {
+  rd148InstallGeneralMenuStyles();
+  rd148EnsureGeneralMenuItems();
+  rd148UpdateGeneralMenuAccount();
+  rd148RemoveMainFriendsShortcut();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", rd148InitGeneralMenuAccount, { once: true });
+} else {
+  rd148InitGeneralMenuAccount();
+}
