@@ -54650,10 +54650,10 @@ function rd154InstallStyles() {
     .rd154-rules-week {
       margin: 0;
       padding: 12px 14px;
-      border: 1px solid rgba(255, 138, 24, 0.35);
+      border: 1px solid rgba(85, 237, 150, 0.46);
       border-radius: 13px;
-      background: rgba(255, 138, 24, 0.07);
-      color: #ffbd78;
+      background: rgba(85, 237, 150, 0.065);
+      color: #7ff3ad;
       font-size: 13px;
       font-weight: 850;
       line-height: 1.45;
@@ -54917,3 +54917,11 @@ rd142OpenBookingShell = function () {
 
 
 document.documentElement.dataset.roadDiscoverySponsorRulesLayout = "v155";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v156
+   Green selected sponsor week
+   -------------------------------------------------- */
+
+document.documentElement.dataset.roadDiscoverySponsorWeekColour = "green-v156";
