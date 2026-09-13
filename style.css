@@ -1545,8 +1545,7 @@ body.recording #locateBtn {
   color: #1b0900;
 }
 
-.auth-form .text-field + .field-label,
-.reset-password-box .text-field + .field-label {
+.auth-form .text-field + .field-label {
   margin-top: 12px;
 }
 
@@ -1555,11 +1554,93 @@ body.recording #locateBtn {
 }
 
 .reset-password-box {
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid rgba(75, 179, 255, 0.25);
+  margin: 0;
+  padding: 0;
+}
+
+.auth-flow-view {
+  min-height: 310px;
+}
+
+.auth-flow-back-btn {
+  min-height: 38px;
+  padding: 0;
+  background: transparent;
+  color: rgba(255, 176, 74, 0.96);
+  font-size: 13px;
+  font-weight: 900;
+  text-align: left;
+}
+
+.auth-flow-back-btn:active {
+  transform: scale(0.98);
+}
+
+.auth-flow-heading {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid rgba(75, 179, 255, 0.24);
   border-radius: 16px;
   background: rgba(75, 179, 255, 0.07);
+}
+
+.auth-flow-kicker {
+  display: block;
+  margin-bottom: 7px;
+  color: rgba(255, 176, 74, 0.96);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.password-field-wrap {
+  position: relative;
+}
+
+.password-field-wrap .text-field {
+  padding-right: 50px;
+}
+
+.password-visibility-btn {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  width: 38px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+
+.password-visibility-btn:hover,
+.password-visibility-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.password-visibility-btn:focus-visible {
+  outline: 2px solid rgba(255, 138, 24, 0.7);
+  outline-offset: 1px;
+}
+
+.password-visibility-btn svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.password-visibility-btn.is-visible .password-eye-slash {
+  display: none;
 }
 
 .auth-message {
