@@ -1,15 +1,15 @@
 "use strict";
 
 /*
-  Road Discovery AU v153 service worker
+  Road Discovery AU v154 service worker
 
   Expected frontend versions:
-  - app.js?v=153
+  - app.js?v=154
   - style.css?v=68
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v155";
+  "road-discovery-au-v156";
 
 const CORE_APP_SHELL = [
   "./",
@@ -20,6 +20,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=68",
+  "./app.js?v=154",
   "./app.js?v=153",
   "./app.js?v=152",
   "./app.js?v=151",
@@ -234,6 +235,11 @@ self.addEventListener(
             )
           ) {
             return (
+              await caches.match(
+                "./app.js?v=154"
+              )
+            ) ||
+            (
               await caches.match(
                 "./app.js?v=153"
               )
