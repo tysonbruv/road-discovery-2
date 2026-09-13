@@ -52421,7 +52421,45 @@ function rd145InstallStyles() {
     }
 
     .rd145-booking-item {
+      --rd153-status-color: #ffba76;
+      --rd153-status-rgb: 255, 138, 24;
       padding: 13px;
+      box-shadow: inset 3px 0 0 rgba(var(--rd153-status-rgb), 0.68);
+    }
+
+    .rd145-booking-item.rd153-status-red {
+      --rd153-status-color: #ff8a95;
+      --rd153-status-rgb: 255, 93, 108;
+    }
+
+    .rd145-booking-item.rd153-status-amber {
+      --rd153-status-color: #ffd166;
+      --rd153-status-rgb: 255, 193, 46;
+    }
+
+    .rd145-booking-item.rd153-status-orange {
+      --rd153-status-color: #ffad5c;
+      --rd153-status-rgb: 255, 138, 24;
+    }
+
+    .rd145-booking-item.rd153-status-blue {
+      --rd153-status-color: #7bc7ff;
+      --rd153-status-rgb: 75, 179, 255;
+    }
+
+    .rd145-booking-item.rd153-status-teal {
+      --rd153-status-color: #70e0da;
+      --rd153-status-rgb: 70, 205, 197;
+    }
+
+    .rd145-booking-item.rd153-status-green {
+      --rd153-status-color: #72e8a5;
+      --rd153-status-rgb: 85, 237, 150;
+    }
+
+    .rd145-booking-item.rd153-status-grey {
+      --rd153-status-color: #aeb7c3;
+      --rd153-status-rgb: 137, 148, 163;
     }
 
     .rd145-booking-meta {
@@ -52441,10 +52479,10 @@ function rd145InstallStyles() {
     .rd145-booking-status {
       flex: 0 0 auto;
       padding: 5px 8px;
-      border: 1px solid rgba(255, 138, 24, 0.32);
+      border: 1px solid rgba(var(--rd153-status-rgb), 0.44);
       border-radius: 999px;
-      background: rgba(255, 138, 24, 0.09);
-      color: #ffba76;
+      background: rgba(var(--rd153-status-rgb), 0.11);
+      color: var(--rd153-status-color);
       font-size: 8px;
       font-weight: 950;
       letter-spacing: 0.055em;
@@ -52721,17 +52759,82 @@ function rd145SetMenuStatus(value) {
 }
 
 
-function rd145StatusLabel(status) {
-  return ({
-    pending_artwork: "Awaiting artwork",
-    pending_review: "Awaiting review",
-    needs_changes: "Needs changes",
-    approved: "Approved",
-    published: "Published",
-    rejected: "Rejected",
-    refund_pending: "Refund pending",
-    refunded: "Refunded"
-  })[status] || String(status || "Paid booking").replaceAll("_", " ");
+function rd153SydneyDateKey() {
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-AU", {
+        timeZone: "Australia/Sydney",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).formatToParts(new Date()).map((part) => [part.type, part.value])
+    );
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  } catch (_) {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+
+function rd153BookingStatusView(booking) {
+  const status = String(booking?.status || "").toLowerCase();
+  const refundStatus = String(booking?.refund_status || "").toLowerCase();
+
+  if (status === "refunded" || refundStatus === "succeeded") {
+    return { label: "Rejected · Refunded", tone: "red" };
+  }
+
+  if (
+    status === "refund_pending" ||
+    ["pending", "failed", "requires_action"].includes(refundStatus)
+  ) {
+    return { label: "Refund pending", tone: "amber" };
+  }
+
+  if (status === "rejected") {
+    return { label: "Rejected", tone: "red" };
+  }
+
+  if (status === "needs_changes") {
+    return { label: "Needs changes", tone: "orange" };
+  }
+
+  if (status === "pending_artwork") {
+    return { label: "Awaiting artwork", tone: "blue" };
+  }
+
+  if (status === "pending_review") {
+    return { label: "Awaiting review", tone: "blue" };
+  }
+
+  if (status === "approved") {
+    return { label: "Approved", tone: "teal" };
+  }
+
+  if (status === "published") {
+    const today = rd153SydneyDateKey();
+    const weekStart = String(booking?.week_start || "");
+    const weekEnd = String(booking?.week_end || "");
+
+    if (weekStart && today < weekStart) {
+      return { label: "Scheduled", tone: "teal" };
+    }
+
+    if (weekEnd && today > weekEnd) {
+      return { label: "Week finished", tone: "grey" };
+    }
+
+    return { label: "Advertising now", tone: "green" };
+  }
+
+  if (status === "expired") {
+    return { label: "Week finished", tone: "grey" };
+  }
+
+  return {
+    label: String(status || "Paid booking").replaceAll("_", " "),
+    tone: "orange"
+  };
 }
 
 
@@ -52762,6 +52865,7 @@ function rd145CountdownParts(visibleUntil, booking) {
 
 function rd145BookingCard(booking) {
   const code = rd144NormalizeBookingCode(booking?.booking_code);
+  const statusView = rd153BookingStatusView(booking);
   const [timerLabel, timerValue] = rd145CountdownParts(
     booking?.visible_until,
     booking
@@ -52770,10 +52874,10 @@ function rd145BookingCard(booking) {
   const canUpload = booking?.submission_token &&
     ["pending_artwork", "pending_review", "needs_changes"].includes(booking.status);
   return `
-    <article class="rd145-booking-item" data-rd145-code="${rd142Escape(code)}">
+    <article class="rd145-booking-item rd153-status-${rd142Escape(statusView.tone)}" data-rd145-code="${rd142Escape(code)}">
       <div class="rd145-booking-meta">
         <strong>${rd142Escape(dates)}</strong>
-        <span class="rd145-booking-status">${rd142Escape(rd145StatusLabel(booking.status))}</span>
+        <span class="rd145-booking-status">${rd142Escape(statusView.label)}</span>
       </div>
       <div class="rd145-booking-number-row">
         <div>
@@ -52786,7 +52890,7 @@ function rd145BookingCard(booking) {
           <strong>${rd142Escape(timerValue)}</strong>
         </span>
       </div>
-      <p class="rd145-booking-detail">Rotation position ${rd142Escape(booking.slot_number)} of 5 · ${rd142Escape(rd145StatusLabel(booking.status))}</p>
+      <p class="rd145-booking-detail">Rotation position ${rd142Escape(booking.slot_number)} of 5 · ${rd142Escape(statusView.label)}</p>
       <div class="rd145-booking-actions">
         <button type="button" data-rd145-action="view" data-rd145-code="${rd142Escape(code)}">View progress</button>
         ${canUpload ? `<button class="primary" type="button" data-rd145-action="upload" data-rd145-code="${rd142Escape(code)}">${booking.status === "needs_changes" ? "Upload revised ad" : "Submit advertisement"}</button>` : ""}
@@ -54501,3 +54605,12 @@ document.documentElement.dataset.roadDiscoveryStorage = "indexeddb-v150";
 
 document.documentElement.dataset.roadDiscoverySponsorCta =
   "compact-mobile-v152";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v153
+   Booking Numbers status colours
+   -------------------------------------------------- */
+
+document.documentElement.dataset.roadDiscoveryBookingStatusColours =
+  "v153";
