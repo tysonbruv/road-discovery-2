@@ -55059,3 +55059,49 @@ document.documentElement.dataset.roadDiscoverySponsorWeekColour = "green-v156";
    -------------------------------------------------- */
 
 document.documentElement.dataset.roadDiscoveryAdvertisingRules = "full-v157";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v158
+   Compact Advertisement progress header
+   -------------------------------------------------- */
+
+function rd158InstallProgressStyles() {
+  if ($("rd158SponsorProgressStyles")) return;
+  const style = document.createElement("style");
+  style.id = "rd158SponsorProgressStyles";
+  style.textContent = `
+    .rd142-booking-card.rd158-progress-only > .rd142-booking-facts {
+      display: none;
+    }
+
+    .rd142-booking-card.rd158-progress-only > .rd142-booking-lead {
+      margin-bottom: 18px;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+
+const rd158OpenBookingShellWithProgressReset = rd142OpenBookingShell;
+const rd158ShowBookingStatusWithoutCompactHeader = rd144ShowBookingStatus;
+
+
+rd142OpenBookingShell = function () {
+  const result = rd158OpenBookingShellWithProgressReset();
+  document.querySelector(".rd142-booking-card")
+    ?.classList.remove("rd158-progress-only");
+  return result;
+};
+
+
+rd144ShowBookingStatus = function (booking, options = {}) {
+  const result = rd158ShowBookingStatusWithoutCompactHeader(booking, options);
+  document.querySelector(".rd142-booking-card")
+    ?.classList.add("rd158-progress-only");
+  return result;
+};
+
+
+rd158InstallProgressStyles();
+document.documentElement.dataset.roadDiscoverySponsorProgressLayout = "compact-v158";
