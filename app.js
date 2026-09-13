@@ -1018,10 +1018,12 @@ const state = {
     session: null,
     user: null,
     profile: null,
+    view: "create",
     loading: false,
     checkingSession: false,
     submitting: false,
-    passwordRecovery: false
+    passwordRecovery: false,
+    passwordRecoveryReady: false
   },
 
   friends: {
@@ -1254,6 +1256,7 @@ function cacheEls() {
 
     "signedOutProfileCard",
     "signedInProfileCard",
+    "authDefaultView",
     "authCreateModeBtn",
     "authSignInModeBtn",
     "createAuthForm",
@@ -1265,8 +1268,16 @@ function cacheEls() {
     "signInPasswordInput",
     "signInBtn",
     "forgotPasswordBtn",
+    "forgotPasswordView",
+    "backToSignInBtn",
+    "resetEmailInput",
+    "sendResetEmailBtn",
     "resetPasswordBox",
+    "requestAnotherResetBtn",
     "newPasswordInput",
+    "confirmNewPasswordInput",
+    "toggleNewPasswordBtn",
+    "toggleConfirmPasswordBtn",
     "updatePasswordBtn",
     "authMessage",
     "profileEmailValue",
@@ -1633,8 +1644,20 @@ function bindEvents() {
 
   els.createProfileBtn?.addEventListener("click", createRoadProfileAccount);
   els.signInBtn?.addEventListener("click", signInRoadProfile);
-  els.forgotPasswordBtn?.addEventListener("click", sendPasswordReset);
+  els.forgotPasswordBtn?.addEventListener("click", showForgotPasswordPage);
+  els.backToSignInBtn?.addEventListener("click", () => setAuthMode("signin"));
+  els.sendResetEmailBtn?.addEventListener("click", sendPasswordReset);
+  els.requestAnotherResetBtn?.addEventListener("click", restartPasswordReset);
   els.updatePasswordBtn?.addEventListener("click", updateRecoveredPassword);
+  els.toggleNewPasswordBtn?.addEventListener("click", () => {
+    togglePasswordVisibility(els.newPasswordInput, els.toggleNewPasswordBtn);
+  });
+  els.toggleConfirmPasswordBtn?.addEventListener("click", () => {
+    togglePasswordVisibility(
+      els.confirmNewPasswordInput,
+      els.toggleConfirmPasswordBtn
+    );
+  });
   els.copyFriendCodeBtn?.addEventListener("click", copyFriendCode);
   els.signOutBtn?.addEventListener("click", signOutRoadProfile);
 
@@ -1644,6 +1667,16 @@ function bindEvents() {
 
   els.signInPasswordInput?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") signInRoadProfile();
+  });
+
+  els.resetEmailInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") sendPasswordReset();
+  });
+
+  [els.newPasswordInput, els.confirmNewPasswordInput].forEach((input) => {
+    input?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") updateRecoveredPassword();
+    });
   });
 
   els.profileProfileToggle?.addEventListener("change", () => {
@@ -4955,6 +4988,14 @@ function initSupabase() {
     return;
   }
 
+  if (hasPasswordRecoveryRedirect()) {
+    state.auth.passwordRecovery = true;
+    state.auth.passwordRecoveryReady = false;
+    state.auth.view = "recovery";
+    showPasswordRecoveryBox({ focus: false });
+    setAuthMessage("Checking your secure password-reset link...", "info");
+  }
+
   state.auth.client = window.supabase.createClient(
     SUPABASE_URL,
     SUPABASE_ANON_KEY,
@@ -4973,8 +5014,13 @@ function initSupabase() {
 
     if (event === "PASSWORD_RECOVERY") {
       state.auth.passwordRecovery = true;
+      state.auth.passwordRecoveryReady = true;
+      state.auth.view = "recovery";
       showPasswordRecoveryBox();
-      setAuthMessage("Enter a new password to finish the reset.", "info");
+      setAuthMessage(
+        "Reset link verified. Enter and confirm your new password.",
+        "success"
+      );
     }
 
     if (state.auth.user) {
@@ -5017,6 +5063,22 @@ async function loadInitialAuthSession() {
 
   state.auth.session = data?.session || null;
   state.auth.user = data?.session?.user || null;
+
+  if (state.auth.passwordRecovery) {
+    if (state.auth.session && state.auth.user) {
+      state.auth.passwordRecoveryReady = true;
+      setAuthMessage(
+        "Reset link verified. Enter and confirm your new password.",
+        "success"
+      );
+    } else {
+      state.auth.passwordRecoveryReady = false;
+      setAuthMessage(
+        "This password-reset link is invalid or has expired. Return to sign in and request a new link.",
+        "error"
+      );
+    }
+  }
 
   if (state.auth.user) {
     await ensureRoadProfile({ quiet: true });
@@ -5261,23 +5323,54 @@ async function signOutRoadProfile() {
   showToast("Signed out");
 }
 
+async function restartPasswordReset() {
+  if (state.auth.submitting) return;
+
+  const recoveryEmail = state.auth.user?.email || "";
+
+  if (state.auth.client && state.auth.session) {
+    const { error } = await state.auth.client.auth.signOut();
+    if (error) console.error(error);
+  }
+
+  state.auth.session = null;
+  state.auth.user = null;
+  state.auth.profile = null;
+  state.auth.passwordRecovery = false;
+  state.auth.passwordRecoveryReady = false;
+  state.auth.view = "forgot";
+
+  clearPasswordRecoveryUrl();
+
+  if (els.resetEmailInput && !els.resetEmailInput.value) {
+    els.resetEmailInput.value = recoveryEmail;
+  }
+
+  setAuthMessage("", "info");
+  renderAuthState();
+  window.setTimeout(() => els.resetEmailInput?.focus(), 0);
+}
+
 async function sendPasswordReset() {
   if (!state.auth.client) {
     setAuthMessage("Supabase is not connected.", "error");
     return;
   }
 
-  const email =
-    els.signInEmailInput?.value.trim() ||
-    els.createEmailInput?.value.trim();
+  if (state.auth.submitting) return;
 
-  if (!email) {
-    setAuthMessage("Enter your email first.", "error");
+  const email = els.resetEmailInput?.value.trim() || "";
+
+  if (!email || !els.resetEmailInput?.checkValidity()) {
+    setAuthMessage("Enter a valid email address.", "error");
+    els.resetEmailInput?.focus();
     return;
   }
 
   state.auth.loading = true;
+  state.auth.submitting = true;
   renderAuthState();
+  setAuthMessage("Sending a secure reset link...", "info");
 
   const { error } = await state.auth.client.auth.resetPasswordForEmail(
     email,
@@ -5287,6 +5380,7 @@ async function sendPasswordReset() {
   );
 
   state.auth.loading = false;
+  state.auth.submitting = false;
 
   if (error) {
     console.error(error);
@@ -5295,28 +5389,56 @@ async function sendPasswordReset() {
     return;
   }
 
-  setAuthMessage("Password reset email sent.", "success");
+  setAuthMessage(
+    "If a Road Profile exists for that email, a password-reset link has been sent. Check your inbox and spam folder.",
+    "success"
+  );
   renderAuthState();
 }
 
 async function updateRecoveredPassword() {
-  if (!state.auth.client) return;
+  if (!state.auth.client || state.auth.submitting) return;
 
   const password = els.newPasswordInput?.value || "";
+  const confirmedPassword = els.confirmNewPasswordInput?.value || "";
+
+  if (!state.auth.passwordRecoveryReady || !state.auth.session) {
+    setAuthMessage(
+      "This password-reset link is invalid or has expired. Request a new link from the sign-in page.",
+      "error"
+    );
+    return;
+  }
 
   if (password.length < 6) {
     setAuthMessage("New password must be at least 6 characters.", "error");
+    els.newPasswordInput?.focus();
+    return;
+  }
+
+  if (!confirmedPassword) {
+    setAuthMessage("Type the new password again to confirm it.", "error");
+    els.confirmNewPasswordInput?.focus();
+    return;
+  }
+
+  if (password !== confirmedPassword) {
+    setAuthMessage("The two passwords do not match.", "error");
+    els.confirmNewPasswordInput?.focus();
     return;
   }
 
   state.auth.loading = true;
+  state.auth.submitting = true;
   renderAuthState();
+  setAuthMessage("Saving your new password...", "info");
 
   const { error } = await state.auth.client.auth.updateUser({
     password
   });
 
   state.auth.loading = false;
+  state.auth.submitting = false;
 
   if (error) {
     console.error(error);
@@ -5326,15 +5448,32 @@ async function updateRecoveredPassword() {
   }
 
   state.auth.passwordRecovery = false;
-
-  els.resetPasswordBox?.classList.add("hidden");
+  state.auth.passwordRecoveryReady = false;
+  state.auth.view = "signin";
 
   if (els.newPasswordInput) {
     els.newPasswordInput.value = "";
   }
 
-  setAuthMessage("Password updated.", "success");
-  showToast("Password updated");
+  if (els.confirmNewPasswordInput) {
+    els.confirmNewPasswordInput.value = "";
+  }
+
+  setPasswordVisibility(
+    els.newPasswordInput,
+    els.toggleNewPasswordBtn,
+    false
+  );
+  setPasswordVisibility(
+    els.confirmNewPasswordInput,
+    els.toggleConfirmPasswordBtn,
+    false
+  );
+
+  clearPasswordRecoveryUrl();
+
+  setAuthMessage("Password changed successfully.", "success");
+  showToast("Password changed successfully");
   renderAuthState();
 }
 
@@ -5517,26 +5656,131 @@ function copyTextFallback(text) {
 }
 
 function getAuthRedirectUrl() {
-  return window.location.href.split("#")[0].split("?")[0];
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("password_recovery", "1");
+  return url.href;
+}
+
+function hasPasswordRecoveryRedirect() {
+  const url = new URL(window.location.href);
+  const hash = new URLSearchParams(url.hash.replace(/^#/, ""));
+
+  return (
+    url.searchParams.get("password_recovery") === "1" ||
+    url.searchParams.get("type") === "recovery" ||
+    hash.get("type") === "recovery"
+  );
+}
+
+function clearPasswordRecoveryUrl() {
+  const url = new URL(window.location.href);
+
+  [
+    "password_recovery",
+    "code",
+    "error",
+    "error_code",
+    "error_description",
+    "type"
+  ].forEach((key) => url.searchParams.delete(key));
+
+  if (
+    /(?:^|[&#])(type=recovery|access_token=|refresh_token=|error=)/.test(
+      url.hash
+    )
+  ) {
+    url.hash = "";
+  }
+
+  window.history.replaceState(
+    window.history.state,
+    document.title,
+    `${url.pathname}${url.search}${url.hash}`
+  );
+}
+
+function showForgotPasswordPage() {
+  state.auth.view = "forgot";
+
+  const knownEmail =
+    els.signInEmailInput?.value.trim() ||
+    els.createEmailInput?.value.trim() ||
+    "";
+
+  if (els.resetEmailInput && !els.resetEmailInput.value) {
+    els.resetEmailInput.value = knownEmail;
+  }
+
+  setAuthMessage("", "info");
+  renderAuthState();
+
+  window.setTimeout(() => els.resetEmailInput?.focus(), 0);
 }
 
 function setAuthMode(mode) {
   const isCreate = mode === "create";
 
-  els.authCreateModeBtn?.classList.toggle("active", isCreate);
-  els.authSignInModeBtn?.classList.toggle("active", !isCreate);
-  els.createAuthForm?.classList.toggle("hidden", !isCreate);
-  els.signInAuthForm?.classList.toggle("hidden", isCreate);
+  state.auth.view = isCreate ? "create" : "signin";
+  renderAuthViews();
 
   setAuthMessage("", "info");
 }
 
-function showPasswordRecoveryBox() {
-  els.resetPasswordBox?.classList.remove("hidden");
+function renderAuthViews() {
+  const view = state.auth.passwordRecovery
+    ? "recovery"
+    : state.auth.view;
+  const isCreate = view === "create";
+
+  els.authCreateModeBtn?.classList.toggle("active", isCreate);
+  els.authSignInModeBtn?.classList.toggle("active", view === "signin");
+  els.authDefaultView?.classList.toggle(
+    "hidden",
+    view === "forgot" || view === "recovery"
+  );
+  els.createAuthForm?.classList.toggle("hidden", !isCreate);
+  els.signInAuthForm?.classList.toggle("hidden", view !== "signin");
+  els.forgotPasswordView?.classList.toggle("hidden", view !== "forgot");
+  els.resetPasswordBox?.classList.toggle("hidden", view !== "recovery");
+}
+
+function showPasswordRecoveryBox(options = {}) {
+  const { focus = true } = options;
+
+  state.auth.passwordRecovery = true;
+  state.auth.view = "recovery";
+  renderAuthViews();
+  showFriendsListView();
+  openPanel("friendsPanel");
+
+  if (focus) {
+    window.setTimeout(() => els.newPasswordInput?.focus(), 0);
+  }
+}
+
+function setPasswordVisibility(input, button, visible) {
+  if (!input || !button) return;
+
+  input.type = visible ? "text" : "password";
+  button.classList.toggle("is-visible", visible);
+  button.setAttribute("aria-pressed", String(visible));
+  button.setAttribute(
+    "aria-label",
+    visible ? "Hide password" : "Show password"
+  );
+  button.title = visible ? "Hide password" : "Show password";
+}
+
+function togglePasswordVisibility(input, button) {
+  setPasswordVisibility(input, button, input?.type === "password");
 }
 
 function renderAuthState() {
-  const signedIn = Boolean(state.auth.user);
+  const signedIn =
+    Boolean(state.auth.user) &&
+    !state.auth.passwordRecovery;
   const loading = Boolean(state.auth.loading);
   const submitting = Boolean(state.auth.submitting);
   const profile = state.auth.profile;
@@ -5546,15 +5790,12 @@ function renderAuthState() {
 
   els.signedOutProfileCard?.classList.toggle("hidden", signedIn);
   els.signedInProfileCard?.classList.toggle("hidden", !signedIn);
+  renderAuthViews();
 
   if (signedIn) {
     setText(els.profileEmailValue, state.auth.user?.email || "Signed in");
     setText(els.profileUsernameValue, profile?.username || "Creating profile...");
     setText(els.profileFriendCodeValue, profile?.friend_code || "Creating code...");
-  }
-
-  if (state.auth.passwordRecovery) {
-    showPasswordRecoveryBox();
   }
 
   if (els.createProfileBtn) {
@@ -5569,9 +5810,34 @@ function renderAuthState() {
     els.forgotPasswordBtn.disabled = submitting;
   }
 
-  if (els.updatePasswordBtn) {
-    els.updatePasswordBtn.disabled = submitting;
+  if (els.sendResetEmailBtn) {
+    els.sendResetEmailBtn.disabled = submitting;
+    els.sendResetEmailBtn.textContent = submitting
+      ? "Sending reset link..."
+      : "Send reset link";
   }
+
+  if (els.updatePasswordBtn) {
+    els.updatePasswordBtn.disabled =
+      submitting ||
+      !state.auth.passwordRecoveryReady;
+    els.updatePasswordBtn.textContent = submitting
+      ? "Saving new password..."
+      : "Save new password";
+  }
+
+  if (els.resetEmailInput) {
+    els.resetEmailInput.disabled = submitting;
+  }
+
+  [
+    els.newPasswordInput,
+    els.confirmNewPasswordInput,
+    els.toggleNewPasswordBtn,
+    els.toggleConfirmPasswordBtn
+  ].forEach((element) => {
+    if (element) element.disabled = submitting;
+  });
 
   [
     els.signOutBtn,
