@@ -53035,7 +53035,9 @@ function rd148ScrollFriendsPanel(target = null) {
 
 
 function rd148OpenAccountFromMenu() {
+  rd149ReturnToFriendsAfterAuth = false;
   openFriendsPanel();
+  rd149SetFriendsPanelMode("account");
   rd148SetFriendsPanelHeading(
     "Road Profile",
     state.auth.user
@@ -53053,15 +53055,14 @@ function rd148OpenAccountFromMenu() {
 
 function rd148OpenFriendsFromMenu() {
   openFriendsPanel();
+  rd149SetFriendsPanelMode("friends");
   rd148SetFriendsPanelHeading(
     "Friends",
     "Friend codes, requests and shared roads."
   );
 
-  if (!state.auth.user || state.auth.passwordRecovery) {
-    if (!state.auth.passwordRecovery) setAuthMode("signin");
+  if (!state.auth.user || !state.auth.profile || state.auth.passwordRecovery) {
     rd148ScrollFriendsPanel();
-    showToast("Sign in to use Friends");
     return;
   }
 
@@ -53160,4 +53161,209 @@ if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", rd148InitGeneralMenuAccount, { once: true });
 } else {
   rd148InitGeneralMenuAccount();
+}
+
+
+/* =====================================================
+   Road Discovery AU v149
+   Separate Road Profile and Friends experiences
+   ===================================================== */
+
+const rd149OriginalOpenFriendsPanel = openFriendsPanel;
+const rd149OriginalShowPasswordRecoveryBox = showPasswordRecoveryBox;
+const rd149OriginalRenderAuthState = renderAuthState;
+
+let rd149ReturnToFriendsAfterAuth = false;
+
+
+function rd149InstallSeparatedPanelStyles() {
+  if ($("rd149SeparatedPanelStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd149SeparatedPanelStyles";
+  style.textContent = `
+    #friendsPanel.rd149-account-mode #rd149FriendsSignedOutGate,
+    #friendsPanel.rd149-account-mode #showAddFriendBtn,
+    #friendsPanel.rd149-account-mode #addFriendBox,
+    #friendsPanel.rd149-account-mode .friends-block {
+      display: none !important;
+    }
+
+    #friendsPanel.rd149-friends-mode .road-profile-section {
+      display: none !important;
+    }
+
+    #friendsPanel.rd149-friends-mode:not(.rd149-friends-signed-out)
+      #rd149FriendsSignedOutGate {
+      display: none !important;
+    }
+
+    #friendsPanel.rd149-friends-mode.rd149-friends-signed-out
+      #rd149FriendsSignedOutGate {
+      display: block !important;
+    }
+
+    #friendsPanel.rd149-friends-mode.rd149-friends-signed-out
+      #showAddFriendBtn,
+    #friendsPanel.rd149-friends-mode.rd149-friends-signed-out
+      #addFriendBox,
+    #friendsPanel.rd149-friends-mode.rd149-friends-signed-out
+      .friends-block {
+      display: none !important;
+    }
+
+    .rd149-friends-gate {
+      margin: 0;
+    }
+
+    .rd149-friends-gate h3,
+    .rd149-friends-gate p {
+      margin-top: 0;
+    }
+
+    .rd149-friends-gate p {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+
+function rd149CreateFriendsSignedOutGate() {
+  if ($("rd149FriendsSignedOutGate")) return;
+
+  const profileSection = $("friendsPanel")?.querySelector(
+    ".road-profile-section"
+  );
+  if (!profileSection) return;
+
+  const gate = document.createElement("section");
+  gate.id = "rd149FriendsSignedOutGate";
+  gate.className = "auth-card rd149-friends-gate hidden";
+  gate.innerHTML = `
+    <div class="auth-card-heading">
+      <h3>Sign in to use Friends</h3>
+      <p>
+        Friends are connected to your Road Profile. Sign in first,
+        then return here to add friends and view requests.
+      </p>
+    </div>
+    <button id="rd149OpenSignInBtn" class="wide-btn auth-submit-btn" type="button">
+      Open Sign in
+    </button>
+  `;
+
+  profileSection.insertAdjacentElement("afterend", gate);
+
+  $("rd149OpenSignInBtn")?.addEventListener("click", () => {
+    rd149ReturnToFriendsAfterAuth = true;
+    rd149OpenAccountForFriends();
+  });
+}
+
+
+function rd149FriendsSignedIn() {
+  return Boolean(
+    state.auth.user &&
+    state.auth.profile &&
+    !state.auth.passwordRecovery
+  );
+}
+
+
+function rd149SetFriendsPanelMode(mode) {
+  const panel = $("friendsPanel");
+  if (!panel) return;
+
+  const accountMode = mode !== "friends";
+  const friendsSignedOut = !accountMode && !rd149FriendsSignedIn();
+
+  panel.classList.toggle("rd149-account-mode", accountMode);
+  panel.classList.toggle("rd149-friends-mode", !accountMode);
+  panel.classList.toggle("rd149-friends-signed-out", friendsSignedOut);
+  panel.setAttribute("aria-label", accountMode ? "Road Profile" : "Friends");
+
+  $("rd149FriendsSignedOutGate")?.classList.toggle(
+    "hidden",
+    !friendsSignedOut
+  );
+}
+
+
+function rd149CurrentFriendsPanelMode() {
+  return $("friendsPanel")?.classList.contains("rd149-friends-mode")
+    ? "friends"
+    : "account";
+}
+
+
+function rd149OpenAccountForFriends() {
+  rd149OriginalOpenFriendsPanel();
+  rd149SetFriendsPanelMode("account");
+  rd148SetFriendsPanelHeading(
+    "Road Profile",
+    "Sign in or create your Road Profile."
+  );
+  if (!state.auth.passwordRecovery) setAuthMode("signin");
+  rd148ScrollFriendsPanel();
+}
+
+
+openFriendsPanel = function () {
+  const result = rd149OriginalOpenFriendsPanel();
+  rd149SetFriendsPanelMode("account");
+  rd148SetFriendsPanelHeading(
+    "Road Profile",
+    state.auth.user
+      ? "Your account and privacy controls."
+      : "Sign in or create your Road Profile."
+  );
+  return result;
+};
+
+
+showPasswordRecoveryBox = function (options = {}) {
+  const result = rd149OriginalShowPasswordRecoveryBox(options);
+  rd149ReturnToFriendsAfterAuth = false;
+  rd149SetFriendsPanelMode("account");
+  rd148SetFriendsPanelHeading(
+    "Road Profile",
+    "Secure password reset."
+  );
+  return result;
+};
+
+
+renderAuthState = function () {
+  const result = rd149OriginalRenderAuthState();
+
+  if (rd149ReturnToFriendsAfterAuth && rd149FriendsSignedIn()) {
+    rd149ReturnToFriendsAfterAuth = false;
+    showFriendsListView();
+    rd149SetFriendsPanelMode("friends");
+    rd148SetFriendsPanelHeading(
+      "Friends",
+      "Friend codes, requests and shared roads."
+    );
+    rd148ScrollFriendsPanel($("showAddFriendBtn"));
+  } else {
+    rd149SetFriendsPanelMode(rd149CurrentFriendsPanelMode());
+  }
+
+  return result;
+};
+
+
+function rd149InitSeparatedPanels() {
+  rd149InstallSeparatedPanelStyles();
+  rd149CreateFriendsSignedOutGate();
+  rd149SetFriendsPanelMode("account");
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", rd149InitSeparatedPanels, { once: true });
+} else {
+  rd149InitSeparatedPanels();
 }
