@@ -19,6 +19,17 @@
     .link-report-box{margin-top:12px;padding:12px;border:1px solid #394654;border-radius:12px;background:#0a0e13}
     .link-report-box[hidden]{display:none}.link-report-box h3{font-size:14px}.link-report-box ul{margin:8px 0 0;padding-left:20px;color:var(--muted)}
   </style>
+  <style>
+    .summary.workflow-folders{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .workflow-folder{display:flex;align-items:center;gap:11px;width:100%;min-height:76px;padding:12px;border:2px solid #303b47;border-radius:15px;background:#11161d;color:#fff;text-align:left;cursor:pointer}
+    .workflow-folder:hover,.workflow-folder.active{border-color:#ff8615;background:#18140f}.workflow-folder.active{box-shadow:inset 0 0 0 1px rgba(255,134,21,.12)}
+    .workflow-icon{display:grid;width:36px;height:36px;flex:0 0 auto;place-items:center;border-radius:10px;background:#202833;color:#fff;font-size:18px;font-weight:900}
+    .workflow-folder-copy{min-width:0;flex:1}.workflow-folder-copy strong{display:block;font-size:13px;line-height:1.25}.workflow-folder-copy small{display:block;margin-top:3px;color:var(--muted);font-size:10px}
+    .workflow-count{display:grid;min-width:29px;height:29px;place-items:center;border-radius:999px;background:#26313d;font-weight:900}.workflow-folder[data-folder="awaiting_review"] .workflow-icon,.workflow-folder[data-folder="resubmissions"] .workflow-icon{color:#9ed1ff}.workflow-folder[data-folder="needs_changes"] .workflow-icon{color:#ffb15f}.workflow-folder[data-folder="approved_scheduled"] .workflow-icon,.workflow-folder[data-folder="live_now"] .workflow-icon{color:#76e9ad}.workflow-folder[data-folder="refund_pending"] .workflow-icon,.workflow-folder[data-folder="past_due"] .workflow-icon{color:#ff9ba6}
+    .folder-panel{padding:15px}.folder-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:11px}.folder-head h2{font-size:19px}.compact-list{display:grid;gap:8px}.compact-booking{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:11px;width:100%;padding:10px;border:1px solid #34404c;border-radius:12px;background:#0b1016;color:#fff;text-align:left;cursor:pointer}.compact-booking:hover{border-color:#617181;background:#121923}.compact-icon{display:grid;width:44px;height:44px;place-items:center;overflow:hidden;border-radius:10px;background:#202833;color:#dbe5f0;font-weight:900}.compact-icon img{width:100%;height:100%;object-fit:cover}.compact-copy{min-width:0}.compact-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.compact-copy span{display:block;margin-top:3px;color:var(--muted);font-size:11px}.compact-status{border:1px solid #46515e;border-radius:999px;padding:5px 8px;color:#dfe6ee;font-size:9px;font-weight:850;text-transform:uppercase}.folder-group-title{margin:17px 2px 8px;color:#ffad5c;font-size:13px}.folder-empty{padding:22px;color:var(--muted);text-align:center}.detail-back{margin-bottom:12px}.archive-year{margin:18px 2px 9px;color:#fff;font-size:17px}
+    @media(max-width:900px){.summary.workflow-folders{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:520px){.summary.workflow-folders{grid-template-columns:1fr}.compact-booking{grid-template-columns:40px minmax(0,1fr)}.compact-status{grid-column:2;justify-self:start}.workflow-folder{min-height:66px}}
+  </style>
 </head>
 <body>
 <main class="wrap">
@@ -59,6 +70,8 @@ const API=SUPABASE_URL+"/functions/v1/sponsor-admin";
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
 let bookings=[];
+let activeFolder="";
+let selectedBookingId="";
 
 const esc=value=>String(value??"").replace(/[&<>"']/g,character=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[character]));
 const fmt=value=>value?new Intl.DateTimeFormat("en-AU",{day:"numeric",month:"short",year:"numeric",timeZone:"Australia/Sydney"}).format(new Date(value+(/T/.test(value)?"":"T12:00:00Z"))):"—";
@@ -66,31 +79,84 @@ const statusLabel=value=>String(value||"unknown").replaceAll("_"," ");
 const reportLabels={scam_phishing:"Scam or phishing",malware_download:"Malware or suspicious download",inappropriate_harmful:"Inappropriate or harmful content",website_changed:"Website changed since review",misleading_broken:"Misleading or broken link"};
 
 async function token(){const {data}=await sb.auth.getSession();return data.session?.access_token||""}
-async function api(method="GET",body){const response=await fetch(API,{method,cache:"no-store",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+await token(),"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Request failed.");return data}
+async function api(method="GET",body,query=""){const response=await fetch(API+query,{method,cache:"no-store",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+await token(),"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Request failed.");return data}
 function endDate(start){const date=new Date(start+"T12:00:00Z");date.setUTCDate(date.getUTCDate()+6);return date.toISOString().slice(0,10)}
 
+const workflowFolders=[
+  {key:"awaiting_artwork",label:"Awaiting artwork",help:"Paid, no upload yet",icon:"＋"},
+  {key:"awaiting_review",label:"Awaiting review",help:"First submissions",icon:"◎"},
+  {key:"resubmissions",label:"Resubmissions",help:"Revised ads to check",icon:"↻"},
+  {key:"needs_changes",label:"Needs changes",help:"Waiting on advertiser",icon:"!"},
+  {key:"approved_scheduled",label:"Approved & scheduled",help:"Grouped by booked week",icon:"✓"},
+  {key:"live_now",label:"Live now",help:"Currently advertising",icon:"●"},
+  {key:"refund_pending",label:"Refund pending",help:"Waiting on Stripe",icon:"$"},
+  {key:"past_due",label:"Past due",help:"Finished week needs action",icon:"!"},
+  {key:"archive",label:"Archive",help:"Completed and refunded",icon:"□"}
+];
+
+function sydneyToday(){const parts=new Intl.DateTimeFormat("en-AU",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());const values=Object.fromEntries(parts.map(part=>[part.type,part.value]));return `${values.year}-${values.month}-${values.day}`}
+function isoAddDays(value,days){const date=new Date(value+"T12:00:00Z");date.setUTCDate(date.getUTCDate()+days);return date.toISOString().slice(0,10)}
+function currentMonday(){const today=sydneyToday();const date=new Date(today+"T12:00:00Z");const offset=(date.getUTCDay()+6)%7;return isoAddDays(today,-offset)}
+function isRefunded(booking){return booking.status==="refunded"||booking.refund_status==="succeeded"}
+function workflowFolderFor(booking){
+  const today=sydneyToday();
+  const ended=endDate(booking.week_start)<today;
+  if(booking.status==="refund_pending"||booking.refund_status==="pending")return "refund_pending";
+  if(isRefunded(booking)||booking.status==="rejected"||booking.status==="cancelled")return "archive";
+  if(ended)return booking.status==="published"?"archive":"past_due";
+  if(booking.status==="pending_artwork")return "awaiting_artwork";
+  if(booking.status==="pending_review")return Number(booking.submission_version||0)>1?"resubmissions":"awaiting_review";
+  if(booking.status==="needs_changes")return "needs_changes";
+  if(booking.status==="approved")return "approved_scheduled";
+  if(booking.status==="published")return booking.week_start<=today?"live_now":"approved_scheduled";
+  return "past_due";
+}
+function folderItems(key){return bookings.filter(item=>workflowFolderFor(item)===key)}
+function filteredBookings(){const query=$("search").value.trim().toLowerCase();if(!query)return null;return bookings.filter(item=>[item.booking_code,item.customer_email,item.business_name,item.status,item.week_start,item.refund_reason].some(value=>String(value||"").toLowerCase().includes(query)))}
+
 function summary(){
-  const values=[
-    [bookings.length,"Paid bookings"],
-    [bookings.filter(item=>item.status==="pending_artwork").length,"Awaiting artwork"],
-    [bookings.filter(item=>item.status==="pending_review").length,"Awaiting review"],
-    [bookings.filter(item=>item.status==="needs_changes").length,"Needs changes"],
-    [bookings.filter(item=>item.status==="refund_pending"||item.refund_status==="pending").length,"Refund pending"]
-  ];
-  $("summary").innerHTML=values.map(item=>`<div class="panel"><strong>${item[0]}</strong><span>${item[1]}</span></div>`).join("");
+  $("summary").classList.add("workflow-folders");
+  $("summary").innerHTML=workflowFolders.map(folder=>`<button class="workflow-folder ${activeFolder===folder.key?"active":""}" data-folder="${folder.key}" type="button"><span class="workflow-icon">${folder.icon}</span><span class="workflow-folder-copy"><strong>${folder.label}</strong><small>${folder.help}</small></span><span class="workflow-count">${folderItems(folder.key).length}</span></button>`).join("");
+  document.querySelectorAll(".workflow-folder").forEach(button=>button.onclick=()=>{activeFolder=button.dataset.folder;selectedBookingId="";$("search").value="";render()});
 }
 
-function filteredBookings(){
-  const query=$("search").value.trim().toLowerCase();
-  if(!query)return bookings;
-  return bookings.filter(item=>[item.booking_code,item.customer_email,item.business_name,item.status,item.week_start].some(value=>String(value||"").toLowerCase().includes(query)));
+function compactBookingHtml(booking){
+  const image=booking.preview_url||booking.public_image_url||booking.artwork_url||"";
+  const title=booking.business_name||"Unnamed advertiser";
+  return `<button class="compact-booking" data-open-booking="${booking.id}" type="button"><span class="compact-icon">${image?`<img src="${esc(image)}" alt="">`:esc(title.slice(0,1).toUpperCase()||"A")}</span><span class="compact-copy"><strong>${esc(title)}</strong><span>${fmt(booking.week_start)} – ${fmt(endDate(booking.week_start))} · ${esc(booking.booking_code||"No booking number")}</span></span><span class="compact-status">${esc(statusLabel(isRefunded(booking)?"refunded":booking.status))}</span></button>`;
 }
+function scheduledListHtml(items){
+  const monday=currentMonday(),next=isoAddDays(monday,7);
+  const groups=[
+    ["This week",items.filter(item=>item.week_start===monday)],
+    ["Next week",items.filter(item=>item.week_start===next)],
+    ["Later weeks",items.filter(item=>item.week_start!==monday&&item.week_start!==next)]
+  ];
+  return groups.filter(([,rows])=>rows.length).map(([title,rows])=>`<h3 class="folder-group-title">${title}</h3><div class="compact-list">${rows.map(compactBookingHtml).join("")}</div>`).join("");
+}
+function archiveListHtml(items){
+  const years=[...new Set(items.map(item=>String(item.week_start||"").slice(0,4)))].sort((a,b)=>b.localeCompare(a));
+  return years.map(year=>`<h3 class="archive-year">${esc(year)}</h3><div class="compact-list">${items.filter(item=>String(item.week_start||"").startsWith(year)).sort((a,b)=>String(b.week_start).localeCompare(String(a.week_start))).map(compactBookingHtml).join("")}</div>`).join("");
+}
+async function openBookingDetail(id){
+  selectedBookingId=id;render();
+  const booking=bookings.find(item=>item.id===id);
+  if(!booking||booking.details_loaded)return;
+  try{const data=await api("GET",null,`?booking_id=${encodeURIComponent(id)}`);bookings=bookings.map(item=>item.id===id?data.booking:item);render()}catch(error){const message=document.querySelector(".card .message");if(message)message.textContent=error.message}
+}
+function bindCompactRows(){document.querySelectorAll("[data-open-booking]").forEach(button=>button.onclick=()=>openBookingDetail(button.dataset.openBooking))}
 
 function render(){
+  if(!activeFolder)activeFolder=workflowFolders.find(folder=>folderItems(folder.key).length)?.key||"archive";
   summary();
-  const visible=filteredBookings();
-  $("bookings").innerHTML=visible.length?visible.map(cardHtml).join(""):`<div class="panel empty-state">${bookings.length?"No paid bookings match that search.":"No paid sponsor bookings yet. Unpaid or abandoned Stripe checkouts never appear here."}</div>`;
-  bindCards();
+  const searchResults=filteredBookings();
+  if(selectedBookingId){const booking=bookings.find(item=>item.id===selectedBookingId);$("bookings").innerHTML=booking?cardHtml(booking):`<div class="panel empty-state">Booking not found.</div>`;bindCards();return}
+  if(searchResults){$("bookings").innerHTML=`<section class="panel folder-panel"><div class="folder-head"><h2>Search results</h2><span class="muted">${searchResults.length}</span></div>${searchResults.length?`<div class="compact-list">${searchResults.map(compactBookingHtml).join("")}</div>`:`<div class="folder-empty">No paid bookings match that search.</div>`}</section>`;bindCompactRows();return}
+  const folder=workflowFolders.find(item=>item.key===activeFolder)||workflowFolders[0];
+  const items=folderItems(folder.key);
+  const list=folder.key==="approved_scheduled"?scheduledListHtml(items):folder.key==="archive"?archiveListHtml(items):`<div class="compact-list">${items.map(compactBookingHtml).join("")}</div>`;
+  $("bookings").innerHTML=`<section class="panel folder-panel"><div class="folder-head"><h2>${folder.label}</h2><span class="muted">${items.length} booking${items.length===1?"":"s"}</span></div>${items.length?list:`<div class="folder-empty">Nothing is in this folder.</div>`}</section>`;
+  bindCompactRows();
 }
 
 function cardHtml(booking){
@@ -105,6 +171,7 @@ function cardHtml(booking){
   const reportRows=Object.entries(booking.link_reports?.reasons||{}).filter(([,count])=>Number(count)>0).sort((a,b)=>Number(b[1])-Number(a[1]));
   const linkEnabled=booking.click_url&&booking.click_url_enabled!==false;
   return `<article class="card ${tone}" data-id="${booking.id}">
+    <button class="btn detail-back" type="button">← Back to ${esc(workflowFolders.find(folder=>folder.key===activeFolder)?.label||"folder")}</button>
     <div class="card-head"><div><h2>${fmt(booking.week_start)} – ${fmt(endDate(booking.week_start))}</h2><p class="meta">Position ${booking.slot_number} of 5 · <a class="email" href="mailto:${esc(booking.customer_email)}">${esc(booking.customer_email||"Paid email unavailable")}</a> · Paid ${fmt(booking.paid_at)}</p><div class="code-line"><span class="booking-code">${esc(booking.booking_code||"No booking number")}</span><button class="btn mini copy" type="button">Copy</button></div></div><div class="badges"><span class="badge verified">Verified Stripe payment</span>${booking.click_url&&!linkEnabled?`<span class="badge link-disabled">Link disabled</span>`:""}<span class="badge ${esc(booking.status)}">${esc(statusLabel(booking.status))}</span></div></div>
     ${booking.change_reason?`<p class="reason"><strong>Advertiser must fix / rejection reason:</strong> ${esc(booking.change_reason)}</p>`:""}
     <div class="artwork">${preview}<div class="fields">
@@ -135,6 +202,7 @@ function ask(title,help,confirmLabel){return new Promise(resolve=>{const dialog=
 function bindCards(){
   document.querySelectorAll(".card").forEach(card=>{
     const booking=bookings.find(item=>item.id===card.dataset.id);
+    card.querySelector(".detail-back").onclick=()=>{selectedBookingId="";render()};
     card.querySelector(".copy").onclick=async event=>{try{await navigator.clipboard.writeText(booking.booking_code);event.currentTarget.textContent="Copied";setTimeout(()=>event.currentTarget.textContent="Copy",1200)}catch(_){prompt("Copy booking number:",booking.booking_code)}};
     card.querySelector(".emailAdvertiser").onclick=event=>{event.preventDefault();const subject=encodeURIComponent(`Road Discovery AU ${booking.booking_code}`);const message=booking.change_reason?`Hi, we reviewed booking ${booking.booking_code}. Please fix: ${booking.change_reason}\n\nUse the secure upload link from your paid booking email to send the revised artwork.`:`Hi, regarding your paid Road Discovery AU sponsor booking ${booking.booking_code}: `;location.href=`mailto:${booking.customer_email}?subject=${subject}&body=${encodeURIComponent(message)}`};
     card.querySelector(".linkReports").onclick=()=>{const box=card.querySelector(".link-report-box");box.hidden=!box.hidden};
@@ -150,6 +218,7 @@ function bindCards(){
       try{
         const data=await api("PATCH",{id:booking.id,action,...values(card),reason});
         bookings=bookings.map(item=>item.id===booking.id?data.booking:item);
+        if(["needs_changes","approve","publish","refund"].includes(action))selectedBookingId="";
         render();
       }catch(error){message.textContent=error.message;card.querySelectorAll("button[data-action]").forEach(item=>item.disabled=false)}
     });
