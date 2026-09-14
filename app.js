@@ -55161,6 +55161,7 @@ function rd159OpenSponsorExit(config) {
     event.preventDefault();
     const message = form.querySelector(".rd159-report-message");
     const reason = new FormData(form).get("reason");
+    if (config?.adminPreview === true) { message.textContent = "Private test only — no link report was saved."; return; }
     if (!state.auth.user || !state.auth.session?.access_token) { message.textContent = "Sign in to your Road Profile before reporting a link."; return; }
     if (!config?.bookingId || !reason) { message.textContent = reason ? "This link cannot be reported right now." : "Select a reason first."; return; }
     const button = form.querySelector(".submit-report"); button.disabled = true; message.textContent = "Sending report…";
@@ -55177,7 +55178,9 @@ const rd159ShowSponsorWithoutExitWarning = rd131ShowSponsor;
 rd131ShowSponsor = function (config, key) {
   const shown = rd159ShowSponsorWithoutExitWarning(config, key);
   const media = $("rd131SponsorMedia");
+  const label = document.querySelector(".rd131-sponsor-label");
   if (!shown || !media) return shown;
+  if (label) label.textContent = config?.adminPreview === true ? "Sponsored · private test" : "Sponsored";
   media.onclick = null; media.removeAttribute("href"); media.removeAttribute("target"); media.removeAttribute("rel");
   if (config?.clickUrl) {
     media.setAttribute("role", "button"); media.setAttribute("tabindex", "0");
@@ -55189,3 +55192,200 @@ rd131ShowSponsor = function (config, key) {
 
 rd159InstallLinkSafetyUi();
 document.documentElement.dataset.roadDiscoverySponsorLinkReports = "v159";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v165
+   Private admin test for scheduled sponsor artwork
+   -------------------------------------------------- */
+
+const RD165_ADMIN_SPONSOR_TEST_KEY =
+  "roadDiscoveryAU.sponsorAdminPreview.v1";
+
+
+function rd165TakeAdminSponsorTest() {
+  const url = new URL(window.location.href);
+
+  if (url.searchParams.get("sponsor_admin_preview") !== "1") {
+    return null;
+  }
+
+  url.searchParams.delete("sponsor_admin_preview");
+  window.history.replaceState(
+    window.history.state,
+    "",
+    url.href
+  );
+
+  let raw = "";
+
+  try {
+    raw = localStorage.getItem(
+      RD165_ADMIN_SPONSOR_TEST_KEY
+    ) || "";
+    localStorage.removeItem(
+      RD165_ADMIN_SPONSOR_TEST_KEY
+    );
+  } catch (_) {
+    return { error: "This browser blocked the private sponsor test." };
+  }
+
+  if (!raw) {
+    return { error: "The private sponsor test was not found or was already used." };
+  }
+
+  try {
+    const payload = JSON.parse(raw);
+    const now = Date.now();
+    const createdAt = Number(payload?.createdAt);
+    const expiresAt = Number(payload?.expiresAt);
+    const imageUrl = rd131SafeSponsorUrl(
+      payload?.imageUrl,
+      window.location.href
+    );
+
+    if (
+      payload?.version !== 1 ||
+      !Number.isFinite(createdAt) ||
+      !Number.isFinite(expiresAt) ||
+      createdAt > now + 60000 ||
+      now - createdAt > 5 * 60 * 1000 ||
+      expiresAt <= now ||
+      expiresAt - createdAt > 5 * 60 * 1000 + 1000 ||
+      !imageUrl
+    ) {
+      return { error: "The private sponsor test expired. Open it again from Sponsor Admin." };
+    }
+
+    return {
+      id: `admin-test-${String(payload.bookingId || "sponsor").replace(/[^a-z0-9-]/gi, "-").slice(0, 70)}`,
+      bookingId: String(payload.bookingId || ""),
+      linkVersion: 0,
+      imageUrl,
+      clickUrl: rd131SafeSponsorUrl(
+        payload.clickUrl,
+        window.location.href
+      ),
+      alt: String(
+        payload.alt || "Sponsor advertisement test"
+      ).trim().slice(0, 180) || "Sponsor advertisement test",
+      bookingUrl: new URL("./", window.location.href).href,
+      adminPreview: true,
+      nonce: String(payload.nonce || createdAt)
+    };
+  } catch (_) {
+    return { error: "The private sponsor test could not be read. Open it again from Sponsor Admin." };
+  }
+}
+
+
+function rd165AdminTestMessage(message) {
+  if (typeof showToast === "function") {
+    showToast(message);
+    return;
+  }
+
+  if (typeof setAccuracyStatus === "function") {
+    setAccuracyStatus(message);
+  }
+}
+
+
+async function rd165ShowAdminSponsorTest(
+  config,
+  attempt = 0
+) {
+  if (!config || config.error) {
+    rd165AdminTestMessage(
+      config?.error || "The private sponsor test could not be opened."
+    );
+    return;
+  }
+
+  if (rd131ActivityIsRunning()) {
+    rd165AdminTestMessage(
+      "Finish the current drive or game, then open the private test again from Sponsor Admin."
+    );
+    return;
+  }
+
+  if (
+    rd131CompletionUiBusy() ||
+    rd131SponsorState.activeKey
+  ) {
+    if (attempt < 120) {
+      window.setTimeout(
+        () => void rd165ShowAdminSponsorTest(
+          config,
+          attempt + 1
+        ),
+        250
+      );
+    } else {
+      rd165AdminTestMessage(
+        "Close the open screen, then start the private test again from Sponsor Admin."
+      );
+    }
+    return;
+  }
+
+  const imageReady = await rd131PreloadSponsorImage(
+    config.imageUrl
+  );
+
+  if (!imageReady) {
+    rd165AdminTestMessage(
+      "The advertisement image could not be loaded for the private test."
+    );
+    return;
+  }
+
+  const shown = rd131ShowSponsor(
+    config,
+    `admin-test:${config.nonce}`
+  );
+
+  if (!shown && attempt < 120) {
+    window.setTimeout(
+      () => void rd165ShowAdminSponsorTest(
+        config,
+        attempt + 1
+      ),
+      250
+    );
+    return;
+  }
+
+  if (!shown) {
+    rd165AdminTestMessage(
+      "The private sponsor test could not open. Try it again from Sponsor Admin."
+    );
+    return;
+  }
+
+  document.documentElement.dataset.roadDiscoverySponsorAdminTest =
+    "private-v165";
+}
+
+
+function rd165InitAdminSponsorTest() {
+  const config = rd165TakeAdminSponsorTest();
+
+  if (!config) return;
+
+  window.setTimeout(
+    () => void rd165ShowAdminSponsorTest(config),
+    350
+  );
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd165InitAdminSponsorTest,
+    { once: true }
+  );
+} else {
+  rd165InitAdminSponsorTest();
+}
