@@ -52246,9 +52246,58 @@ rd131FetchSponsorConfig = async function () {
     })
     .filter((entry) => entry.active && entry.imageUrl);
 
-  const backupConfig = await backupPromise;
+  const managedBackupIds = new Set();
+  const managedBackupSponsors = (
+    Array.isArray(supplied?.backupSponsors)
+      ? supplied.backupSponsors
+      : []
+  )
+    .slice(0, 100)
+    .map((entry, index) => {
+      let id = String(entry?.id || `personal-backup-${index + 1}`)
+        .replace(/[^a-z0-9._-]/gi, "-").slice(0, 80);
+      if (!id || managedBackupIds.has(id)) {
+        id = `personal-backup-${index + 1}`;
+      }
+      managedBackupIds.add(id);
+      const version = String(
+        entry?.version || supplied?.backupVersion || ""
+      );
+      const imageUrl = rd131SafeSponsorUrl(
+        entry?.imageUrl || "",
+        window.location.href
+      );
+      return {
+        id,
+        sponsorKind: "backup",
+        bookingId: "",
+        personalAdId: String(entry?.personalAdId || ""),
+        linkVersion: Number(entry?.linkVersion || 1),
+        active: entry?.active !== false,
+        imageUrl: imageUrl
+          ? rd131VersionedSponsorImage(imageUrl, version)
+          : "",
+        clickUrl: rd131SafeSponsorUrl(
+          entry?.clickUrl || "",
+          window.location.href
+        ),
+        alt: String(entry?.alt || "Road Discovery AU advertisement")
+          .trim().slice(0, 180),
+        startsAt: "",
+        endsAt: "",
+        version
+      };
+    })
+    .filter((entry) => entry.active && entry.imageUrl);
+
+  // sponsor-ad.json remains an automatic fallback until at least one Personal
+  // Ad is active. This keeps existing installations working during deployment
+  // without mixing manually managed and admin-managed copies.
+  const backupConfig = managedBackupSponsors.length
+    ? null
+    : await backupPromise;
   const backupIds = new Set();
-  const backupSponsors = (Array.isArray(backupConfig?.sponsors) ? backupConfig.sponsors : [])
+  const legacyBackupSponsors = (Array.isArray(backupConfig?.sponsors) ? backupConfig.sponsors : [])
     .slice(0, 5)
     .map((entry, index) => {
       const sourceId = String(entry?.id || `backup-sponsor-${index + 1}`)
@@ -52261,19 +52310,27 @@ rd131FetchSponsorConfig = async function () {
         id,
         sponsorKind: "backup",
         bookingId: "",
+        personalAdId: "",
         linkVersion: 0,
         active: entry?.active !== false
       };
     })
     .filter((entry) => entry.active && entry.imageUrl);
 
+  const backupSponsors = managedBackupSponsors.length
+    ? managedBackupSponsors
+    : legacyBackupSponsors;
   const sponsors = [...paidSponsors, ...backupSponsors];
   if (!sponsors.length) return null;
 
   return {
     version: [
       `paid:${String(supplied?.version || "none")}`,
-      `backup:${String(backupConfig?.version || "none")}`
+      `backup:${String(
+        managedBackupSponsors.length
+          ? supplied?.backupVersion || "managed"
+          : backupConfig?.version || "none"
+      )}`
     ].join("|"),
     bookingUrl: rd131SafeSponsorUrl(
       supplied?.bookingUrl || backupConfig?.bookingUrl || window.location.href,
@@ -55205,10 +55262,10 @@ function rd159OpenSponsorExit(config) {
     const reason = new FormData(form).get("reason");
     if (config?.adminPreview === true) { message.textContent = "Private test only — no link report was saved."; return; }
     if (!state.auth.user || !state.auth.session?.access_token) { message.textContent = "Sign in to your Road Profile before reporting a link."; return; }
-    if (!config?.bookingId || !reason) { message.textContent = reason ? "This link cannot be reported right now." : "Select a reason first."; return; }
+    if ((!config?.bookingId && !config?.personalAdId) || !reason) { message.textContent = reason ? "This link cannot be reported right now." : "Select a reason first."; return; }
     const button = form.querySelector(".submit-report"); button.disabled = true; message.textContent = "Sending report…";
     try {
-      const response = await fetch(RD142_SPONSOR_BOOKING_API, {method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${state.auth.session.access_token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"report_link",bookingId:config.bookingId,reason})});
+      const response = await fetch(RD142_SPONSOR_BOOKING_API, {method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${state.auth.session.access_token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"report_link",bookingId:config.bookingId||"",personalAdId:config.personalAdId||"",reason})});
       const result = await response.json().catch(()=>({}));
       if (!response.ok) throw new Error(result.error || "Report could not be sent.");
       message.textContent = "Report received. The advertiser’s website has not been opened. We’ll review the link.";
@@ -55746,3 +55803,12 @@ rd141CommitSponsor = function (
 
 document.documentElement.dataset.roadDiscoverySponsorRotation =
   "paid-plus-rolling-backups-v166";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v167
+   Admin-managed Personal Ads for unsold positions
+   -------------------------------------------------- */
+
+document.documentElement.dataset.roadDiscoveryPersonalAds =
+  "admin-managed-backups-v167";
