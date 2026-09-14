@@ -38,6 +38,17 @@
     @media(max-width:820px){.editor-layout{grid-template-columns:1fr}.editor-canvas-shell{width:min(100%,520px)}}
     @media(max-width:480px){.image-editor{padding:11px}.editor-tool-row,.editor-stats{grid-template-columns:1fr}.editor-crosshair{display:none}}
   </style>
+  <style>
+    .workflow-folder[data-folder="personal_ads"] .workflow-icon{color:#ffbd73}.workflow-folder[data-folder="personal_ads"].active{border-color:#ff9b36}
+    .personal-folder-head{align-items:flex-start}.personal-folder-copy p{margin-top:3px;color:var(--muted);font-size:12px}.personal-folder-count{color:#ffbd73;font-weight:800}
+    .personal-ad-row{grid-template-columns:52px minmax(0,1fr) auto}.personal-ad-row .compact-icon{width:52px;height:52px}.personal-ad-row.active-personal{border-color:rgba(78,227,154,.48)}
+    .compact-status.personal-active{border-color:#287952;color:#76e9ad}.compact-status.personal-paused{border-color:#58636f;color:#b9c2cc}
+    .personal-ad-page{border:2px solid rgba(255,155,54,.7)}.personal-ad-page .personal-primary-image{width:100%;height:100%;object-fit:contain;background:#fff}
+    .personal-guide{margin-top:14px;padding:12px;border:1px solid rgba(255,155,54,.42);border-radius:12px;background:rgba(255,155,54,.06);color:#f5d7b7}.personal-guide strong{color:#fff}
+    .personal-create{padding:18px;border:2px solid rgba(255,155,54,.7)}.personal-create-grid{display:grid;grid-template-columns:minmax(230px,360px) minmax(0,1fr);gap:16px;margin-top:15px}.personal-create-preview{display:grid;aspect-ratio:1/1;place-items:center;overflow:hidden;border:1px solid #394654;border-radius:14px;background:#080c11;color:var(--muted);text-align:center}.personal-create-preview img{width:100%;height:100%;object-fit:contain;background:#fff}.personal-create .fields{align-content:start}.personal-file{width:100%;border:1px solid #394654;border-radius:10px;padding:9px;background:#090d12;color:#fff}
+    .personal-active-note{margin-top:12px;padding:10px;border-left:3px solid var(--green);background:rgba(78,227,154,.06);color:#baf4d4}.personal-paused-note{margin-top:12px;padding:10px;border-left:3px solid #6e7b88;background:rgba(110,123,136,.07);color:#c3ccd5}
+    @media(max-width:760px){.personal-create-grid{grid-template-columns:1fr}.personal-create-preview{width:min(100%,420px);margin:auto}}
+  </style>
 </head>
 <body>
 <main class="wrap">
@@ -52,11 +63,11 @@
 
   <section id="dashboard" hidden>
     <header class="top">
-      <div><h1>Road Discovery AU</h1><p>Verified paid sponsor approvals, publishing and refunds</p></div>
+      <div><h1>Road Discovery AU</h1><p>Paid sponsor workflow and Personal Ads</p></div>
       <div><button id="refresh" class="btn" type="button">Refresh</button> <button id="signOut" class="btn" type="button">Sign out</button></div>
     </header>
     <section class="tools">
-      <input id="search" class="search" type="search" placeholder="Search booking number, paid email or business…" aria-label="Search paid bookings">
+      <input id="search" class="search" type="search" placeholder="Search booking number, paid email or business…" aria-label="Search sponsor administration">
       <span id="lastUpdated" class="muted"></span>
     </section>
     <section id="summary" class="summary"></section>
@@ -87,8 +98,11 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
 const ADMIN_SPONSOR_TEST_KEY="roadDiscoveryAU.sponsorAdminPreview.v1";
 let bookings=[];
+let personalAds=[];
 let activeFolder="";
 let selectedBookingId="";
+let selectedPersonalAdId="";
+let personalCreateOpen=false;
 
 const esc=value=>String(value??"").replace(/[&<>"']/g,character=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[character]));
 const fmt=value=>value?new Intl.DateTimeFormat("en-AU",{day:"numeric",month:"short",year:"numeric",timeZone:"Australia/Sydney"}).format(new Date(value+(/T/.test(value)?"":"T12:00:00Z"))):"—";
@@ -140,7 +154,8 @@ const workflowFolders=[
   {key:"live_now",label:"Live now",help:"Currently advertising",icon:"●"},
   {key:"refund_pending",label:"Refund pending",help:"Waiting on Stripe",icon:"$"},
   {key:"past_due",label:"Past due",help:"Finished week needs action",icon:"!"},
-  {key:"archive",label:"Archive",help:"Completed and refunded",icon:"□"}
+  {key:"archive",label:"Archive",help:"Completed and refunded",icon:"□"},
+  {key:"personal_ads",label:"Personal Ads",help:"Your unsold-slot backups",icon:"★"}
 ];
 
 function sydneyToday(){const parts=new Intl.DateTimeFormat("en-AU",{timeZone:"Australia/Sydney",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());const values=Object.fromEntries(parts.map(part=>[part.type,part.value]));return `${values.year}-${values.month}-${values.day}`}
@@ -160,13 +175,14 @@ function workflowFolderFor(booking){
   if(booking.status==="published")return booking.week_start<=today?"live_now":"scheduled";
   return "past_due";
 }
-function folderItems(key){return bookings.filter(item=>workflowFolderFor(item)===key)}
+function folderItems(key){return key==="personal_ads"?personalAds:bookings.filter(item=>workflowFolderFor(item)===key)}
+function folderCount(key){return key==="personal_ads"?personalAds.filter(item=>item.active).length:folderItems(key).length}
 function filteredBookings(){const query=$("search").value.trim().toLowerCase();if(!query)return null;return bookings.filter(item=>[item.booking_code,item.customer_email,item.business_name,item.status,item.week_start,item.refund_reason].some(value=>String(value||"").toLowerCase().includes(query)))}
 
 function summary(){
   $("summary").classList.add("workflow-folders");
-  $("summary").innerHTML=workflowFolders.map(folder=>`<button class="workflow-folder ${activeFolder===folder.key?"active":""}" data-folder="${folder.key}" type="button"><span class="workflow-icon">${folder.icon}</span><span class="workflow-folder-copy"><strong>${folder.label}</strong><small>${folder.help}</small></span><span class="workflow-count">${folderItems(folder.key).length}</span></button>`).join("");
-  document.querySelectorAll(".workflow-folder").forEach(button=>button.onclick=()=>{activeFolder=button.dataset.folder;selectedBookingId="";$("search").value="";render()});
+  $("summary").innerHTML=workflowFolders.map(folder=>`<button class="workflow-folder ${activeFolder===folder.key?"active":""}" data-folder="${folder.key}" type="button"><span class="workflow-icon">${folder.icon}</span><span class="workflow-folder-copy"><strong>${folder.label}</strong><small>${folder.help}</small></span><span class="workflow-count">${folderCount(folder.key)}</span></button>`).join("");
+  document.querySelectorAll(".workflow-folder").forEach(button=>button.onclick=()=>{activeFolder=button.dataset.folder;selectedBookingId="";selectedPersonalAdId="";personalCreateOpen=false;$("search").value="";render()});
 }
 
 function compactBookingHtml(booking){
@@ -195,9 +211,89 @@ async function openBookingDetail(id){
 }
 function bindCompactRows(){document.querySelectorAll("[data-open-booking]").forEach(button=>button.onclick=()=>openBookingDetail(button.dataset.openBooking))}
 
+function personalEditorEntity(personalAd){
+  return {
+    ...personalAd,
+    entity_type:"personal_ad",
+    booking_code:`PERSONAL-${String(personalAd.id||"").slice(0,8).toUpperCase()}`,
+    business_name:personalAd.name,
+    original_preview_url:personalAd.image_url,
+    final_preview_url:"",
+    preview_url:personalAd.image_url,
+    public_image_url:personalAd.image_url,
+    using_admin_artwork:false
+  };
+}
+
+function personalCompactHtml(personalAd){
+  const reports=Number(personalAd.link_reports?.total||0);
+  return `<button class="compact-booking personal-ad-row ${personalAd.active?"active-personal":""}" data-open-personal="${personalAd.id}" type="button"><span class="compact-icon"><img src="${esc(personalAd.image_url)}" alt=""></span><span class="compact-copy"><strong>${esc(personalAd.name)}</strong><span>${personalAd.click_url?esc(personalAd.click_url):"No destination website"} · ${reports} link report${reports===1?"":"s"}</span></span><span class="compact-status ${personalAd.active?"personal-active":"personal-paused"}">${personalAd.active?"Active":"Paused"}</span></button>`;
+}
+
+function personalCreateHtml(){
+  return `<article class="panel personal-create">
+    <button class="btn detail-back" data-personal-create-back type="button">← Back to Personal Ads</button>
+    <div class="card-head"><div><h2>Add Personal Ad</h2><p class="meta">Upload one of your own advertisements to fill unsold paid positions.</p></div><div class="badges"><span class="badge">Personal backup</span><span class="badge">Starts paused</span></div></div>
+    <div class="personal-guide"><strong>Nothing goes live immediately.</strong> The uploaded ad starts paused so you can edit it to 1200 × 1200, preview it on laptop and iPhone, and test it privately before activating it.</div>
+    <div class="personal-create-grid"><div class="personal-create-preview" id="personalCreatePreview">Choose a JPEG or PNG image<br>Maximum 5 MB</div><div class="fields">
+      <label class="field"><span>Personal Ad name</span><input id="personalCreateName" maxlength="100" placeholder="Example: Lawn Schedule"></label>
+      <label class="field"><span>Click HTTPS URL (optional)</span><input id="personalCreateUrl" maxlength="2000" placeholder="https://example.com"></label>
+      <label class="field wide"><span>Accessible description / alt text</span><input id="personalCreateAlt" maxlength="240" placeholder="Describe what is shown in the advertisement"></label>
+      <label class="field wide"><span>Advertisement image</span><input id="personalCreateFile" class="personal-file" type="file" accept="image/jpeg,image/png"></label>
+    </div></div>
+    <div class="actions"><button id="personalCreateSave" class="btn primary" type="button">Upload Personal Ad</button></div>
+    <p class="message" id="personalCreateMessage" role="status"></p>
+  </article>`;
+}
+
+function personalDetailHtml(personalAd){
+  const entity=personalEditorEntity(personalAd);
+  const reportTotal=Number(personalAd.link_reports?.total||0);
+  const reportRows=Object.entries(personalAd.link_reports?.reasons||{}).filter(([,count])=>Number(count)>0).sort((a,b)=>Number(b[1])-Number(a[1]));
+  const linkEnabled=personalAd.click_url&&personalAd.click_url_enabled!==false;
+  return `<article class="card personal-ad-page" data-personal-id="${personalAd.id}">
+    <button class="btn detail-back" data-personal-back type="button">← Back to Personal Ads</button>
+    <div class="card-head"><div><h2>${esc(personalAd.name)}</h2><p class="meta">Owner-supplied advertisement · Updated ${fmt(personalAd.updated_at)}</p></div><div class="badges"><span class="badge">Personal backup</span>${personalAd.click_url&&!linkEnabled?`<span class="badge link-disabled">Link disabled</span>`:""}<span class="badge ${personalAd.active?"approved":""}">${personalAd.active?"Active":"Paused"}</span></div></div>
+    <p class="${personalAd.active?"personal-active-note":"personal-paused-note"}">${personalAd.active?"Active — this ad can fill an unsold position in the five-ad rotation.":"Paused — this ad cannot appear to Road Discovery users."}</p>
+    <div class="fields" style="margin-top:14px">
+      <label class="field"><span>Personal Ad name</span><input data-personal-field="name" maxlength="100" value="${esc(personalAd.name)}"></label>
+      <label class="field"><span>Click HTTPS URL (optional)</span><input data-personal-field="click_url" maxlength="2000" value="${esc(personalAd.click_url)}"></label>
+      <label class="field wide"><span>Accessible description / alt text</span><input data-personal-field="alt_text" maxlength="240" value="${esc(personalAd.alt_text)}"></label>
+    </div>
+    <div class="personal-guide"><strong>Paid advertisements always have priority.</strong> Active Personal Ads are selected fairly only for positions that have not been sold. Replacing or editing this image automatically pauses it until you test and activate it again.</div>
+    ${imageEditorHtml(entity)}
+    <div class="preview-stage">${previewAdShell(entity,"desktop")}${previewAdShell(entity,"phone")}</div>
+    <div class="image-facts"><div class="image-fact"><small>Image dimensions</small><strong id="previewDimensions">Checking…</strong></div><div class="image-fact"><small>Aspect ratio</small><strong id="previewRatio">Checking…</strong></div><div class="image-fact"><small>Fit result</small><strong id="previewFit" class="fit-result">Checking…</strong></div></div>
+    <section class="admin-upload"><h3>Replace with another finished file</h3><p>Choose a new JPEG or PNG if you already prepared the finished square image elsewhere.</p><div class="upload-row"><input id="finalArtworkFile" type="file" accept="image/jpeg,image/png"><button id="uploadFinalArtwork" class="btn" type="button">Upload replacement image</button></div></section>
+    <div class="link-report-box" hidden><h3>${reportTotal} account${reportTotal===1?"":"s"} reported this exact link version</h3>${reportRows.length?`<ul>${reportRows.map(([reason,count])=>`<li>${Number(count)} · ${esc(reportLabels[reason]||statusLabel(reason))}</li>`).join("")}</ul>`:`<p class="muted">No reports for the current saved URL.</p>`}</div>
+    <div class="actions">
+      <button class="btn" data-personal-action="save_personal_ad" type="button">Save details</button>
+      <button class="btn good" data-personal-test type="button">Test in Road Discovery now</button>
+      <button class="btn ${personalAd.active?"":"primary"}" data-personal-action="${personalAd.active?"pause_personal_ad":"activate_personal_ad"}" type="button">${personalAd.active?"Pause Personal Ad":"Activate Personal Ad"}</button>
+      <button class="btn" data-personal-reports type="button">Link reports: ${reportTotal}</button>
+      ${personalAd.click_url?`<button class="btn" data-personal-action="${linkEnabled?"disable_personal_link":"enable_personal_link"}" type="button">${linkEnabled?"Temporarily disable link":"Enable link"}</button>`:""}
+      <button class="btn danger" data-personal-action="delete_personal_ad" type="button">Delete Personal Ad</button>
+    </div>
+    <p class="preview-message" role="status"></p>
+  </article>`;
+}
+
+function renderPersonalAds(){
+  if(personalCreateOpen){$("bookings").innerHTML=personalCreateHtml();bindPersonalCreate();return}
+  if(selectedPersonalAdId){const personalAd=personalAds.find(item=>item.id===selectedPersonalAdId);$("bookings").innerHTML=personalAd?personalDetailHtml(personalAd):`<div class="panel empty-state">Personal Ad not found.</div>`;if(personalAd)bindPersonalDetail(personalAd);return}
+  const query=$("search").value.trim().toLowerCase();
+  const items=personalAds.filter(item=>!query||[item.name,item.click_url,item.alt_text,item.active?"active":"paused"].some(value=>String(value||"").toLowerCase().includes(query)));
+  const activeCount=personalAds.filter(item=>item.active).length;
+  $("bookings").innerHTML=`<section class="panel folder-panel"><div class="folder-head personal-folder-head"><div class="personal-folder-copy"><h2>Personal Ads</h2><p><span class="personal-folder-count">${activeCount} active</span> · ${personalAds.length} total · Used only when paid positions are unsold</p></div><button id="addPersonalAd" class="btn primary" type="button">＋ Add Personal Ad</button></div><div class="personal-guide" style="margin:0 0 13px"><strong>Safe migration:</strong> your Cloudflare sponsor-ad.json remains the backup pool until the first Personal Ad is activated. Upload every backup you want here before activating the first one.</div>${items.length?`<div class="compact-list">${items.map(personalCompactHtml).join("")}</div>`:`<div class="folder-empty">${query?"No Personal Ads match that search.":"No Personal Ads yet. Upload your first owner-supplied backup advertisement."}</div>`}</section>`;
+  $("addPersonalAd").onclick=()=>{personalCreateOpen=true;render()};
+  document.querySelectorAll("[data-open-personal]").forEach(button=>button.onclick=()=>{selectedPersonalAdId=button.dataset.openPersonal;render()});
+}
+
 function render(){
   if(!activeFolder)activeFolder=workflowFolders.find(folder=>folderItems(folder.key).length)?.key||"archive";
   summary();
+  $("search").placeholder=activeFolder==="personal_ads"?"Search Personal Ads…":"Search booking number, paid email or business…";
+  if(activeFolder==="personal_ads"){renderPersonalAds();return}
   const searchResults=filteredBookings();
   if(selectedBookingId){const booking=bookings.find(item=>item.id===selectedBookingId);const previewMode=booking&&workflowFolderFor(booking)==="image_preview";$("bookings").innerHTML=booking?(previewMode?imagePreviewHtml(booking):cardHtml(booking)):`<div class="panel empty-state">Booking not found.</div>`;if(previewMode)bindImagePreview();else bindCards();return}
   if(searchResults){$("bookings").innerHTML=`<section class="panel folder-panel"><div class="folder-head"><h2>Search results</h2><span class="muted">${searchResults.length}</span></div>${searchResults.length?`<div class="compact-list">${searchResults.map(compactBookingHtml).join("")}</div>`:`<div class="folder-empty">No paid bookings match that search.</div>`}</section>`;bindCompactRows();return}
@@ -255,16 +351,17 @@ function previewAdShell(booking,device){
 }
 
 function imageEditorHtml(booking){
+  const personal=booking.entity_type==="personal_ad";
   const corrected=Boolean(booking.final_preview_url);
-  return `<section class="image-editor" aria-labelledby="imageEditorTitle"><div class="image-editor-head"><div><h3 id="imageEditorTitle">Square advertisement editor</h3><p>Crop and fit the image here—no Paint or repeated test uploads needed.</p></div><span class="source-chip">1200 × 1200 output</span></div><div class="editor-layout"><div><div class="editor-canvas-shell"><canvas id="squareAdEditor" width="1200" height="1200" aria-label="Draggable square advertisement crop"></canvas><span class="editor-crosshair" aria-hidden="true"></span></div><p class="editor-status" id="editorStatus" role="status">Loading advertiser original…</p></div><div class="editor-controls">
-    <label class="editor-control"><span>Image to edit</span><select id="editorSource" class="editor-select"><option value="original">Advertiser original</option>${corrected?`<option value="current">Current corrected image</option>`:""}</select></label>
+  return `<section class="image-editor" aria-labelledby="imageEditorTitle"><div class="image-editor-head"><div><h3 id="imageEditorTitle">Square advertisement editor</h3><p>Crop and fit the image here—no Paint or repeated test uploads needed.</p></div><span class="source-chip">1200 × 1200 output</span></div><div class="editor-layout"><div><div class="editor-canvas-shell"><canvas id="squareAdEditor" width="1200" height="1200" aria-label="Draggable square advertisement crop"></canvas><span class="editor-crosshair" aria-hidden="true"></span></div><p class="editor-status" id="editorStatus" role="status">Loading ${personal?"Personal Ad image":"advertiser original"}…</p></div><div class="editor-controls">
+    <label class="editor-control"><span>Image to edit</span><select id="editorSource" class="editor-select"><option value="original">${personal?"Current Personal Ad image":"Advertiser original"}</option>${corrected?`<option value="current">Current corrected image</option>`:""}</select></label>
     <div class="editor-control"><span>Square layout</span><div class="editor-segments"><button class="active" data-editor-mode="fill" type="button">Fill square</button><button data-editor-mode="fit" type="button">Fit whole image</button></div></div>
     <label class="editor-control"><span>Zoom</span><div class="editor-range-row"><input id="editorZoom" type="range" min="100" max="300" step="1" value="100"><output id="editorZoomValue">100%</output></div></label>
     <div class="editor-control"><span>Position and rotation</span><div class="editor-tool-row"><button id="editorCentre" type="button">Centre image</button><button id="editorRotate" type="button">Rotate 90°</button></div></div>
     <div class="editor-control"><span>Empty-space colour</span><div class="editor-backgrounds"><button class="background-choice active" data-colour="#ffffff" type="button" aria-label="White background"></button><button class="background-choice" data-colour="#05070a" type="button" aria-label="Black background"></button><button class="background-choice" data-colour="#27313d" type="button" aria-label="Dark grey background"></button></div></div>
     <div class="editor-stats"><div class="editor-stat"><small>Finished file</small><strong>1200 × 1200 px</strong></div><div class="editor-stat"><small>Usable source detail</small><strong id="editorDetail">Checking…</strong></div></div>
     <p class="editor-note"><strong>Drag the image</strong> to position it. “Fill square” removes empty bars by cropping the edges. Increasing a small image to 1200 px does not create new detail.</p>
-    <button id="editorReset" class="btn" type="button">Reset editor</button><button id="saveEditorImage" class="btn primary editor-save" type="button">Save edited image to preview</button>
+    <button id="editorReset" class="btn" type="button">Reset editor</button><button id="saveEditorImage" class="btn primary editor-save" type="button">${personal?"Save edited Personal Ad":"Save edited image to preview"}</button>
   </div></div></section>`;
 }
 
@@ -302,8 +399,13 @@ function updateImageMeasurements(image){
 
 async function uploadAdminArtwork(booking,file){
   const form=new FormData();
-  form.set("action","upload_final_artwork");
-  form.set("booking_id",booking.id);
+  if(booking.entity_type==="personal_ad"){
+    form.set("action","replace_personal_ad_image");
+    form.set("personal_ad_id",booking.id);
+  }else{
+    form.set("action","upload_final_artwork");
+    form.set("booking_id",booking.id);
+  }
   form.set("artwork",file,file.name);
   return await apiUpload(form);
 }
@@ -312,7 +414,7 @@ function canvasJpeg(canvas,quality=.94){return new Promise((resolve,reject)=>can
 
 function initSquareAdEditor(page,booking){
   const canvas=$("squareAdEditor"),context=canvas?.getContext("2d",{alpha:false});
-  const status=$("editorStatus"),detail=$("editorDetail"),zoomInput=$("editorZoom"),zoomValue=$("editorZoomValue"),sourceSelect=$("editorSource"),saveButton=$("saveEditorImage"),publishButton=page.querySelector('[data-preview-action="publish"]'),testButton=page.querySelector("[data-test-sponsor]");
+  const status=$("editorStatus"),detail=$("editorDetail"),zoomInput=$("editorZoom"),zoomValue=$("editorZoomValue"),sourceSelect=$("editorSource"),saveButton=$("saveEditorImage"),publishButton=page.querySelector('[data-preview-action="publish"],[data-personal-action="activate_personal_ad"]'),testButton=page.querySelector("[data-test-sponsor],[data-personal-test]");
   if(!canvas||!context||!status||!detail||!zoomInput||!zoomValue||!sourceSelect||!saveButton)return null;
   const size=1200;
   const state={image:null,imageUrl:"",deviceUrl:"",mode:"fill",zoom:1,rotation:0,x:0,y:0,background:"#ffffff",dirty:false,dragging:false,pointerId:null,lastX:0,lastY:0,previewTimer:0,destroyed:false};
@@ -321,11 +423,11 @@ function initSquareAdEditor(page,booking){
   const clampPosition=info=>{const maxX=Math.max(0,(info.drawWidth-size)/2),maxY=Math.max(0,(info.drawHeight-size)/2);state.x=Math.max(-maxX,Math.min(maxX,state.x));state.y=Math.max(-maxY,Math.min(maxY,state.y))};
   const updateQuality=info=>{const usable=Math.max(1,Math.round(Math.min(info.width,info.height,size/info.scale)));const label=usable>=1200?"Excellent":usable>=800?"Good":"Limited";detail.textContent=`≈ ${usable.toLocaleString("en-AU")} px · ${label}`;detail.className=`editor-quality ${usable>=1200?"good":usable>=800?"warn":"bad"}`};
   const queueDevicePreview=()=>{clearTimeout(state.previewTimer);state.previewTimer=setTimeout(async()=>{if(state.destroyed)return;try{const blob=await canvasJpeg(canvas,.88);if(state.destroyed)return;if(state.deviceUrl)URL.revokeObjectURL(state.deviceUrl);state.deviceUrl=URL.createObjectURL(blob);page.querySelectorAll("[data-preview-image]").forEach(image=>{image.src=state.deviceUrl})}catch(error){status.textContent=error.message}},140)};
-  const draw=(markDirty=false)=>{if(!state.image)return;const info=scaleInfo();clampPosition(info);context.save();context.fillStyle=state.background;context.fillRect(0,0,size,size);context.imageSmoothingEnabled=true;context.imageSmoothingQuality="high";context.translate(size/2+state.x,size/2+state.y);context.rotate(state.rotation*Math.PI/180);context.drawImage(state.image,-state.image.naturalWidth*info.scale/2,-state.image.naturalHeight*info.scale/2,state.image.naturalWidth*info.scale,state.image.naturalHeight*info.scale);context.restore();updateQuality(info);zoomValue.textContent=`${Math.round(state.zoom*100)}%`;if(markDirty){state.dirty=true;publishButton.disabled=true;if(testButton)testButton.disabled=true;status.textContent="Edited preview—not saved yet. Save it before publishing or testing it in the app.";queueDevicePreview()}};
+  const draw=(markDirty=false)=>{if(!state.image)return;const info=scaleInfo();clampPosition(info);context.save();context.fillStyle=state.background;context.fillRect(0,0,size,size);context.imageSmoothingEnabled=true;context.imageSmoothingQuality="high";context.translate(size/2+state.x,size/2+state.y);context.rotate(state.rotation*Math.PI/180);context.drawImage(state.image,-state.image.naturalWidth*info.scale/2,-state.image.naturalHeight*info.scale/2,state.image.naturalWidth*info.scale,state.image.naturalHeight*info.scale);context.restore();updateQuality(info);zoomValue.textContent=`${Math.round(state.zoom*100)}%`;if(markDirty){state.dirty=true;if(publishButton)publishButton.disabled=true;if(testButton)testButton.disabled=true;status.textContent="Edited preview—not saved yet. Save it before activating, publishing or testing it in the app.";queueDevicePreview()}};
   const syncControls=()=>{zoomInput.value=String(Math.round(state.zoom*100));zoomValue.textContent=`${Math.round(state.zoom*100)}%`;page.querySelectorAll("[data-editor-mode]").forEach(button=>button.classList.toggle("active",button.dataset.editorMode===state.mode));page.querySelectorAll(".background-choice").forEach(button=>button.classList.toggle("active",button.dataset.colour===state.background))};
   const resetTransform=(markDirty=false)=>{state.mode="fill";state.zoom=1;state.rotation=0;state.x=0;state.y=0;state.background="#ffffff";syncControls();draw(markDirty)};
   const sourceUrl=kind=>kind==="current"?(booking.final_preview_url||booking.preview_url):booking.original_preview_url;
-  const loadSource=async(kind,markDirty)=>{const url=sourceUrl(kind);if(!url){status.textContent="That image source is unavailable.";return}status.textContent=`Loading ${kind==="current"?"current corrected image":"advertiser original"}…`;try{const response=await fetch(url,{cache:"no-store"});if(!response.ok)throw new Error("The secure image could not be loaded into the editor.");const blob=await response.blob();if(state.imageUrl)URL.revokeObjectURL(state.imageUrl);state.imageUrl=URL.createObjectURL(blob);const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error("The image format could not be opened in the editor."));image.src=state.imageUrl});if(state.destroyed)return;state.image=image;resetTransform(false);status.textContent=`Editing ${kind==="current"?"current corrected image":"advertiser original"} · ${image.naturalWidth.toLocaleString("en-AU")} × ${image.naturalHeight.toLocaleString("en-AU")} px`;if(markDirty){state.dirty=true;publishButton.disabled=true;draw(true)}}catch(error){status.textContent=error.message}};
+  const loadSource=async(kind,markDirty)=>{const url=sourceUrl(kind);const sourceName=booking.entity_type==="personal_ad"?"Personal Ad image":kind==="current"?"current corrected image":"advertiser original";if(!url){status.textContent="That image source is unavailable.";return}status.textContent=`Loading ${sourceName}…`;try{const response=await fetch(url,{cache:"no-store"});if(!response.ok)throw new Error("The secure image could not be loaded into the editor.");const blob=await response.blob();if(state.imageUrl)URL.revokeObjectURL(state.imageUrl);state.imageUrl=URL.createObjectURL(blob);const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error("The image format could not be opened in the editor."));image.src=state.imageUrl});if(state.destroyed)return;state.image=image;resetTransform(false);status.textContent=`Editing ${sourceName} · ${image.naturalWidth.toLocaleString("en-AU")} × ${image.naturalHeight.toLocaleString("en-AU")} px`;if(markDirty){state.dirty=true;if(publishButton)publishButton.disabled=true;draw(true)}}catch(error){status.textContent=error.message}};
   page.querySelectorAll("[data-editor-mode]").forEach(button=>button.addEventListener("click",()=>{state.mode=button.dataset.editorMode;state.zoom=1;state.x=0;state.y=0;syncControls();draw(true)}));
   page.querySelectorAll(".background-choice").forEach(button=>button.addEventListener("click",()=>{state.background=button.dataset.colour;syncControls();draw(true)}));
   zoomInput.addEventListener("input",()=>{state.zoom=Number(zoomInput.value)/100;draw(true)});
@@ -337,10 +439,70 @@ function initSquareAdEditor(page,booking){
   canvas.addEventListener("pointermove",event=>{if(!state.dragging||event.pointerId!==state.pointerId)return;const rect=canvas.getBoundingClientRect();state.x+=(event.clientX-state.lastX)*(size/rect.width);state.y+=(event.clientY-state.lastY)*(size/rect.height);state.lastX=event.clientX;state.lastY=event.clientY;draw(true)});
   const stopDrag=event=>{if(!state.dragging||event.pointerId!==state.pointerId)return;state.dragging=false;state.pointerId=null;canvas.classList.remove("dragging")};
   canvas.addEventListener("pointerup",stopDrag);canvas.addEventListener("pointercancel",stopDrag);
-  saveButton.addEventListener("click",async()=>{if(!state.image){status.textContent="Wait for the image to load first.";return}saveButton.disabled=true;status.textContent="Saving the edited 1200 × 1200 image…";try{const blob=await canvasJpeg(canvas,.94);const file=new File([blob],`road-discovery-${booking.booking_code}-1200.jpg`,{type:"image/jpeg"});const data=await uploadAdminArtwork(booking,file);cleanup();bookings=bookings.map(item=>item.id===booking.id?data.booking:item);render()}catch(error){status.textContent=error.message;saveButton.disabled=false}});
+  saveButton.addEventListener("click",async()=>{if(!state.image){status.textContent="Wait for the image to load first.";return}saveButton.disabled=true;status.textContent="Saving the edited 1200 × 1200 image…";try{const blob=await canvasJpeg(canvas,.94);const file=new File([blob],`road-discovery-${booking.booking_code}-1200.jpg`,{type:"image/jpeg"});const data=await uploadAdminArtwork(booking,file);cleanup();if(booking.entity_type==="personal_ad")personalAds=personalAds.map(item=>item.id===booking.id?data.personalAd:item);else bookings=bookings.map(item=>item.id===booking.id?data.booking:item);render()}catch(error){status.textContent=error.message;saveButton.disabled=false}});
   const cleanup=()=>{state.destroyed=true;clearTimeout(state.previewTimer);if(state.imageUrl)URL.revokeObjectURL(state.imageUrl);if(state.deviceUrl)URL.revokeObjectURL(state.deviceUrl)};
   syncControls();void loadSource("original",false);
   return {isDirty:()=>state.dirty,cleanup};
+}
+
+function bindPersonalCreate(){
+  const page=document.querySelector(".personal-create");
+  if(!page)return;
+  const fileInput=$("personalCreateFile"),preview=$("personalCreatePreview"),message=$("personalCreateMessage"),save=$("personalCreateSave");
+  let previewUrl="";
+  const cleanup=()=>{if(previewUrl)URL.revokeObjectURL(previewUrl)};
+  page.querySelector("[data-personal-create-back]").onclick=()=>{cleanup();personalCreateOpen=false;render()};
+  fileInput.addEventListener("change",()=>{
+    const file=fileInput.files?.[0];
+    if(!file)return;
+    if(!["image/jpeg","image/png"].includes(file.type)||file.size>5*1024*1024){message.textContent="Choose a genuine JPEG or PNG image under 5 MB.";fileInput.value="";return}
+    cleanup();previewUrl=URL.createObjectURL(file);preview.innerHTML=`<img src="${esc(previewUrl)}" alt="Local Personal Ad preview">`;message.textContent="";
+  });
+  save.onclick=async()=>{
+    const name=$("personalCreateName").value.trim(),clickUrl=$("personalCreateUrl").value.trim(),altText=$("personalCreateAlt").value.trim(),file=fileInput.files?.[0];
+    if(!name){message.textContent="Enter a name for the Personal Ad.";$("personalCreateName").focus();return}
+    if(altText.length<3){message.textContent="Enter an accessible description of the image.";$("personalCreateAlt").focus();return}
+    if(!file){message.textContent="Choose the JPEG or PNG advertisement image.";fileInput.focus();return}
+    save.disabled=true;message.style.color="var(--blue)";message.textContent="Uploading the paused Personal Ad…";
+    const form=new FormData();form.set("action","create_personal_ad");form.set("name",name);form.set("click_url",clickUrl);form.set("alt_text",altText);form.set("artwork",file,file.name);
+    try{const data=await apiUpload(form);cleanup();personalAds=[data.personalAd,...personalAds.filter(item=>item.id!==data.personalAd.id)];personalCreateOpen=false;selectedPersonalAdId=data.personalAd.id;render()}catch(error){message.style.color="var(--red)";message.textContent=error.message;save.disabled=false}
+  };
+}
+
+function bindPersonalDetail(personalAd){
+  const page=document.querySelector(".personal-ad-page");
+  if(!page)return;
+  const entity=personalEditorEntity(personalAd);
+  const editor=initSquareAdEditor(page,entity);
+  const message=page.querySelector(".preview-message");
+  const firstImage=page.querySelector("[data-preview-image]");
+  if(firstImage){if(firstImage.complete)updateImageMeasurements(firstImage);else{firstImage.addEventListener("load",()=>updateImageMeasurements(firstImage),{once:true});firstImage.addEventListener("error",()=>{if($("previewFit"))$("previewFit").textContent="Image could not be loaded"},{once:true})}}
+  page.querySelector("[data-personal-back]").onclick=()=>{if(editor?.isDirty()&&!confirm("Discard the unsaved image edits?"))return;editor?.cleanup();selectedPersonalAdId="";render()};
+  page.querySelector("[data-personal-test]").onclick=()=>openPrivateSponsorTest(entity,message);
+  page.querySelector("[data-personal-reports]").onclick=()=>{const box=page.querySelector(".link-report-box");box.hidden=!box.hidden};
+
+  const fileInput=$("finalArtworkFile"),uploadButton=$("uploadFinalArtwork"),activateButton=page.querySelector('[data-personal-action="activate_personal_ad"]'),testButton=page.querySelector("[data-personal-test]");
+  let localPreviewUrl="";
+  fileInput.addEventListener("change",()=>{
+    const file=fileInput.files?.[0];if(!file)return;
+    if(!["image/jpeg","image/png"].includes(file.type)||file.size>5*1024*1024){message.style.color="var(--red)";message.textContent="Choose a genuine JPEG or PNG image under 5 MB.";fileInput.value="";return}
+    if(localPreviewUrl)URL.revokeObjectURL(localPreviewUrl);localPreviewUrl=URL.createObjectURL(file);page.querySelectorAll("[data-preview-image]").forEach((image,index)=>{if(index===0)image.onload=()=>updateImageMeasurements(image);image.src=localPreviewUrl});if(activateButton)activateButton.disabled=true;testButton.disabled=true;message.style.color="var(--blue)";message.textContent="Local preview only — upload the replacement before testing or activating it.";
+  });
+  uploadButton.onclick=async()=>{
+    const file=fileInput.files?.[0];if(!file){message.style.color="var(--red)";message.textContent="Choose the replacement JPEG or PNG first.";fileInput.focus();return}
+    uploadButton.disabled=true;message.style.color="var(--blue)";message.textContent="Uploading replacement image…";
+    try{const data=await uploadAdminArtwork(entity,file);if(localPreviewUrl)URL.revokeObjectURL(localPreviewUrl);editor?.cleanup();personalAds=personalAds.map(item=>item.id===personalAd.id?data.personalAd:item);render()}catch(error){message.style.color="var(--red)";message.textContent=error.message;uploadButton.disabled=false}
+  };
+
+  page.querySelectorAll("[data-personal-action]").forEach(button=>button.onclick=async()=>{
+    const action=button.dataset.personalAction;
+    if(editor?.isDirty()&&!confirm("Discard the unsaved image edits and continue?"))return;
+    if(action==="activate_personal_ad"&&!confirm("Activate this Personal Ad as a backup for unsold sponsor positions?"))return;
+    if(action==="delete_personal_ad"&&!confirm(`Permanently delete “${personalAd.name}” and its stored image? This cannot be undone.`))return;
+    const values=Object.fromEntries([...page.querySelectorAll("[data-personal-field]")].map(element=>[element.dataset.personalField,element.value]));
+    message.style.color="var(--blue)";message.textContent="Working…";page.querySelectorAll("button").forEach(item=>item.disabled=true);
+    try{const data=await api("PATCH",{entity:"personal_ad",id:personalAd.id,action,...values});editor?.cleanup();if(data.deleted){personalAds=personalAds.filter(item=>item.id!==personalAd.id);selectedPersonalAdId="";render();return}personalAds=personalAds.map(item=>item.id===personalAd.id?data.personalAd:item);render()}catch(error){message.style.color="var(--red)";message.textContent=error.message;page.querySelectorAll("button").forEach(item=>item.disabled=false)}
+  });
 }
 
 function bindImagePreview(){
@@ -426,8 +588,8 @@ function bindCards(){
 }
 
 async function load(){
-  $("bookings").innerHTML=`<div class="panel empty-state">Loading verified paid bookings…</div>`;
-  try{const data=await api();bookings=data.bookings||[];$("lastUpdated").textContent="Updated "+new Date().toLocaleTimeString("en-AU",{hour:"numeric",minute:"2-digit"});render()}catch(error){$("bookings").innerHTML=`<div class="panel empty-state" style="color:var(--red)">${esc(error.message)}</div>`}
+  $("bookings").innerHTML=`<div class="panel empty-state">Loading paid bookings and Personal Ads…</div>`;
+  try{const data=await api();bookings=data.bookings||[];personalAds=data.personalAds||[];$("lastUpdated").textContent="Updated "+new Date().toLocaleTimeString("en-AU",{hour:"numeric",minute:"2-digit"});render()}catch(error){$("bookings").innerHTML=`<div class="panel empty-state" style="color:var(--red)">${esc(error.message)}</div>`}
 }
 
 async function showSession(){const {data}=await sb.auth.getSession();const signed=Boolean(data.session);$("login").hidden=signed;$("dashboard").hidden=!signed;if(signed)await load()}
