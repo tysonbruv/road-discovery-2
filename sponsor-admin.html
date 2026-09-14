@@ -85,6 +85,7 @@ const SUPABASE_KEY="sb_publishable_LnMT-vhl4xvj4idb91dNdA_EdQMJutI";
 const API=SUPABASE_URL+"/functions/v1/sponsor-admin";
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
+const ADMIN_SPONSOR_TEST_KEY="roadDiscoveryAU.sponsorAdminPreview.v1";
 let bookings=[];
 let activeFolder="";
 let selectedBookingId="";
@@ -98,6 +99,35 @@ async function token(){const {data}=await sb.auth.getSession();return data.sessi
 async function api(method="GET",body,query=""){const response=await fetch(API+query,{method,cache:"no-store",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+await token(),"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Request failed.");return data}
 async function apiUpload(form){const response=await fetch(API,{method:"POST",cache:"no-store",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+await token()},body:form});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||"Image upload failed.");return data}
 function endDate(start){const date=new Date(start+"T12:00:00Z");date.setUTCDate(date.getUTCDate()+6);return date.toISOString().slice(0,10)}
+
+function openPrivateSponsorTest(booking,message){
+  const imageUrl=String(booking.public_image_url||booking.preview_url||"").trim();
+  if(!imageUrl){if(message){message.style.color="var(--red)";message.textContent="Save a finished advertisement image before testing it in the app."}return false}
+  let checkedImage;
+  try{checkedImage=new URL(imageUrl);if(checkedImage.protocol!=="https:")throw new Error("HTTPS required")}catch(_){if(message){message.style.color="var(--red)";message.textContent="The saved advertisement image does not have a valid secure URL."}return false}
+  if(!confirm("Open this advertisement in Road Discovery AU now? This is a private browser test only. It will not change the booked week or show the ad to other users."))return false;
+  const appUrl=new URL("./",location.href);
+  appUrl.searchParams.set("sponsor_admin_preview","1");
+  const now=Date.now();
+  const payload={
+    version:1,
+    createdAt:now,
+    expiresAt:now+5*60*1000,
+    nonce:crypto.randomUUID?.()||`${now}-${Math.random().toString(36).slice(2)}`,
+    bookingCode:String(booking.booking_code||""),
+    bookingId:String(booking.id||""),
+    imageUrl:checkedImage.href,
+    clickUrl:booking.click_url_enabled===false?"":String(booking.click_url||""),
+    alt:String(booking.alt_text||`${booking.business_name||"Weekly sponsor"} advertisement`).slice(0,180),
+    bookingUrl:new URL("./",location.href).href
+  };
+  try{localStorage.setItem(ADMIN_SPONSOR_TEST_KEY,JSON.stringify(payload))}catch(_){if(message){message.style.color="var(--red)";message.textContent="This browser blocked the private test hand-off. Allow website storage and try again."}return false}
+  const opened=window.open(appUrl.href,"_blank");
+  if(!opened){localStorage.removeItem(ADMIN_SPONSOR_TEST_KEY);if(message){message.style.color="var(--red)";message.textContent="The browser blocked the new app tab. Allow pop-ups for this site and try again."}return false}
+  try{opened.opener=null}catch(_){}
+  if(message){message.style.color="var(--green)";message.textContent="Private app test opened. The real booked week is unchanged."}
+  return true;
+}
 
 const workflowFolders=[
   {key:"awaiting_artwork",label:"Awaiting artwork",help:"Paid, no upload yet",icon:"＋"},
@@ -189,6 +219,7 @@ function cardHtml(booking){
   const reportTotal=Number(booking.link_reports?.total||0);
   const reportRows=Object.entries(booking.link_reports?.reasons||{}).filter(([,count])=>Number(count)>0).sort((a,b)=>Number(b[1])-Number(a[1]));
   const linkEnabled=booking.click_url&&booking.click_url_enabled!==false;
+  const canTestInApp=booking.status==="published"&&Boolean(booking.public_image_url||booking.preview_url);
   return `<article class="card ${tone}" data-id="${booking.id}">
     <button class="btn detail-back" type="button">← Back to ${esc(workflowFolders.find(folder=>folder.key===activeFolder)?.label||"folder")}</button>
     <div class="card-head"><div><h2>${fmt(booking.week_start)} – ${fmt(endDate(booking.week_start))}</h2><p class="meta">Position ${booking.slot_number} of 5 · <a class="email" href="mailto:${esc(booking.customer_email)}">${esc(booking.customer_email||"Paid email unavailable")}</a> · Paid ${fmt(booking.paid_at)}</p><div class="code-line"><span class="booking-code">${esc(booking.booking_code||"No booking number")}</span><button class="btn mini copy" type="button">Copy</button></div></div><div class="badges"><span class="badge verified">Verified Stripe payment</span>${booking.click_url&&!linkEnabled?`<span class="badge link-disabled">Link disabled</span>`:""}<span class="badge ${esc(booking.status)}">${esc(statusLabel(booking.status))}</span></div></div>
@@ -206,6 +237,7 @@ function cardHtml(booking){
       <button class="btn" data-action="needs_changes" type="button" ${canChange?"":"disabled"}>Request changes</button>
       <button class="btn good" data-action="approve" type="button" ${canApprove?"":"disabled"}>Approve</button>
       <button class="btn primary" data-action="send_to_preview" type="button" ${canSendToPreview?"":"disabled"}>${booking.status==="published"?"Published to app":"Send to image preview"}</button>
+      ${canTestInApp?`<button class="btn good testSponsor" type="button">Test in Road Discovery now</button>`:""}
       <button class="btn danger" data-action="refund" type="button" ${refundable?"":"disabled"}>Reject & refund</button>
       ${booking.is_test_booking&&workflowFolderFor(booking)==="archive"?`<button class="btn danger" data-action="delete_test" type="button">Delete test booking</button>`:""}
       <button class="btn linkReports" type="button">Link reports: ${reportTotal}</button>
@@ -250,7 +282,7 @@ function imagePreviewHtml(booking){
     <div class="preview-stage">${previewAdShell(booking,"desktop")}${previewAdShell(booking,"phone")}</div>
     <div class="image-facts"><div class="image-fact"><small>Image dimensions</small><strong id="previewDimensions">Checking…</strong></div><div class="image-fact"><small>Aspect ratio</small><strong id="previewRatio">Checking…</strong></div><div class="image-fact"><small>Fit result</small><strong id="previewFit" class="fit-result">Checking…</strong></div></div>
     <section class="admin-upload"><h3>Upload a different finished file</h3><p>This optional control remains available if you already edited the artwork elsewhere. The advertiser's original remains stored separately.</p><div class="upload-row"><input id="finalArtworkFile" type="file" accept="image/jpeg,image/png"><button id="uploadFinalArtwork" class="btn" type="button">Upload finished image</button>${booking.using_admin_artwork?`<button class="btn" data-preview-action="use_original_artwork" type="button">Use advertiser original</button>`:""}</div></section>
-    <div class="actions"><button class="btn" data-preview-action="return_from_preview" type="button">Return to approved</button><button class="btn" data-preview-action="needs_changes" type="button">Request changes</button><button class="btn danger" data-preview-action="refund" type="button">Reject & refund</button><button class="btn primary" data-preview-action="publish" type="button">Publish to app</button></div>
+    <div class="actions"><button class="btn" data-preview-action="return_from_preview" type="button">Return to approved</button><button class="btn" data-preview-action="needs_changes" type="button">Request changes</button><button class="btn danger" data-preview-action="refund" type="button">Reject & refund</button><button class="btn good" data-test-sponsor type="button">Test in Road Discovery now</button><button class="btn primary" data-preview-action="publish" type="button">Publish to app</button></div>
     <p class="preview-message" role="status"></p>
   </article>`;
 }
@@ -280,7 +312,7 @@ function canvasJpeg(canvas,quality=.94){return new Promise((resolve,reject)=>can
 
 function initSquareAdEditor(page,booking){
   const canvas=$("squareAdEditor"),context=canvas?.getContext("2d",{alpha:false});
-  const status=$("editorStatus"),detail=$("editorDetail"),zoomInput=$("editorZoom"),zoomValue=$("editorZoomValue"),sourceSelect=$("editorSource"),saveButton=$("saveEditorImage"),publishButton=page.querySelector('[data-preview-action="publish"]');
+  const status=$("editorStatus"),detail=$("editorDetail"),zoomInput=$("editorZoom"),zoomValue=$("editorZoomValue"),sourceSelect=$("editorSource"),saveButton=$("saveEditorImage"),publishButton=page.querySelector('[data-preview-action="publish"]'),testButton=page.querySelector("[data-test-sponsor]");
   if(!canvas||!context||!status||!detail||!zoomInput||!zoomValue||!sourceSelect||!saveButton)return null;
   const size=1200;
   const state={image:null,imageUrl:"",deviceUrl:"",mode:"fill",zoom:1,rotation:0,x:0,y:0,background:"#ffffff",dirty:false,dragging:false,pointerId:null,lastX:0,lastY:0,previewTimer:0,destroyed:false};
@@ -289,7 +321,7 @@ function initSquareAdEditor(page,booking){
   const clampPosition=info=>{const maxX=Math.max(0,(info.drawWidth-size)/2),maxY=Math.max(0,(info.drawHeight-size)/2);state.x=Math.max(-maxX,Math.min(maxX,state.x));state.y=Math.max(-maxY,Math.min(maxY,state.y))};
   const updateQuality=info=>{const usable=Math.max(1,Math.round(Math.min(info.width,info.height,size/info.scale)));const label=usable>=1200?"Excellent":usable>=800?"Good":"Limited";detail.textContent=`≈ ${usable.toLocaleString("en-AU")} px · ${label}`;detail.className=`editor-quality ${usable>=1200?"good":usable>=800?"warn":"bad"}`};
   const queueDevicePreview=()=>{clearTimeout(state.previewTimer);state.previewTimer=setTimeout(async()=>{if(state.destroyed)return;try{const blob=await canvasJpeg(canvas,.88);if(state.destroyed)return;if(state.deviceUrl)URL.revokeObjectURL(state.deviceUrl);state.deviceUrl=URL.createObjectURL(blob);page.querySelectorAll("[data-preview-image]").forEach(image=>{image.src=state.deviceUrl})}catch(error){status.textContent=error.message}},140)};
-  const draw=(markDirty=false)=>{if(!state.image)return;const info=scaleInfo();clampPosition(info);context.save();context.fillStyle=state.background;context.fillRect(0,0,size,size);context.imageSmoothingEnabled=true;context.imageSmoothingQuality="high";context.translate(size/2+state.x,size/2+state.y);context.rotate(state.rotation*Math.PI/180);context.drawImage(state.image,-state.image.naturalWidth*info.scale/2,-state.image.naturalHeight*info.scale/2,state.image.naturalWidth*info.scale,state.image.naturalHeight*info.scale);context.restore();updateQuality(info);zoomValue.textContent=`${Math.round(state.zoom*100)}%`;if(markDirty){state.dirty=true;publishButton.disabled=true;status.textContent="Edited preview—not saved yet. Save it before publishing.";queueDevicePreview()}};
+  const draw=(markDirty=false)=>{if(!state.image)return;const info=scaleInfo();clampPosition(info);context.save();context.fillStyle=state.background;context.fillRect(0,0,size,size);context.imageSmoothingEnabled=true;context.imageSmoothingQuality="high";context.translate(size/2+state.x,size/2+state.y);context.rotate(state.rotation*Math.PI/180);context.drawImage(state.image,-state.image.naturalWidth*info.scale/2,-state.image.naturalHeight*info.scale/2,state.image.naturalWidth*info.scale,state.image.naturalHeight*info.scale);context.restore();updateQuality(info);zoomValue.textContent=`${Math.round(state.zoom*100)}%`;if(markDirty){state.dirty=true;publishButton.disabled=true;if(testButton)testButton.disabled=true;status.textContent="Edited preview—not saved yet. Save it before publishing or testing it in the app.";queueDevicePreview()}};
   const syncControls=()=>{zoomInput.value=String(Math.round(state.zoom*100));zoomValue.textContent=`${Math.round(state.zoom*100)}%`;page.querySelectorAll("[data-editor-mode]").forEach(button=>button.classList.toggle("active",button.dataset.editorMode===state.mode));page.querySelectorAll(".background-choice").forEach(button=>button.classList.toggle("active",button.dataset.colour===state.background))};
   const resetTransform=(markDirty=false)=>{state.mode="fill";state.zoom=1;state.rotation=0;state.x=0;state.y=0;state.background="#ffffff";syncControls();draw(markDirty)};
   const sourceUrl=kind=>kind==="current"?(booking.final_preview_url||booking.preview_url):booking.original_preview_url;
@@ -324,6 +356,7 @@ function bindImagePreview(){
   const fileInput=$("finalArtworkFile");
   const uploadButton=$("uploadFinalArtwork");
   const publishButton=page.querySelector('[data-preview-action="publish"]');
+  const testButton=page.querySelector("[data-test-sponsor]");
   const message=page.querySelector(".preview-message");
   let localPreviewUrl="";
   fileInput?.addEventListener("change",()=>{
@@ -334,7 +367,8 @@ function bindImagePreview(){
     localPreviewUrl=URL.createObjectURL(file);
     page.querySelectorAll("[data-preview-image]").forEach((image,index)=>{if(index===0)image.onload=()=>updateImageMeasurements(image);image.src=localPreviewUrl});
     publishButton.disabled=true;
-    message.style.color="var(--blue)";message.textContent="Local preview only — press Upload finished image to save and use it.";
+    if(testButton)testButton.disabled=true;
+    message.style.color="var(--blue)";message.textContent="Local preview only — press Upload finished image to save it before publishing or testing it in the app.";
   });
   uploadButton?.addEventListener("click",async()=>{
     const file=fileInput.files?.[0];
@@ -342,6 +376,7 @@ function bindImagePreview(){
     uploadButton.disabled=true;message.style.color="var(--blue)";message.textContent="Uploading corrected image…";
     try{const data=await uploadAdminArtwork(booking,file);if(localPreviewUrl)URL.revokeObjectURL(localPreviewUrl);editor?.cleanup();bookings=bookings.map(item=>item.id===booking.id?data.booking:item);render()}catch(error){message.style.color="var(--red)";message.textContent=error.message;uploadButton.disabled=false}
   });
+  testButton?.addEventListener("click",()=>openPrivateSponsorTest(booking,message));
   page.querySelectorAll("[data-preview-action]").forEach(button=>button.addEventListener("click",async()=>{
     const action=button.dataset.previewAction;
     if(editor?.isDirty()&&!confirm("Discard the unsaved image edits and continue?"))return;
@@ -366,6 +401,7 @@ function bindCards(){
     card.querySelector(".copy").onclick=async event=>{try{await navigator.clipboard.writeText(booking.booking_code);event.currentTarget.textContent="Copied";setTimeout(()=>event.currentTarget.textContent="Copy",1200)}catch(_){prompt("Copy booking number:",booking.booking_code)}};
     card.querySelector(".emailAdvertiser").onclick=event=>{event.preventDefault();const subject=encodeURIComponent(`Road Discovery AU ${booking.booking_code}`);const message=booking.change_reason?`Hi, we reviewed booking ${booking.booking_code}. Please fix: ${booking.change_reason}\n\nUse the secure upload link from your paid booking email to send the revised artwork.`:`Hi, regarding your paid Road Discovery AU sponsor booking ${booking.booking_code}: `;location.href=`mailto:${booking.customer_email}?subject=${subject}&body=${encodeURIComponent(message)}`};
     card.querySelector(".linkReports").onclick=()=>{const box=card.querySelector(".link-report-box");box.hidden=!box.hidden};
+    card.querySelector(".testSponsor")?.addEventListener("click",()=>openPrivateSponsorTest(booking,card.querySelector(".message")));
     card.querySelectorAll("button[data-action]").forEach(button=>button.onclick=async()=>{
       const action=button.dataset.action;
       let reason;
