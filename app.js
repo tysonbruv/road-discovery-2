@@ -50578,7 +50578,14 @@ rd131TrySponsor = async function (key, attempt = 0) {
 
   let selected = null;
 
-  for (let index = 0; index < config.sponsors.length; index++) {
+  for (
+    let index = 0;
+    index < Math.min(
+      5,
+      Math.max(1, config.sponsors.length)
+    );
+    index++
+  ) {
     const choice = rd141ChooseSponsor(config);
 
     if (!choice) break;
@@ -52187,8 +52194,13 @@ rd131ShowSponsor = function (config, key) {
 
 
 rd131FetchSponsorConfig = async function () {
+  const backupPromise = Promise.resolve()
+    .then(() => rd144LegacySponsorFeed())
+    .catch(() => null);
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 3500);
+  let supplied = null;
+
   try {
     const url = new URL(RD142_SPONSOR_BOOKING_API);
     url.searchParams.set("active", "1");
@@ -52201,44 +52213,74 @@ rd131FetchSponsorConfig = async function () {
       },
       signal: controller.signal
     });
-    const supplied = response.ok ? await response.json() : null;
-    const ids = new Set();
-    const sponsors = (Array.isArray(supplied?.sponsors) ? supplied.sponsors : [])
-      .slice(0, 5)
-      .map((entry, index) => {
-        let id = String(entry?.id || `paid-sponsor-${index + 1}`)
-          .replace(/[^a-z0-9._-]/gi, "-").slice(0, 80);
-        if (!id || ids.has(id)) id = `paid-sponsor-${index + 1}`;
-        ids.add(id);
-        const version = String(entry?.version || supplied?.version || "");
-        const imageUrl = rd131SafeSponsorUrl(entry?.imageUrl || "", window.location.href);
-        return {
-          id,
-          bookingId: String(entry?.bookingId || ""),
-          linkVersion: Number(entry?.linkVersion || 1),
-          active: entry?.active !== false,
-          imageUrl: imageUrl ? rd131VersionedSponsorImage(imageUrl, version) : "",
-          clickUrl: rd131SafeSponsorUrl(entry?.clickUrl || "", window.location.href),
-          alt: String(entry?.alt || "Weekly sponsor advertisement").trim().slice(0, 180),
-          startsAt: "",
-          endsAt: "",
-          version
-        };
-      })
-      .filter((entry) => entry.active && entry.imageUrl);
-    if (sponsors.length) {
-      return {
-        version: String(supplied?.version || ""),
-        bookingUrl: window.location.href,
-        sponsors
-      };
-    }
+    supplied = response.ok ? await response.json() : null;
   } catch (_) {
-    // The existing R2 sponsor configuration remains a safe fallback.
+    supplied = null;
   } finally {
     window.clearTimeout(timeout);
   }
-  return await rd144LegacySponsorFeed();
+
+  const paidIds = new Set();
+  const paidSponsors = (Array.isArray(supplied?.sponsors) ? supplied.sponsors : [])
+    .slice(0, 5)
+    .map((entry, index) => {
+      let id = String(entry?.id || `paid-sponsor-${index + 1}`)
+        .replace(/[^a-z0-9._-]/gi, "-").slice(0, 80);
+      if (!id || paidIds.has(id)) id = `paid-sponsor-${index + 1}`;
+      paidIds.add(id);
+      const version = String(entry?.version || supplied?.version || "");
+      const imageUrl = rd131SafeSponsorUrl(entry?.imageUrl || "", window.location.href);
+      return {
+        id,
+        sponsorKind: "paid",
+        bookingId: String(entry?.bookingId || ""),
+        linkVersion: Number(entry?.linkVersion || 1),
+        active: entry?.active !== false,
+        imageUrl: imageUrl ? rd131VersionedSponsorImage(imageUrl, version) : "",
+        clickUrl: rd131SafeSponsorUrl(entry?.clickUrl || "", window.location.href),
+        alt: String(entry?.alt || "Weekly sponsor advertisement").trim().slice(0, 180),
+        startsAt: "",
+        endsAt: "",
+        version
+      };
+    })
+    .filter((entry) => entry.active && entry.imageUrl);
+
+  const backupConfig = await backupPromise;
+  const backupIds = new Set();
+  const backupSponsors = (Array.isArray(backupConfig?.sponsors) ? backupConfig.sponsors : [])
+    .slice(0, 5)
+    .map((entry, index) => {
+      const sourceId = String(entry?.id || `backup-sponsor-${index + 1}`)
+        .replace(/[^a-z0-9._-]/gi, "-").slice(0, 70);
+      let id = `backup-${sourceId || index + 1}`;
+      if (backupIds.has(id)) id = `backup-${index + 1}-${sourceId}`;
+      backupIds.add(id);
+      return {
+        ...entry,
+        id,
+        sponsorKind: "backup",
+        bookingId: "",
+        linkVersion: 0,
+        active: entry?.active !== false
+      };
+    })
+    .filter((entry) => entry.active && entry.imageUrl);
+
+  const sponsors = [...paidSponsors, ...backupSponsors];
+  if (!sponsors.length) return null;
+
+  return {
+    version: [
+      `paid:${String(supplied?.version || "none")}`,
+      `backup:${String(backupConfig?.version || "none")}`
+    ].join("|"),
+    bookingUrl: rd131SafeSponsorUrl(
+      supplied?.bookingUrl || backupConfig?.bookingUrl || window.location.href,
+      window.location.href
+    ),
+    sponsors
+  };
 };
 
 
@@ -55363,7 +55405,7 @@ async function rd165ShowAdminSponsorTest(
     return;
   }
 
-  document.documentElement.dataset.roadDiscoverySponsorAdminTest =
+document.documentElement.dataset.roadDiscoverySponsorAdminTest =
     "private-v165";
 }
 
@@ -55389,3 +55431,318 @@ if (document.readyState === "loading") {
 } else {
   rd165InitAdminSponsorTest();
 }
+
+
+/* --------------------------------------------------
+   Road Discovery AU v166
+   Paid slots plus a rolling Cloudflare backup queue
+   -------------------------------------------------- */
+
+const RD166_SPONSOR_ROTATION_KEY =
+  "roadDiscoveryAU.sponsorRotation.v2";
+const RD166_BACKUP_ROTATION_KEY =
+  "roadDiscoveryAU.sponsorBackupRotation.v1";
+const RD166_ROTATION_SIZE = 5;
+const rd166MemoryStorage = new Map();
+
+
+function rd166ReadStored(key) {
+  if (rd166MemoryStorage.has(key)) {
+    return rd166MemoryStorage.get(key);
+  }
+
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(key) || "null"
+    );
+    const value = parsed && typeof parsed === "object"
+      ? parsed
+      : null;
+    if (value) rd166MemoryStorage.set(key, value);
+    return value;
+  } catch (_) {
+    return null;
+  }
+}
+
+
+function rd166WriteStored(key, value) {
+  rd166MemoryStorage.set(key, value);
+
+  try {
+    localStorage.setItem(
+      key,
+      JSON.stringify(value)
+    );
+  } catch (_) {
+    /* The in-memory rotation still completes if browser storage is unavailable. */
+  }
+}
+
+
+function rd166SponsorSourceId(token) {
+  const parts = String(token || "").split("|");
+  return parts.length >= 5
+    ? parts.slice(4).join("|")
+    : "";
+}
+
+
+function rd166RotationToken(
+  kind,
+  serial,
+  position,
+  sponsorId
+) {
+  return [
+    "rd166",
+    kind === "paid" ? "p" : "b",
+    serial,
+    position,
+    sponsorId
+  ].join("|");
+}
+
+
+function rd166SponsorSetKey(config) {
+  return [
+    String(config?.version || ""),
+    ...(config?.sponsors || []).map((sponsor) =>
+      [
+        sponsor.sponsorKind === "paid" ? "p" : "b",
+        sponsor.id,
+        sponsor.version || ""
+      ].join(":")
+    )
+  ].join("|");
+}
+
+
+function rd166BackupSetKey(backups) {
+  return backups.map((sponsor) =>
+    [
+      sponsor.id,
+      sponsor.version || ""
+    ].join(":")
+  ).join("|");
+}
+
+
+function rd166BackupQueue(backups) {
+  const key = rd166BackupSetKey(backups);
+  const validIds = new Set(
+    backups.map((sponsor) => sponsor.id)
+  );
+  const stored = rd166ReadStored(
+    RD166_BACKUP_ROTATION_KEY
+  );
+  const storedOrder = Array.isArray(stored?.order)
+    ? stored.order.filter(
+        (id, index, values) =>
+          validIds.has(id) &&
+          values.indexOf(id) === index
+      )
+    : [];
+  const complete =
+    stored?.key === key &&
+    storedOrder.length === validIds.size;
+  const storedCursor = Number(stored?.cursor);
+
+  return {
+    key,
+    order: complete
+      ? storedOrder
+      : rd141Shuffle([...validIds]),
+    cursor: complete
+      ? Math.max(
+          0,
+          Number.isFinite(storedCursor)
+            ? storedCursor
+            : 0
+        ) % Math.max(1, storedOrder.length)
+      : 0
+  };
+}
+
+
+function rd166SelectBackupTokens(
+  backups,
+  count,
+  serial
+) {
+  if (!backups.length || count <= 0) {
+    return {
+      tokens: [],
+      nextQueue: null
+    };
+  }
+
+  const queue = rd166BackupQueue(backups);
+  const tokens = [];
+  let cursor = queue.cursor;
+
+  for (let index = 0; index < count; index++) {
+    const sponsorId = queue.order[cursor];
+    tokens.push(
+      rd166RotationToken(
+        "backup",
+        serial,
+        index,
+        sponsorId
+      )
+    );
+    cursor = (cursor + 1) % queue.order.length;
+  }
+
+  return {
+    tokens,
+    nextQueue: {
+      key: queue.key,
+      order: queue.order,
+      cursor
+    }
+  };
+}
+
+
+rd141CurrentRotation = function (config) {
+  const sponsors = Array.isArray(config?.sponsors)
+    ? config.sponsors
+    : [];
+  const validIds = new Set(
+    sponsors.map((sponsor) => sponsor.id)
+  );
+  const key = rd166SponsorSetKey(config);
+  const stored = rd166ReadStored(
+    RD166_SPONSOR_ROTATION_KEY
+  );
+  const storedRemaining =
+    stored?.key === key &&
+    Array.isArray(stored.remaining)
+      ? stored.remaining.filter((token) =>
+          validIds.has(
+            rd166SponsorSourceId(token)
+          )
+        )
+      : [];
+
+  if (storedRemaining.length) {
+    return {
+      key,
+      remaining: storedRemaining,
+      lastShown: String(stored.lastShown || ""),
+      serial: Number(stored.serial || 0),
+      nextBackupQueue: null
+    };
+  }
+
+  const paid = sponsors
+    .filter((sponsor) => sponsor.sponsorKind === "paid")
+    .slice(0, RD166_ROTATION_SIZE);
+  const backups = sponsors.filter(
+    (sponsor) => sponsor.sponsorKind !== "paid"
+  );
+  const serial = Number(stored?.serial || 0) + 1;
+  const backupCount = Math.max(
+    0,
+    RD166_ROTATION_SIZE - paid.length
+  );
+  const backupSelection = rd166SelectBackupTokens(
+    backups,
+    backupCount,
+    serial
+  );
+  const paidTokens = paid.map((sponsor, index) =>
+    rd166RotationToken(
+      "paid",
+      serial,
+      index,
+      sponsor.id
+    )
+  );
+  const remaining = rd141Shuffle([
+    ...paidTokens,
+    ...backupSelection.tokens
+  ]);
+  const lastShown =
+    stored?.key === key &&
+    validIds.has(stored.lastShown)
+      ? String(stored.lastShown)
+      : "";
+
+  if (
+    remaining.length > 1 &&
+    rd166SponsorSourceId(remaining[0]) === lastShown
+  ) {
+    const alternative = remaining.findIndex(
+      (token) =>
+        rd166SponsorSourceId(token) !== lastShown
+    );
+    if (alternative > 0) {
+      [remaining[0], remaining[alternative]] =
+        [remaining[alternative], remaining[0]];
+    }
+  }
+
+  return {
+    key,
+    remaining,
+    lastShown,
+    serial,
+    nextBackupQueue: backupSelection.nextQueue
+  };
+};
+
+
+rd141ChooseSponsor = function (config) {
+  const rotation = rd141CurrentRotation(config);
+  const token = rotation.remaining[0];
+  const sourceId = rd166SponsorSourceId(token);
+  const sponsor = (config?.sponsors || []).find(
+    (candidate) => candidate.id === sourceId
+  );
+
+  return sponsor
+    ? {
+        sponsor: {
+          ...sponsor,
+          id: token,
+          rotationSourceId: sourceId
+        },
+        rotation
+      }
+    : null;
+};
+
+
+rd141CommitSponsor = function (
+  rotation,
+  sponsorToken
+) {
+  const sourceId = rd166SponsorSourceId(
+    sponsorToken
+  );
+
+  if (rotation.nextBackupQueue) {
+    rd166WriteStored(
+      RD166_BACKUP_ROTATION_KEY,
+      rotation.nextBackupQueue
+    );
+  }
+
+  rd166WriteStored(
+    RD166_SPONSOR_ROTATION_KEY,
+    {
+      key: rotation.key,
+      remaining: rotation.remaining.filter(
+        (token) => token !== sponsorToken
+      ),
+      lastShown: sourceId,
+      serial: rotation.serial
+    }
+  );
+};
+
+
+document.documentElement.dataset.roadDiscoverySponsorRotation =
+  "paid-plus-rolling-backups-v166";
