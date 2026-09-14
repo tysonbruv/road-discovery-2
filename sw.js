@@ -1,15 +1,15 @@
 "use strict";
 
 /*
-  Road Discovery AU v159 service worker
+  Road Discovery AU v165 service worker
 
   Expected frontend versions:
-  - app.js?v=159
+  - app.js?v=165
   - style.css?v=68
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v161";
+  "road-discovery-au-v165";
 
 const CORE_APP_SHELL = [
   "./",
@@ -20,6 +20,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=68",
+  "./app.js?v=165",
   "./app.js?v=159",
   "./app.js?v=158",
   "./app.js?v=157",
@@ -166,6 +167,11 @@ self.addEventListener(
 
 
     if (request.mode === "navigate") {
+      const isSponsorAdmin =
+        url.pathname.endsWith(
+          "/sponsor-admin.html"
+        );
+
       event.respondWith(
         fetch(request)
           .then((networkResponse) => {
@@ -180,7 +186,9 @@ self.addEventListener(
                 .open(CACHE_NAME)
                 .then((cache) =>
                   cache.put(
-                    "./index.html",
+                    isSponsorAdmin
+                      ? "./sponsor-admin.html"
+                      : "./index.html",
                     responseCopy
                   )
                 );
@@ -191,7 +199,9 @@ self.addEventListener(
           .catch(async () =>
             (
               await caches.match(
-                "./index.html"
+                isSponsorAdmin
+                  ? "./sponsor-admin.html"
+                  : "./index.html"
               )
             ) ||
             (
@@ -240,6 +250,11 @@ self.addEventListener(
             )
           ) {
             return (
+              await caches.match(
+                "./app.js?v=165"
+              )
+            ) ||
+            (
               await caches.match(
                 "./app.js?v=159"
               )
