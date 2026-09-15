@@ -47490,14 +47490,29 @@ state.highContrastMap =
 
 function rd128LoadHighContrastMap() {
   try {
-    return (
+    const storedContrast =
       localStorage.getItem(
         RD128_HIGH_CONTRAST_MAP_KEY
-      ) === "true"
-    );
+      );
+
+    if (storedContrast !== null) {
+      return storedContrast === "true";
+    }
+
+    /*
+      High Contrast Dark is the default on a fresh
+      install. If an existing user has already saved
+      a Daylight/Standard Dark choice, preserve it.
+    */
+    const storedDaylight =
+      localStorage.getItem(
+        RD83_DAYLIGHT_MAP_KEY
+      );
+
+    return storedDaylight === null;
   } catch (error) {
     console.error(error);
-    return false;
+    return true;
   }
 }
 
@@ -49071,7 +49086,7 @@ rd136ApplyZoomedTrailBrightness();
 const RD137_TRAIL_BRIGHTNESS_KEY =
   "roadDiscoveryAU.trailBrightness.v1";
 
-const RD137_TRAIL_BRIGHTNESS_DEFAULT = 85;
+const RD137_TRAIL_BRIGHTNESS_DEFAULT = 100;
 const RD137_TRAIL_BRIGHTNESS_MIN = 1;
 const RD137_TRAIL_BRIGHTNESS_MAX = 100;
 
@@ -49327,7 +49342,7 @@ function rd137InstallTrailBrightnessStyles() {
     }
 
     .rd137-trail-brightness-slider {
-      --rd137-trail-brightness-fill: 85%;
+      --rd137-trail-brightness-fill: 100%;
       width: 100%;
       height: 28px;
       margin: 0;
@@ -49447,7 +49462,7 @@ function rd137InsertTrailBrightnessSetting() {
         class="rd137-trail-brightness-value"
         for="rd137TrailBrightnessSlider"
       >
-        85%
+        100%
       </output>
     </div>
 
@@ -49458,9 +49473,9 @@ function rd137InsertTrailBrightnessSetting() {
       min="1"
       max="100"
       step="1"
-      value="85"
+      value="100"
       aria-label="Trail brightness"
-      aria-valuetext="85% brightness"
+      aria-valuetext="100% brightness"
     />
 
     <div
