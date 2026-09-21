@@ -1,7 +1,7 @@
 "use strict";
 
 /* Road Discovery AU v137
-   Self-hosted Australian OpenStreetMap PMTiles basemap with dark, daylight and high-contrast dark styles.
+   Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
    Live GPS, current drives, markers, accuracy, speed, heading, waypoints and routes are never uploaded.
@@ -103,48 +103,6 @@ const ROAD_DISCOVERY_BASEMAP_MAJOR_ROADS =
   ]);
 
 const ROAD_DISCOVERY_BASEMAP_PALETTES = {
-  dark: {
-    background: "#090b0f",
-    landDefault: "#0d1116",
-    landcover: {
-      wood: "#0e1815",
-      grass: "#101812",
-      scrub: "#111815",
-      farmland: "#111510"
-    },
-    landuseDefault: "#101419",
-    landuse: {
-      residential: "#11161c",
-      commercial: "#15171c",
-      industrial: "#17171a",
-      park: "#101a14",
-      cemetery: "#111914"
-    },
-    water: "#05090d",
-    waterway: "#152936",
-    localBoundary: "#313945",
-    stateBoundary: "#717b89",
-    tunnelCasing: "#0a0d11",
-    tunnelRoad: "#252c34",
-    roadCasing: "#080a0d",
-    roadDefault: "#2c333c",
-    roads: {
-      motorway: "#565f6d",
-      trunk: "#565f6d",
-      primary: "#4b5561",
-      secondary: "#414a55",
-      tertiary: "#39424c",
-      minor: "#303842",
-      service: "#272e36",
-      track: "#252b31"
-    },
-    majorRoadLabel: "#c4cad2",
-    localRoadLabel: "#aab2bc",
-    stateLabel: "#929aa5",
-    townLabel: "#e2e6eb",
-    suburbLabel: "#b7bec8",
-    labelHalo: "#090b0f"
-  },
   light: {
     background: "#e8edf1",
     landDefault: "#e6ebee",
@@ -187,7 +145,7 @@ const ROAD_DISCOVERY_BASEMAP_PALETTES = {
     suburbLabel: "#4c5863",
     labelHalo: "#f4f6f7"
   },
-  contrast: {
+  dark: {
     background: "#090909",
     landDefault: "#0d0d0d",
     landcover: {
@@ -236,10 +194,7 @@ function roadDiscoveryBaseThemeKey(value = false) {
     return "light";
   }
 
-  if (value === "contrast") {
-    return "contrast";
-  }
-
+  /* Legacy "contrast" requests now use the sole Dark map. */
   return "dark";
 }
 
@@ -3903,7 +3858,9 @@ async function locateUser(options = {}) {
       : "GPS weak"
   );
 
-  setAccuracyStatus(`Accuracy ${Math.round(point.accuracy)} m`);
+  setAccuracyStatus(
+    rd169FormatGpsAccuracy(point.accuracy)
+  );
 
   if (!state.isRecording) {
     setDriveStatus("Ready to drive");
@@ -3981,7 +3938,9 @@ async function startDrive() {
       : "GPS weak"
   );
 
-  setAccuracyStatus(`Accuracy ${Math.round(point.accuracy)} m`);
+  setAccuracyStatus(
+    rd169FormatGpsAccuracy(point.accuracy)
+  );
 
   const roadsReady = await ensureRoadsNearPoint(point, {
     replaceIfFar: true,
@@ -4153,13 +4112,15 @@ function onGpsPosition(position) {
   if (point.accuracy > MAX_GPS_ACCURACY_M) {
     setGpsStatus("GPS weak");
     setAccuracyStatus(
-      `Accuracy ${Math.round(point.accuracy)} m — waiting for a cleaner signal`
+      `${rd169FormatGpsAccuracy(point.accuracy)} — waiting for a cleaner signal`
     );
     return;
   }
 
   setGpsStatus("GPS good");
-  setAccuracyStatus(`Accuracy ${Math.round(point.accuracy)} m`);
+  setAccuracyStatus(
+    rd169FormatGpsAccuracy(point.accuracy)
+  );
 
   if (state.lastPoint) {
     const distance = haversine(state.lastPoint, point);
@@ -8473,6 +8434,33 @@ function setGpsStatus(text) {
   if (els.gpsStatus) {
     els.gpsStatus.textContent = text;
   }
+}
+
+function rd169GpsAccuracyStrength(accuracy) {
+  const metres = Number(accuracy);
+
+  if (!Number.isFinite(metres)) {
+    return "Weak";
+  }
+
+  if (metres <= 15) {
+    return "Strong";
+  }
+
+  if (metres <= MAX_GPS_ACCURACY_M) {
+    return "Normal";
+  }
+
+  return "Weak";
+}
+
+function rd169FormatGpsAccuracy(accuracy) {
+  const metres = Number(accuracy);
+  const rounded = Number.isFinite(metres)
+    ? Math.max(0, Math.ceil(metres))
+    : 999;
+
+  return `Accuracy ${rounded} m · ${rd169GpsAccuracyStrength(metres)}`;
 }
 
 function setAccuracyStatus(text) {
@@ -23052,9 +23040,9 @@ async function rd81CheckMyLocation() {
       MAX_GPS_ACCURACY_M
     ) {
       showToast(
-        `GPS accuracy ${Math.round(
+        `${rd169FormatGpsAccuracy(
           point.accuracy
-        )} m — move into an open area and try again`
+        )} — move into an open area and try again`
       );
 
       return;
@@ -47475,14 +47463,14 @@ rd86ResetConquestState = function (
 
 /* ================================================== */
 /* Road Discovery AU v129                             */
-/* Optional High-Contrast Dark Basemap                */
+/* Dark and Daylight Basemap Choice                   */
 /* ================================================== */
 
 const RD128_HIGH_CONTRAST_MAP_KEY =
   "roadDiscoveryAU.highContrastMap.v1";
 
 const RD128_HIGH_CONTRAST_THEME =
-  "contrast";
+  "dark";
 
 state.highContrastMap =
   rd128LoadHighContrastMap();
@@ -47490,26 +47478,10 @@ state.highContrastMap =
 
 function rd128LoadHighContrastMap() {
   try {
-    const storedContrast =
-      localStorage.getItem(
-        RD128_HIGH_CONTRAST_MAP_KEY
-      );
-
-    if (storedContrast !== null) {
-      return storedContrast === "true";
-    }
-
-    /*
-      High Contrast Dark is the default on a fresh
-      install. If an existing user has already saved
-      a Daylight/Standard Dark choice, preserve it.
-    */
-    const storedDaylight =
-      localStorage.getItem(
-        RD83_DAYLIGHT_MAP_KEY
-      );
-
-    return storedDaylight === null;
+    /* Daylight is the only alternative to Dark. */
+    return localStorage.getItem(
+      RD83_DAYLIGHT_MAP_KEY
+    ) !== "true";
   } catch (error) {
     console.error(error);
     return true;
@@ -47533,13 +47505,9 @@ function rd128SaveHighContrastMap() {
 
 
 function rd128CurrentMapTheme() {
-  if (state.highContrastMap) {
-    return RD128_HIGH_CONTRAST_THEME;
-  }
-
   return state.daylightMap
     ? RD83_LIGHT_THEME
-    : RD83_DARK_THEME;
+    : RD128_HIGH_CONTRAST_THEME;
 }
 
 
@@ -47559,8 +47527,8 @@ function rd128UpdateMapAppearanceControls() {
   }
 
   if (contrastToggle) {
-    contrastToggle.checked = Boolean(
-      state.highContrastMap
+    contrastToggle.checked = !Boolean(
+      state.daylightMap
     );
   }
 }
@@ -47675,13 +47643,12 @@ function rd128InsertHighContrastMapSetting() {
 
   setting.innerHTML = `
     <div class="toggle-text">
-      <strong>High-contrast dark map</strong>
+      <strong>Dark map</strong>
 
       <span>
-        Uses a deeper CARTO-style map colour and
-        quieter ordinary roads so your discovered
-        trail has a cleaner pop. Your progress and
-        trail colour stay unchanged.
+        Uses a deep dark map with quieter ordinary
+        roads so your discovered trail stays clear.
+        Your progress and trail colour stay unchanged.
       </span>
     </div>
 
@@ -47704,7 +47671,7 @@ function rd128InsertHighContrastMapSetting() {
     daylightSetting.parentElement === mapSection
   ) {
     daylightSetting.insertAdjacentElement(
-      "afterend",
+      "beforebegin",
       setting
     );
   } else {
@@ -47739,15 +47706,18 @@ function rd128InsertHighContrastMapSetting() {
         if (enabled && state.daylightMap) {
           state.daylightMap = false;
           rd83SaveDaylightMap();
+        } else if (!enabled && !state.daylightMap) {
+          state.daylightMap = true;
+          rd83SaveDaylightMap();
         }
 
         rd128SaveHighContrastMap();
         rd83ApplyDaylightMap();
 
         showToast(
-          enabled
-            ? "High-contrast dark map on"
-            : "Standard dark map on"
+          state.daylightMap
+            ? "Daylight map on"
+            : "Dark map on"
         );
       }
     );
@@ -47773,13 +47743,9 @@ function rd128BindDaylightExclusivity() {
   daylightToggle.addEventListener(
     "change",
     (event) => {
-      if (
-        event.currentTarget.checked &&
-        state.highContrastMap
-      ) {
-        state.highContrastMap = false;
-        rd128SaveHighContrastMap();
-      }
+      state.highContrastMap =
+        !Boolean(event.currentTarget.checked);
+      rd128SaveHighContrastMap();
     },
     true
   );
@@ -47787,13 +47753,9 @@ function rd128BindDaylightExclusivity() {
 
 
 function rd128InitHighContrastMap() {
-  if (
-    state.highContrastMap &&
-    state.daylightMap
-  ) {
-    state.daylightMap = false;
-    rd83SaveDaylightMap();
-  }
+  state.highContrastMap =
+    !Boolean(state.daylightMap);
+  rd128SaveHighContrastMap();
 
   rd128InsertHighContrastMapSetting();
   rd128BindDaylightExclusivity();
@@ -55827,3 +55789,15 @@ document.documentElement.dataset.roadDiscoverySponsorRotation =
 
 document.documentElement.dataset.roadDiscoveryPersonalAds =
   "admin-managed-backups-v167";
+
+
+/* --------------------------------------------------
+   Road Discovery AU v169
+   Two map choices and readable GPS accuracy strength
+   -------------------------------------------------- */
+
+document.documentElement.dataset.roadDiscoveryMapChoices =
+  "dark-or-daylight-v169";
+
+document.documentElement.dataset.roadDiscoveryGpsStrength =
+  "strong-normal-weak-v169";
