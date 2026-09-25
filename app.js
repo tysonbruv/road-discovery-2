@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v137
+/* Road Discovery AU v170
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -55801,3 +55801,1059 @@ document.documentElement.dataset.roadDiscoveryMapChoices =
 
 document.documentElement.dataset.roadDiscoveryGpsStrength =
   "strong-normal-weak-v169";
+
+
+/* ==================================================
+   Road Discovery AU v170
+   Minimal live-game HUD, resilient match panel and
+   automatic ten-second player following
+   ================================================== */
+
+const RD170_FOLLOW_RESUME_MS = 10000;
+
+const roadDiscoveryV170 = {
+  openMultiplayerPanel,
+  renderHideSeekState,
+  resetHideSeekState,
+  renderConquestState:
+    rd86RenderConquestState,
+  resetConquestState:
+    rd86ResetConquestState,
+  updateUserMarker,
+  forceLocationMarker:
+    rd66LocationMarkerIsForcedVisible,
+  drawObjectives:
+    rd86DrawObjectives,
+  drawCaches:
+    rd86DrawCaches
+};
+
+Object.assign(state, {
+  rd170GameShellActive: false,
+  rd170FollowResumeTimer: null,
+  rd170PointerActive: false,
+  rd170LastMapInputAt: 0
+});
+
+
+function rd170HideSeekGameplayActive() {
+  return Boolean(
+    state.hideSeek.roundId &&
+    [
+      "starting",
+      "escape",
+      "hunt"
+    ].includes(state.hideSeek.phase)
+  );
+}
+
+
+function rd170GameplayActive() {
+  return Boolean(
+    hasActiveConquestRound() ||
+    rd170HideSeekGameplayActive()
+  );
+}
+
+
+rd66LocationMarkerIsForcedVisible =
+function () {
+  return Boolean(
+    hasActiveConquestRound() ||
+    roadDiscoveryV170
+      .forceLocationMarker()
+  );
+};
+
+
+function rd170ClearFollowResumeTimer() {
+  if (
+    state.rd170FollowResumeTimer !== null
+  ) {
+    window.clearTimeout(
+      state.rd170FollowResumeTimer
+    );
+
+    state.rd170FollowResumeTimer = null;
+  }
+}
+
+
+function rd170CentreOnPlayer() {
+  if (!rd170GameplayActive()) {
+    return;
+  }
+
+  state.followUser = true;
+
+  if (state.customConquest) {
+    state.customConquest.followBotId = null;
+  }
+
+  if (
+    !state.map ||
+    !Number.isFinite(
+      Number(state.currentPoint?.lat)
+    ) ||
+    !Number.isFinite(
+      Number(state.currentPoint?.lng)
+    )
+  ) {
+    return;
+  }
+
+  state.map.stop?.();
+
+  state.map.panTo(
+    [
+      Number(state.currentPoint.lat),
+      Number(state.currentPoint.lng)
+    ],
+    {
+      animate: false
+    }
+  );
+
+  if (
+    state.mapHeadingMode === "heading" &&
+    typeof hs47ApplyHeadingView === "function"
+  ) {
+    hs47ApplyHeadingView(
+      state.currentPoint
+    );
+  }
+
+  hs47UpdateNorthIndicator?.();
+}
+
+
+function rd170ResumeGameFollow() {
+  rd170ClearFollowResumeTimer();
+
+  if (!rd170GameplayActive()) {
+    return;
+  }
+
+  if (state.rd170PointerActive) {
+    state.rd170FollowResumeTimer =
+      window.setTimeout(
+        rd170ResumeGameFollow,
+        1000
+      );
+
+    return;
+  }
+
+  rd170CentreOnPlayer();
+}
+
+
+function rd170PauseGameFollow() {
+  if (!rd170GameplayActive()) {
+    return;
+  }
+
+  state.rd170LastMapInputAt =
+    Date.now();
+
+  state.followUser = false;
+
+  if (state.customConquest) {
+    state.customConquest.followBotId = null;
+  }
+
+  rd170ClearFollowResumeTimer();
+
+  state.rd170FollowResumeTimer =
+    window.setTimeout(
+      rd170ResumeGameFollow,
+      RD170_FOLLOW_RESUME_MS
+    );
+}
+
+
+function rd170InstallStyles() {
+  if ($("rd170LiveGameStyles")) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id = "rd170LiveGameStyles";
+
+  style.textContent = `
+    body.rd170-gameplay-active #topHud,
+    body.rd170-gameplay-active #bottomControls {
+      display: none !important;
+    }
+
+    body.rd170-gameplay-active
+      .tool-stack
+      > :not(#multiplayerBtn):not(#locateBtn) {
+      display: none !important;
+    }
+
+    body.rd170-gameplay-active .tool-stack {
+      gap: 8px !important;
+    }
+
+    body.rd170-gameplay-active
+      .tool-stack #multiplayerBtn,
+    body.rd170-gameplay-active
+      .tool-stack #locateBtn,
+    body.rd170-gameplay-active
+      #mapNorthIndicator {
+      width: 44px !important;
+      min-width: 44px !important;
+      height: 44px !important;
+      min-height: 44px !important;
+    }
+
+    body.rd170-gameplay-active
+      #conquestMapHud:not(.hidden),
+    body.rd170-gameplay-active
+      #hideSeekMapHud:not(.hidden) {
+      position: fixed !important;
+      top: max(8px, env(safe-area-inset-top)) !important;
+      left: 50% !important;
+      right: auto !important;
+      z-index: 780 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      width: auto !important;
+      min-width: 0 !important;
+      max-width: calc(100vw - 136px) !important;
+      margin: 0 !important;
+      padding: 6px 9px !important;
+      gap: 8px !important;
+      border-radius: 13px !important;
+      background: rgba(8, 12, 18, 0.93) !important;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38) !important;
+      transform: translateX(-50%) !important;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    body.rd170-gameplay-active
+      #conquestMapHud.hidden,
+    body.rd170-gameplay-active
+      #hideSeekMapHud.hidden {
+      display: none !important;
+    }
+
+    body.rd170-gameplay-active
+      .conquest-map-hud-top,
+    body.rd170-gameplay-active
+      .hide-seek-map-hud-top {
+      display: contents !important;
+    }
+
+    body.rd170-gameplay-active
+      .conquest-map-phase {
+      display: none !important;
+    }
+
+    body.rd170-gameplay-active
+      .conquest-map-team,
+    body.rd170-gameplay-active
+      .hide-seek-map-role,
+    body.rd170-gameplay-active
+      .hide-seek-map-phase {
+      margin: 0 !important;
+      padding: 4px 7px !important;
+      border-radius: 8px !important;
+      font-size: 0.66rem !important;
+      line-height: 1 !important;
+      white-space: nowrap !important;
+    }
+
+    body.rd170-gameplay-active
+      .conquest-map-timer,
+    body.rd170-gameplay-active
+      .hide-seek-map-timer {
+      margin: 0 !important;
+      font-size: clamp(1rem, 4vw, 1.25rem) !important;
+      line-height: 1 !important;
+      letter-spacing: 0.02em !important;
+      white-space: nowrap !important;
+    }
+
+    body.rd170-gameplay-active
+      .conquest-map-score {
+      display: flex !important;
+      align-items: center !important;
+      gap: 5px !important;
+      margin: 0 !important;
+      font-size: 0.65rem !important;
+      line-height: 1 !important;
+      white-space: nowrap !important;
+    }
+
+    body.rd170-gameplay-active
+      .conquest-map-score strong {
+      font-size: 0.86rem !important;
+    }
+
+    .rd170-hide-seek-remaining {
+      padding: 4px 7px;
+      border: 1px solid rgba(144, 164, 190, 0.38);
+      border-radius: 8px;
+      color: #dbe9f8;
+      font-size: 0.66rem;
+      font-weight: 900;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    body.rd170-gameplay-active
+      #hideSeekMapSignalStatus,
+    body.rd170-gameplay-active
+      #hideSeekMapSignalList {
+      display: none !important;
+    }
+
+    body.rd170-gameplay-active
+      #hideSeekMapReadyPanel:not(.hidden) {
+      position: fixed !important;
+      top: calc(max(8px, env(safe-area-inset-top)) + 54px) !important;
+      left: 50% !important;
+      z-index: 779 !important;
+      width: min(320px, calc(100vw - 32px)) !important;
+      margin: 0 !important;
+      padding: 8px 10px !important;
+      border-radius: 12px !important;
+      transform: translateX(-50%) !important;
+    }
+
+    body.rd170-gameplay-active
+      #conquestFocusStrip:not(.hidden) {
+      position: fixed !important;
+      top: calc(max(8px, env(safe-area-inset-top)) + 53px) !important;
+      left: 50% !important;
+      right: auto !important;
+      z-index: 778 !important;
+      display: flex !important;
+      width: max-content !important;
+      max-width: calc(100vw - 24px) !important;
+      margin: 0 !important;
+      padding: 4px !important;
+      gap: 5px !important;
+      overflow-x: auto !important;
+      border-radius: 13px !important;
+      background: rgba(8, 12, 18, 0.86) !important;
+      box-shadow: 0 7px 20px rgba(0, 0, 0, 0.32) !important;
+      transform: translateX(-50%) !important;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    body.rd170-gameplay-active
+      #conquestFocusStrip.hidden {
+      display: none !important;
+    }
+
+    body.rd170-gameplay-active
+      #conquestFocusStrip::-webkit-scrollbar {
+      display: none;
+    }
+
+    body.rd170-gameplay-active
+      .conquest-focus-btn {
+      flex: 0 0 auto !important;
+      width: 46px !important;
+      min-width: 46px !important;
+      height: 44px !important;
+      min-height: 44px !important;
+      margin: 0 !important;
+      padding: 3px 4px !important;
+      border-radius: 10px !important;
+      gap: 0 !important;
+    }
+
+    body.rd170-gameplay-active
+      .conquest-focus-btn strong {
+      font-size: 0.84rem !important;
+      line-height: 1 !important;
+    }
+
+    body.rd170-gameplay-active
+      .conquest-focus-btn small {
+      max-width: 38px !important;
+      overflow: hidden !important;
+      font-size: 0.5rem !important;
+      line-height: 1 !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+
+    body.rd170-gameplay-active
+      .conquest-focus-arrow {
+      display: none !important;
+    }
+
+    .rd170-match-map-switch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 0 14px 12px;
+      padding: 8px;
+      border: 1px solid rgba(125, 148, 176, 0.3);
+      border-radius: 13px;
+      background: rgba(15, 21, 30, 0.92);
+    }
+
+    .rd170-match-map-switch-label {
+      grid-column: 1 / -1;
+      color: #9eb0c5;
+      font-size: 0.62rem;
+      font-weight: 950;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .rd170-match-map-btn {
+      min-height: 42px;
+      border: 1px solid rgba(125, 148, 176, 0.4);
+      border-radius: 10px;
+      background: #18212d;
+      color: #f5f8fc;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd170-match-map-btn.active {
+      border-color: #ff8a17;
+      background: rgba(255, 138, 23, 0.16);
+      color: #ffb667;
+      box-shadow: inset 0 0 0 1px rgba(255, 138, 23, 0.28);
+    }
+
+    body.rd170-gameplay-active
+      .leaflet-pane,
+    body.rd170-gameplay-active
+      .leaflet-tile-container,
+    body.rd170-gameplay-active
+      .leaflet-marker-pane {
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+
+    @media (max-width: 520px) {
+      body.rd170-gameplay-active
+        #conquestMapHud:not(.hidden),
+      body.rd170-gameplay-active
+        #hideSeekMapHud:not(.hidden) {
+        max-width: calc(100vw - 112px) !important;
+        gap: 6px !important;
+        padding: 5px 7px !important;
+      }
+
+      body.rd170-gameplay-active
+        .hide-seek-map-phase {
+        display: none !important;
+      }
+
+      .rd170-hide-seek-remaining {
+        font-size: 0.6rem;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd170EnsureHideSeekRemaining() {
+  if ($("rd170HideSeekRemaining")) {
+    return $("rd170HideSeekRemaining");
+  }
+
+  if (!els.hideSeekMapHud) {
+    return null;
+  }
+
+  const counter =
+    document.createElement("span");
+
+  counter.id =
+    "rd170HideSeekRemaining";
+
+  counter.className =
+    "rd170-hide-seek-remaining";
+
+  counter.textContent =
+    "0 remaining";
+
+  els.hideSeekMapHud.appendChild(
+    counter
+  );
+
+  return counter;
+}
+
+
+function rd170RenderHideSeekRemaining() {
+  const counter =
+    rd170EnsureHideSeekRemaining();
+
+  if (!counter) return;
+
+  const players = Array.isArray(
+    state.hideSeek.players
+  )
+    ? state.hideSeek.players
+    : [];
+
+  const remaining = players.filter(
+    (player) =>
+      ![
+        "found",
+        "out",
+        "left",
+        "eliminated"
+      ].includes(
+        String(
+          player?.player_status ||
+          "active"
+        ).toLowerCase()
+      )
+  ).length;
+
+  counter.textContent =
+    `${remaining} ${
+      remaining === 1
+        ? "remaining"
+        : "remaining"
+    }`;
+}
+
+
+function rd170SyncGameShell() {
+  const active =
+    rd170GameplayActive();
+
+  const started =
+    active &&
+    !state.rd170GameShellActive;
+
+  state.rd170GameShellActive =
+    active;
+
+  document.body.classList.toggle(
+    "rd170-gameplay-active",
+    active
+  );
+
+  rd66ApplyLocationMarkerVisibility();
+
+  if (active) {
+    rd170RenderHideSeekRemaining();
+  } else {
+    rd170ClearFollowResumeTimer();
+
+    els.conquestFocusStrip
+      ?.classList.add("hidden");
+  }
+
+  if (started) {
+    window.requestAnimationFrame(() => {
+      rd170CentreOnPlayer();
+      state.map?.invalidateSize?.(false);
+    });
+  }
+}
+
+
+function rd170UpdateMapSwitch() {
+  const daylight =
+    Boolean(state.daylightMap);
+
+  for (
+    const button of
+    document.querySelectorAll(
+      "[data-rd170-map-theme]"
+    )
+  ) {
+    const selected =
+      button.dataset.rd170MapTheme ===
+      (daylight ? "daylight" : "dark");
+
+    button.classList.toggle(
+      "active",
+      selected
+    );
+
+    button.setAttribute(
+      "aria-pressed",
+      String(selected)
+    );
+  }
+}
+
+
+function rd170SetMapTheme(theme) {
+  const daylight =
+    theme === "daylight";
+
+  state.daylightMap = daylight;
+  state.highContrastMap = !daylight;
+
+  rd83SaveDaylightMap();
+  rd128SaveHighContrastMap();
+  rd83ApplyDaylightMap();
+  rd170UpdateMapSwitch();
+
+  showToast(
+    daylight
+      ? "Daylight map on"
+      : "Dark map on"
+  );
+}
+
+
+function rd170EnsureMultiplayerMapSwitch() {
+  if ($("rd170MatchMapSwitch")) {
+    rd170UpdateMapSwitch();
+    return;
+  }
+
+  const panel =
+    els.multiplayerPanel ||
+    $("multiplayerPanel");
+
+  const header =
+    panel?.querySelector(
+      ".panel-header"
+    );
+
+  if (!panel || !header) return;
+
+  const switcher =
+    document.createElement("section");
+
+  switcher.id =
+    "rd170MatchMapSwitch";
+
+  switcher.className =
+    "rd170-match-map-switch";
+
+  switcher.setAttribute(
+    "aria-label",
+    "Choose the game map appearance"
+  );
+
+  switcher.innerHTML = `
+    <div class="rd170-match-map-switch-label">
+      Map view
+    </div>
+
+    <button
+      class="rd170-match-map-btn"
+      type="button"
+      data-rd170-map-theme="dark"
+    >
+      Dark map
+    </button>
+
+    <button
+      class="rd170-match-map-btn"
+      type="button"
+      data-rd170-map-theme="daylight"
+    >
+      Daylight map
+    </button>
+  `;
+
+  header.insertAdjacentElement(
+    "afterend",
+    switcher
+  );
+
+  switcher.addEventListener(
+    "click",
+    (event) => {
+      const button =
+        event.target.closest(
+          "[data-rd170-map-theme]"
+        );
+
+      if (!button) return;
+
+      rd170SetMapTheme(
+        button.dataset.rd170MapTheme
+      );
+    }
+  );
+
+  rd170UpdateMapSwitch();
+}
+
+
+function rd170BindMapInteraction() {
+  const container =
+    state.map?.getContainer?.();
+
+  if (
+    !container ||
+    container.dataset.rd170FollowBound ===
+      "true"
+  ) {
+    return;
+  }
+
+  container.dataset.rd170FollowBound =
+    "true";
+
+  const begin = () => {
+    state.rd170PointerActive = true;
+    rd170PauseGameFollow();
+  };
+
+  const continueGesture = () => {
+    if (state.rd170PointerActive) {
+      rd170PauseGameFollow();
+    }
+  };
+
+  const end = () => {
+    if (state.rd170PointerActive) {
+      state.rd170PointerActive = false;
+      rd170PauseGameFollow();
+    }
+  };
+
+  container.addEventListener(
+    "pointerdown",
+    begin,
+    { passive: true }
+  );
+
+  container.addEventListener(
+    "pointermove",
+    continueGesture,
+    { passive: true }
+  );
+
+  window.addEventListener(
+    "pointerup",
+    end,
+    { passive: true }
+  );
+
+  window.addEventListener(
+    "pointercancel",
+    end,
+    { passive: true }
+  );
+
+  container.addEventListener(
+    "touchstart",
+    begin,
+    { passive: true }
+  );
+
+  container.addEventListener(
+    "touchmove",
+    continueGesture,
+    { passive: true }
+  );
+
+  container.addEventListener(
+    "touchend",
+    end,
+    { passive: true }
+  );
+
+  container.addEventListener(
+    "touchcancel",
+    end,
+    { passive: true }
+  );
+
+  container.addEventListener(
+    "wheel",
+    rd170PauseGameFollow,
+    { passive: true }
+  );
+
+  container.addEventListener(
+    "gesturestart",
+    begin,
+    { passive: true }
+  );
+
+  container.addEventListener(
+    "gesturechange",
+    continueGesture,
+    { passive: true }
+  );
+
+  container.addEventListener(
+    "gestureend",
+    end,
+    { passive: true }
+  );
+
+  state.map.on(
+    "dragstart",
+    rd170PauseGameFollow
+  );
+
+  if (
+    state.map.panTo &&
+    !state.map.rd170OriginalPanTo
+  ) {
+    state.map.rd170OriginalPanTo =
+      state.map.panTo.bind(state.map);
+
+    state.map.panTo = function (
+      latlng,
+      options = {}
+    ) {
+      return state.map.rd170OriginalPanTo(
+        latlng,
+        rd170GameplayActive() &&
+          state.followUser
+          ? {
+              ...options,
+              animate: false
+            }
+          : options
+      );
+    };
+  }
+}
+
+
+function rd170BindConquestMarker(
+  marker,
+  kind,
+  id
+) {
+  if (
+    !marker ||
+    marker.rd170WaypointBound
+  ) {
+    return;
+  }
+
+  marker.rd170WaypointBound = true;
+
+  marker.on("click", () => {
+    const target =
+      rd86FocusTarget(kind, id);
+
+    if (!target) return;
+
+    if (
+      state.conquest.viewerIsSpectator ||
+      ![
+        "active",
+        "overtime"
+      ].includes(state.conquest.phase) ||
+      (
+        kind === "cache" &&
+        String(target?.status || "") !==
+          "available"
+      )
+    ) {
+      rd86FocusPoint(target);
+      return;
+    }
+
+    rd170PauseGameFollow();
+
+    rd112SelectWaypoint(
+      kind,
+      id,
+      target
+    );
+  });
+}
+
+
+function rd170BindConquestMapMarkers() {
+  for (
+    const [code, layers] of
+    state.conquest.objectiveLayers.entries()
+  ) {
+    rd170BindConquestMarker(
+      layers?.marker,
+      "objective",
+      code
+    );
+  }
+
+  for (
+    const [id, marker] of
+    state.conquest.cacheMarkers.entries()
+  ) {
+    rd170BindConquestMarker(
+      marker,
+      "cache",
+      id
+    );
+  }
+}
+
+
+openMultiplayerPanel = function () {
+  rd170EnsureMultiplayerMapSwitch();
+  openPanel("multiplayerPanel");
+
+  window.requestAnimationFrame(() => {
+    try {
+      renderMultiplayerState();
+      rd170UpdateMapSwitch();
+    } catch (error) {
+      console.error(
+        "Could not refresh the live multiplayer panel.",
+        error
+      );
+    }
+  });
+};
+
+
+renderHideSeekState = function () {
+  const result =
+    roadDiscoveryV170
+      .renderHideSeekState();
+
+  rd170RenderHideSeekRemaining();
+  rd170SyncGameShell();
+
+  return result;
+};
+
+
+resetHideSeekState = function (
+  options = {}
+) {
+  const result =
+    roadDiscoveryV170
+      .resetHideSeekState(options);
+
+  rd170SyncGameShell();
+
+  return result;
+};
+
+
+rd86RenderConquestState = function () {
+  const result =
+    roadDiscoveryV170
+      .renderConquestState();
+
+  rd170SyncGameShell();
+
+  return result;
+};
+
+
+rd86ResetConquestState = function (
+  options = {}
+) {
+  const result =
+    roadDiscoveryV170
+      .resetConquestState(options);
+
+  rd170SyncGameShell();
+
+  return result;
+};
+
+
+updateUserMarker = function (point) {
+  const result =
+    roadDiscoveryV170
+      .updateUserMarker(point);
+
+  if (
+    rd170GameplayActive() &&
+    state.followUser &&
+    state.map &&
+    Number.isFinite(Number(point?.lat)) &&
+    Number.isFinite(Number(point?.lng))
+  ) {
+    state.map.panTo(
+      [
+        Number(point.lat),
+        Number(point.lng)
+      ],
+      {
+        animate: false
+      }
+    );
+  }
+
+  return result;
+};
+
+
+rd86DrawObjectives = function () {
+  const result =
+    roadDiscoveryV170
+      .drawObjectives();
+
+  rd170BindConquestMapMarkers();
+
+  return result;
+};
+
+
+rd86DrawCaches = function () {
+  const result =
+    roadDiscoveryV170
+      .drawCaches();
+
+  rd170BindConquestMapMarkers();
+
+  return result;
+};
+
+
+function rd170InitLiveGameInterface() {
+  rd170InstallStyles();
+  rd170EnsureMultiplayerMapSwitch();
+  rd170EnsureHideSeekRemaining();
+  rd170BindMapInteraction();
+  rd170BindConquestMapMarkers();
+  rd170SyncGameShell();
+  rd170UpdateMapSwitch();
+
+  if (
+    els.locateBtn &&
+    els.locateBtn.dataset
+      .rd170FollowBound !== "true"
+  ) {
+    els.locateBtn.dataset
+      .rd170FollowBound = "true";
+
+    els.locateBtn.addEventListener(
+      "click",
+      rd170ResumeGameFollow
+    );
+  }
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd170InitLiveGameInterface,
+    { once: true }
+  );
+} else {
+  rd170InitLiveGameInterface();
+}
+
+
+document.documentElement.dataset.roadDiscoveryLiveGameUi =
+  "minimal-following-v170";
