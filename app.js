@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v170
+/* Road Discovery AU v171
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -56857,3 +56857,757 @@ if (
 
 document.documentElement.dataset.roadDiscoveryLiveGameUi =
   "minimal-following-v170";
+
+
+/* ==================================================
+   Road Discovery AU v171
+   Visible Rally zone, Rally routing and clear
+   pre-match objective guidance
+   ================================================== */
+
+const RD171_RALLY_VISUAL_RADIUS_M = 50;
+const RD171_LIVE_HINT_MS = 8000;
+
+const roadDiscoveryV171 = {
+  drawDeploymentStart:
+    rd86DrawDeploymentStart,
+  maybeUpdateDeploymentRoute:
+    rd86MaybeUpdateDeploymentRoute,
+  renderConquestState:
+    rd86RenderConquestState,
+  resetConquestState:
+    rd86ResetConquestState
+};
+
+Object.assign(state, {
+  rd171GuidancePhase: "",
+  rd171LiveHintUntil: 0,
+  rd171GuidanceTimer: null
+});
+
+
+function rd171RallyTravelActive() {
+  return Boolean(
+    [
+      "rally",
+      "rally_grace"
+    ].includes(state.conquest.phase) &&
+    state.conquest.rallyPoint &&
+    !state.conquest.viewerCheckedIn &&
+    !state.conquest.viewerIsSpectator
+  );
+}
+
+
+function rd171EnsureRallyPanes() {
+  if (!state.map) return;
+
+  let areaPane =
+    state.map.getPane(
+      "rd171RallyAreaPane"
+    );
+
+  if (!areaPane) {
+    areaPane = state.map.createPane(
+      "rd171RallyAreaPane"
+    );
+  }
+
+  areaPane.style.zIndex = "445";
+  areaPane.style.pointerEvents = "none";
+
+  let labelPane =
+    state.map.getPane(
+      "rd171RallyLabelPane"
+    );
+
+  if (!labelPane) {
+    labelPane = state.map.createPane(
+      "rd171RallyLabelPane"
+    );
+  }
+
+  labelPane.style.zIndex = "675";
+  labelPane.style.pointerEvents = "none";
+}
+
+
+function rd171RallyIcon() {
+  return L.divIcon({
+    className:
+      "rd171-rally-marker-icon",
+
+    html: `
+      <div class="rd171-rally-marker">
+        <strong>RALLY</strong>
+        <span>MEET HERE</span>
+      </div>
+    `,
+
+    iconSize: [148, 56],
+    iconAnchor: [74, 76]
+  });
+}
+
+
+async function rd171EnsureRallyRoute(
+  options = {}
+) {
+  const force =
+    options.force === true;
+
+  if (
+    !rd171RallyTravelActive() ||
+    state.conquest.routeLoading
+  ) {
+    if (!rd171RallyTravelActive()) {
+      rd86ClearConquestRoute();
+    }
+
+    return;
+  }
+
+  const destination =
+    state.conquest.rallyPoint;
+
+  const routeKey =
+    `rally:${state.conquest.roundId}:` +
+    `${destination.lat.toFixed(6)},` +
+    `${destination.lng.toFixed(6)}`;
+
+  if (
+    !force &&
+    state.conquest.routeLine &&
+    state.conquest.routeKey === routeKey
+  ) {
+    return;
+  }
+
+  const start =
+    state.currentPoint ||
+    await getFreshRouteStartPoint();
+
+  if (!start) return;
+
+  const requestId =
+    ++state.conquest.routeRequestId;
+
+  state.conquest.routeLoading = true;
+
+  try {
+    const route =
+      await fetchRoadRoute(
+        start,
+        destination
+      );
+
+    if (
+      requestId !==
+        state.conquest.routeRequestId ||
+      !rd171RallyTravelActive()
+    ) {
+      return;
+    }
+
+    rd86ClearConquestRoute({
+      keepRequest: true
+    });
+
+    if (
+      !Array.isArray(route?.coords) ||
+      route.coords.length < 2
+    ) {
+      return;
+    }
+
+    state.conquest.routeHalo =
+      L.polyline(
+        route.coords,
+        {
+          color: "#f2f6fb",
+          weight: 10,
+          opacity: 0.66,
+          lineCap: "round",
+          lineJoin: "round",
+          interactive: false
+        }
+      ).addTo(
+        state.conquest.layer
+      );
+
+    state.conquest.routeLine =
+      L.polyline(
+        route.coords,
+        {
+          color: "#8f9baa",
+          weight: 5,
+          opacity: 1,
+          lineCap: "round",
+          lineJoin: "round",
+          interactive: false
+        }
+      ).addTo(
+        state.conquest.layer
+      );
+
+    state.conquest.routeKey =
+      routeKey;
+
+    state.conquest.lastRouteStartPoint = {
+      lat: Number(start.lat),
+      lng: Number(start.lng)
+    };
+
+    state.conquest.lastRouteAt =
+      Date.now();
+  } catch (error) {
+    console.error(
+      "Could not draw the Rally route.",
+      error
+    );
+  } finally {
+    if (
+      requestId ===
+        state.conquest.routeRequestId
+    ) {
+      state.conquest.routeLoading =
+        false;
+    }
+  }
+}
+
+
+function rd171MaybeUpdateRallyRoute(
+  point
+) {
+  if (
+    !rd171RallyTravelActive() ||
+    !state.conquest.routeLine ||
+    !state.conquest.lastRouteStartPoint ||
+    Number(point?.accuracy) >
+      MAX_GPS_ACCURACY_M
+  ) {
+    return;
+  }
+
+  if (
+    Date.now() -
+      state.conquest.lastRouteAt <
+    RD86_CONQUEST_ROUTE_REROUTE_MS
+  ) {
+    return;
+  }
+
+  if (
+    haversine(
+      point,
+      state.conquest.lastRouteStartPoint
+    ) <
+    RD86_CONQUEST_ROUTE_REROUTE_M
+  ) {
+    return;
+  }
+
+  void rd171EnsureRallyRoute({
+    force: true
+  });
+}
+
+
+rd86MaybeUpdateDeploymentRoute =
+function (point) {
+  if (rd89IsRallyPhase()) {
+    rd171MaybeUpdateRallyRoute(point);
+    return;
+  }
+
+  return roadDiscoveryV171
+    .maybeUpdateDeploymentRoute(point);
+};
+
+
+rd86DrawDeploymentStart = function () {
+  if (!rd89IsRallyPhase()) {
+    return roadDiscoveryV171
+      .drawDeploymentStart();
+  }
+
+  rd86EnsureConquestLayer();
+  rd171EnsureRallyPanes();
+
+  const point =
+    state.conquest.rallyPoint;
+
+  if (!point) {
+    rd86ClearLayerItem(
+      state.conquest.startCircle
+    );
+
+    rd86ClearLayerItem(
+      state.conquest.startMarker
+    );
+
+    state.conquest.startCircle = null;
+    state.conquest.startMarker = null;
+    rd86ClearConquestRoute();
+    return;
+  }
+
+  const latlng = [
+    Number(point.lat),
+    Number(point.lng)
+  ];
+
+  if (!state.conquest.startCircle) {
+    state.conquest.startCircle =
+      L.circle(latlng, {
+        pane: "rd171RallyAreaPane",
+        radius:
+          RD171_RALLY_VISUAL_RADIUS_M,
+        color: "#edf3fa",
+        weight: 5,
+        opacity: 0.98,
+        fillColor: "#aab3c2",
+        fillOpacity: 0.15,
+        dashArray: "2 11",
+        lineCap: "round",
+        interactive: false,
+        className:
+          "rd171-rally-zone"
+      }).addTo(state.conquest.layer);
+  } else {
+    state.conquest.startCircle
+      .setLatLng(latlng)
+      .setRadius(
+        RD171_RALLY_VISUAL_RADIUS_M
+      )
+      .setStyle({
+        color: "#edf3fa",
+        weight: 5,
+        opacity: 0.98,
+        fillColor: "#aab3c2",
+        fillOpacity: 0.15,
+        dashArray: "2 11",
+        lineCap: "round"
+      });
+  }
+
+  state.conquest.startCircle
+    .bringToFront?.();
+
+  if (!state.conquest.startMarker) {
+    state.conquest.startMarker =
+      L.marker(latlng, {
+        icon: rd171RallyIcon(),
+        pane: "rd171RallyLabelPane",
+        interactive: false,
+        keyboard: false
+      }).addTo(state.conquest.layer);
+  } else {
+    state.conquest.startMarker
+      .setLatLng(latlng)
+      .setIcon(rd171RallyIcon());
+  }
+
+  state.conquest.startMarker
+    .setZIndexOffset?.(1000);
+
+  if (rd171RallyTravelActive()) {
+    void rd171EnsureRallyRoute();
+  } else {
+    rd86ClearConquestRoute();
+  }
+};
+
+
+function rd171InstallRallyStyles() {
+  if ($("rd171RallyStyles")) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id = "rd171RallyStyles";
+
+  style.textContent = `
+    .rd171-rally-marker-icon {
+      border: 0 !important;
+      background: transparent !important;
+      pointer-events: none !important;
+    }
+
+    .rd171-rally-marker {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 148px;
+      min-height: 52px;
+      padding: 7px 15px 8px;
+      border: 2px solid rgba(237, 243, 250, 0.92);
+      border-radius: 14px;
+      background: rgba(8, 12, 18, 0.94);
+      color: #f7faff;
+      text-align: center;
+      box-shadow:
+        0 7px 20px rgba(0, 0, 0, 0.5),
+        0 0 0 3px rgba(170, 179, 194, 0.16);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .rd171-rally-marker::after {
+      position: absolute;
+      left: 50%;
+      bottom: -11px;
+      width: 16px;
+      height: 16px;
+      border-right: 2px solid rgba(237, 243, 250, 0.92);
+      border-bottom: 2px solid rgba(237, 243, 250, 0.92);
+      background: rgba(8, 12, 18, 0.94);
+      content: "";
+      transform: translateX(-50%) rotate(45deg);
+    }
+
+    .rd171-rally-marker strong {
+      color: #ffffff;
+      font-size: 0.82rem;
+      font-weight: 1000;
+      letter-spacing: 0.13em;
+      line-height: 1;
+    }
+
+    .rd171-rally-marker span {
+      margin-top: 4px;
+      color: #cbd5e1;
+      font-size: 0.58rem;
+      font-weight: 950;
+      letter-spacing: 0.1em;
+      line-height: 1;
+    }
+
+    .rd171-conquest-guidance {
+      position: fixed;
+      top: calc(max(8px, env(safe-area-inset-top)) + 51px);
+      left: 50%;
+      z-index: 781;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: max-content;
+      max-width: calc(100vw - 28px);
+      min-height: 32px;
+      padding: 7px 12px;
+      border: 1px solid rgba(203, 213, 225, 0.74);
+      border-radius: 11px;
+      background: rgba(8, 12, 18, 0.94);
+      color: #f7faff;
+      font-size: clamp(0.67rem, 2.8vw, 0.78rem);
+      font-weight: 950;
+      letter-spacing: 0.025em;
+      line-height: 1.15;
+      text-align: center;
+      box-shadow: 0 7px 20px rgba(0, 0, 0, 0.42);
+      transform: translateX(-50%);
+      pointer-events: none;
+      backdrop-filter: blur(9px);
+      -webkit-backdrop-filter: blur(9px);
+    }
+
+    .rd171-conquest-guidance.hidden {
+      display: none !important;
+    }
+
+    .rd171-conquest-guidance.red {
+      border-color: rgba(255, 88, 88, 0.88);
+      color: #ffb1b1;
+    }
+
+    .rd171-conquest-guidance.blue {
+      border-color: rgba(75, 153, 255, 0.9);
+      color: #afd2ff;
+    }
+
+    .rd171-conquest-guidance.urgent {
+      border-color: rgba(255, 138, 23, 0.92);
+      color: #ffba73;
+    }
+
+    @media (max-width: 520px) {
+      .rd171-rally-marker {
+        width: 132px;
+        min-height: 48px;
+        padding: 6px 12px 7px;
+      }
+
+      .rd171-conquest-guidance {
+        top: calc(max(8px, env(safe-area-inset-top)) + 48px);
+        max-width: calc(100vw - 20px);
+        min-height: 30px;
+        padding: 6px 10px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd171EnsureConquestGuidance() {
+  let guidance =
+    $("rd171ConquestGuidance");
+
+  if (guidance) return guidance;
+
+  guidance =
+    document.createElement("div");
+
+  guidance.id =
+    "rd171ConquestGuidance";
+
+  guidance.className =
+    "rd171-conquest-guidance hidden";
+
+  guidance.setAttribute(
+    "role",
+    "status"
+  );
+
+  guidance.setAttribute(
+    "aria-live",
+    "polite"
+  );
+
+  document.body.appendChild(guidance);
+  return guidance;
+}
+
+
+function rd171ClearGuidanceTimer() {
+  if (state.rd171GuidanceTimer !== null) {
+    window.clearTimeout(
+      state.rd171GuidanceTimer
+    );
+
+    state.rd171GuidanceTimer = null;
+  }
+}
+
+
+function rd171ConquestGuidanceText() {
+  const phase =
+    String(state.conquest.phase || "");
+
+  const ready =
+    Number(
+      state.conquest.rallyReadyCount
+    ) || 0;
+
+  const total =
+    Number(
+      state.conquest.rallyTotal
+    ) || 0;
+
+  if (phase === "rally") {
+    if (
+      state.conquest.viewerIsSpectator
+    ) {
+      return (
+        `RALLY • ${ready}/${total} assembled`
+      );
+    }
+
+    return state.conquest.viewerCheckedIn
+      ? `AT RALLY • ${ready}/${total} assembled`
+      : "GO TO RALLY • Enter the grey circle";
+  }
+
+  if (phase === "rally_grace") {
+    return state.conquest.viewerCheckedIn
+      ? `AT RALLY • ${ready}/${total} assembled`
+      : "GO TO RALLY NOW • Enter the grey circle";
+  }
+
+  if (phase === "rally_countdown") {
+    return (
+      "RALLY COMPLETE • Team starts next"
+    );
+  }
+
+  if (phase === "deployment") {
+    if (
+      state.conquest.viewerIsSpectator
+    ) {
+      return "TEAMS DEPLOYING TO THEIR STARTS";
+    }
+
+    const team =
+      state.conquest.viewerTeam === "red"
+        ? "RED"
+        : state.conquest.viewerTeam === "blue"
+          ? "BLUE"
+          : "TEAM";
+
+    return state.conquest.viewerCheckedIn
+      ? `AT ${team} START • Waiting for other team`
+      : `GO TO ${team} START • Follow the route`;
+  }
+
+  if (phase === "countdown") {
+    return (
+      "READY • Objectives appear at zero"
+    );
+  }
+
+  if (
+    phase === "active" &&
+    Date.now() <
+      state.rd171LiveHintUntil
+  ) {
+    return (
+      "MATCH LIVE • Capture A–E and Road Caches"
+    );
+  }
+
+  if (
+    phase === "overtime" &&
+    Date.now() <
+      state.rd171LiveHintUntil
+  ) {
+    return (
+      "OVERTIME • Next completed capture wins"
+    );
+  }
+
+  return "";
+}
+
+
+function rd171RenderConquestGuidance() {
+  const guidance =
+    rd171EnsureConquestGuidance();
+
+  const phase =
+    String(state.conquest.phase || "");
+
+  if (
+    phase !== state.rd171GuidancePhase
+  ) {
+    state.rd171GuidancePhase = phase;
+    rd171ClearGuidanceTimer();
+
+    if (
+      [
+        "active",
+        "overtime"
+      ].includes(phase)
+    ) {
+      state.rd171LiveHintUntil =
+        Date.now() +
+        RD171_LIVE_HINT_MS;
+
+      state.rd171GuidanceTimer =
+        window.setTimeout(() => {
+          state.rd171GuidanceTimer = null;
+          rd171RenderConquestGuidance();
+        }, RD171_LIVE_HINT_MS + 50);
+    } else {
+      state.rd171LiveHintUntil = 0;
+    }
+  }
+
+  const text =
+    state.conquest.roundId
+      ? rd171ConquestGuidanceText()
+      : "";
+
+  guidance.textContent = text;
+
+  guidance.classList.toggle(
+    "hidden",
+    !text
+  );
+
+  guidance.classList.remove(
+    "red",
+    "blue",
+    "urgent"
+  );
+
+  if (
+    state.conquest.phase ===
+      "deployment" &&
+    [
+      "red",
+      "blue"
+    ].includes(
+      state.conquest.viewerTeam
+    )
+  ) {
+    guidance.classList.add(
+      state.conquest.viewerTeam
+    );
+  } else if (
+    [
+      "rally_grace",
+      "countdown",
+      "active",
+      "overtime"
+    ].includes(state.conquest.phase)
+  ) {
+    guidance.classList.add("urgent");
+  }
+}
+
+
+rd86RenderConquestState = function () {
+  const result =
+    roadDiscoveryV171
+      .renderConquestState();
+
+  rd171RenderConquestGuidance();
+  return result;
+};
+
+
+rd86ResetConquestState = function (
+  options = {}
+) {
+  const result =
+    roadDiscoveryV171
+      .resetConquestState(options);
+
+  rd171ClearGuidanceTimer();
+  state.rd171GuidancePhase = "";
+  state.rd171LiveHintUntil = 0;
+  rd171RenderConquestGuidance();
+
+  return result;
+};
+
+
+function rd171InitRallyGuidance() {
+  rd171InstallRallyStyles();
+  rd171EnsureConquestGuidance();
+  rd171EnsureRallyPanes();
+  rd171RenderConquestGuidance();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd171InitRallyGuidance,
+    { once: true }
+  );
+} else {
+  rd171InitRallyGuidance();
+}
+
+
+document.documentElement.dataset.roadDiscoveryRallyGuidance =
+  "rally-route-zone-guidance-v171";
