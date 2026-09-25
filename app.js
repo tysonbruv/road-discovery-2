@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v172
+/* Road Discovery AU v173
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -58742,3 +58742,375 @@ if (
 
 document.documentElement.dataset.roadDiscoveryConquestPolish =
   "objective-crate-display-stable-menu-v172";
+
+
+/* ==================================================
+   Road Discovery AU v173
+   Centred objective letters and a fixed-height live
+   multiplayer menu with normally scrolling controls
+   ================================================== */
+
+const roadDiscoveryV173 = {
+  openMultiplayerPanel,
+  renderHideSeekState,
+  renderMultiplayerState,
+  resetConquestState:
+    rd86ResetConquestState,
+  resetHideSeekState
+};
+
+
+Object.assign(state, {
+  rd173LivePanelStructureKey: ""
+});
+
+
+function rd173InstallStyles() {
+  if ($("rd173MenuStabilityStyles")) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd173MenuStabilityStyles";
+
+  style.textContent = `
+    body.rd170-gameplay-active
+      #conquestFocusStrip
+      .conquest-focus-btn.objective {
+      grid-template-columns: minmax(0, 1fr) !important;
+      grid-template-rows: minmax(0, 1fr) !important;
+      grid-auto-columns: minmax(0, 1fr) !important;
+      grid-auto-rows: minmax(0, 1fr) !important;
+      place-content: center !important;
+      place-items: center !important;
+    }
+
+    body.rd170-gameplay-active
+      #conquestFocusStrip
+      .conquest-focus-btn.objective strong {
+      position: static !important;
+      inset: auto !important;
+      grid-column: 1 !important;
+      grid-row: 1 !important;
+      place-self: center !important;
+      width: auto !important;
+      height: auto !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      transform: none !important;
+      text-align: center !important;
+    }
+
+    #multiplayerPanel .panel-content {
+      overflow-anchor: none;
+      scrollbar-gutter: stable;
+    }
+
+    #rd170MatchMapSwitch.rd173-inline-map-switch {
+      position: static !important;
+      inset: auto !important;
+      z-index: auto !important;
+      margin: 0 0 14px !important;
+    }
+
+    body.rd173-conquest-panel-live
+      #multiplayerPanel
+      #hideSeekSetupBox,
+    body.rd173-conquest-panel-live
+      #multiplayerPanel
+      #hideSeekGameBox,
+    body.rd173-conquest-panel-live
+      #multiplayerPanel
+      #conquestSetupBox,
+    body.rd173-conquest-panel-live
+      #multiplayerPanel
+      #customConquestBox {
+      display: none !important;
+    }
+
+    body.rd173-conquest-panel-live
+      #multiplayerPanel
+      #conquestGameBox {
+      display: block !important;
+    }
+
+    body.rd173-hide-seek-panel-live
+      #multiplayerPanel
+      #hideSeekSetupBox,
+    body.rd173-hide-seek-panel-live
+      #multiplayerPanel
+      #conquestSetupBox,
+    body.rd173-hide-seek-panel-live
+      #multiplayerPanel
+      #conquestGameBox,
+    body.rd173-hide-seek-panel-live
+      #multiplayerPanel
+      #customConquestBox {
+      display: none !important;
+    }
+
+    body.rd173-hide-seek-panel-live
+      #multiplayerPanel
+      #hideSeekGameBox {
+      display: block !important;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd173PlaceMapControlsInScroller() {
+  rd170EnsureMultiplayerMapSwitch();
+
+  const panel =
+    els.multiplayerPanel ||
+    $("multiplayerPanel");
+
+  const content =
+    panel?.querySelector(
+      ".panel-content"
+    );
+
+  const switcher =
+    $("rd170MatchMapSwitch");
+
+  if (!content || !switcher) {
+    return;
+  }
+
+  if (
+    switcher.parentElement !== content ||
+    content.firstElementChild !== switcher
+  ) {
+    content.insertBefore(
+      switcher,
+      content.firstElementChild
+    );
+  }
+
+  switcher.classList.add(
+    "rd173-inline-map-switch"
+  );
+}
+
+
+function rd173LivePanelMode() {
+  if (hasActiveConquestRound()) {
+    return "conquest";
+  }
+
+  if (rd170HideSeekGameplayActive()) {
+    return "hide-seek";
+  }
+
+  return "";
+}
+
+
+function rd173LockLiveGameSections() {
+  const mode =
+    rd173LivePanelMode();
+
+  const conquestLive =
+    mode === "conquest";
+
+  const hideSeekLive =
+    mode === "hide-seek";
+
+  document.body.classList.toggle(
+    "rd173-conquest-panel-live",
+    conquestLive
+  );
+
+  document.body.classList.toggle(
+    "rd173-hide-seek-panel-live",
+    hideSeekLive
+  );
+
+  if (conquestLive) {
+    for (const element of [
+      els.hideSeekSetupBox,
+      els.hideSeekGameBox,
+      els.conquestSetupBox,
+      $("customConquestBox")
+    ]) {
+      element?.classList.add("hidden");
+    }
+
+    els.conquestGameBox
+      ?.classList.remove("hidden");
+  }
+
+  if (hideSeekLive) {
+    for (const element of [
+      els.hideSeekSetupBox,
+      els.conquestSetupBox,
+      els.conquestGameBox,
+      $("customConquestBox")
+    ]) {
+      element?.classList.add("hidden");
+    }
+
+    els.hideSeekGameBox
+      ?.classList.remove("hidden");
+  }
+}
+
+
+function rd173LivePanelStructureKey() {
+  const mode =
+    rd173LivePanelMode();
+
+  return JSON.stringify({
+    roomId:
+      state.multiplayer.roomId || "",
+
+    mode,
+
+    roundId:
+      mode === "conquest"
+        ? state.conquest.roundId || ""
+        : state.hideSeek.roundId || "",
+
+    phase:
+      mode === "conquest"
+        ? state.conquest.phase || ""
+        : state.hideSeek.phase || "",
+
+    settingsOpen:
+      Boolean(
+        state.conquestSettings?.open
+      )
+  });
+}
+
+
+function rd173RefreshLivePanel() {
+  rd172RefreshLivePanelRows();
+  rd173PlaceMapControlsInScroller();
+  rd173LockLiveGameSections();
+}
+
+
+openMultiplayerPanel = function () {
+  rd173PlaceMapControlsInScroller();
+
+  const result =
+    roadDiscoveryV173
+      .openMultiplayerPanel();
+
+  rd173PlaceMapControlsInScroller();
+  rd173LockLiveGameSections();
+
+  return result;
+};
+
+
+renderHideSeekState = function () {
+  if (hasActiveConquestRound()) {
+    rd173LockLiveGameSections();
+    return;
+  }
+
+  const result =
+    roadDiscoveryV173
+      .renderHideSeekState();
+
+  rd173LockLiveGameSections();
+  return result;
+};
+
+
+renderMultiplayerState = function () {
+  const panel =
+    els.multiplayerPanel ||
+    $("multiplayerPanel");
+
+  const panelVisible = Boolean(
+    panel &&
+    !panel.classList.contains("hidden")
+  );
+
+  const liveMode =
+    rd173LivePanelMode();
+
+  const nextStructureKey =
+    rd173LivePanelStructureKey();
+
+  if (
+    panelVisible &&
+    liveMode &&
+    nextStructureKey ===
+      state.rd173LivePanelStructureKey
+  ) {
+    rd173RefreshLivePanel();
+    return;
+  }
+
+  rd173LockLiveGameSections();
+
+  const result =
+    roadDiscoveryV173
+      .renderMultiplayerState();
+
+  state.rd173LivePanelStructureKey =
+    rd173LivePanelStructureKey();
+
+  rd173RefreshLivePanel();
+  return result;
+};
+
+
+rd86ResetConquestState = function (
+  options = {}
+) {
+  const result =
+    roadDiscoveryV173
+      .resetConquestState(options);
+
+  state.rd173LivePanelStructureKey = "";
+  rd173LockLiveGameSections();
+  return result;
+};
+
+
+resetHideSeekState = function (
+  options = {}
+) {
+  const result =
+    roadDiscoveryV173
+      .resetHideSeekState(options);
+
+  state.rd173LivePanelStructureKey = "";
+  rd173LockLiveGameSections();
+  return result;
+};
+
+
+function rd173InitMenuStability() {
+  rd173InstallStyles();
+  rd172EnsureGameDisplayControls();
+  rd173PlaceMapControlsInScroller();
+  rd173LockLiveGameSections();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd173InitMenuStability,
+    { once: true }
+  );
+} else {
+  rd173InitMenuStability();
+}
+
+
+document.documentElement.dataset.roadDiscoveryMenuStability =
+  "centred-objectives-scroll-controls-stable-live-menu-v173";
