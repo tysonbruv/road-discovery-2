@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v171
+/* Road Discovery AU v172
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -57611,3 +57611,1134 @@ if (
 
 document.documentElement.dataset.roadDiscoveryRallyGuidance =
   "rally-route-zone-guidance-v171";
+
+
+/* ==================================================
+   Road Discovery AU v172
+   Coloured objective tiles, shared crate notices,
+   match display toggles and a stable live menu
+   ================================================== */
+
+const roadDiscoveryV172 = {
+  applyConquestState:
+    rd86ApplyConquestState,
+
+  mergeVisiblePlayers:
+    rd112MergeVisiblePlayers,
+
+  renderFocusStrip:
+    rd86RenderFocusStrip,
+
+  resetConquestState:
+    rd86ResetConquestState,
+
+  applyRoadLayerVisibility:
+    rd53ApplyRoadLayerVisibility,
+
+  syncGameShell:
+    rd170SyncGameShell,
+
+  renderMultiplayerState,
+
+  showToast
+};
+
+
+Object.assign(state, {
+  rd172CacheNoticeQueue: [],
+  rd172CacheNoticeTimer: null,
+  rd172RecentCacheNotices: new Map(),
+  rd172PlayerCachePoints: new Map(),
+  rd172LastFocusStateKey: "",
+  rd172LivePanelKey: ""
+});
+
+
+function rd172InstallStyles() {
+  if ($("rd172ConquestStyles")) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id = "rd172ConquestStyles";
+
+  style.textContent = `
+    body.rd170-gameplay-active
+      #conquestFocusStrip
+      .conquest-focus-btn.objective {
+      display: grid !important;
+      place-items: center !important;
+      padding: 0 !important;
+      border-width: 2px !important;
+      color: #ffffff !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.72);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+        0 3px 10px rgba(0, 0, 0, 0.32) !important;
+    }
+
+    body.rd170-gameplay-active
+      #conquestFocusStrip
+      .conquest-focus-btn.objective.red {
+      border-color: #ff7078 !important;
+      background: #a82430 !important;
+    }
+
+    body.rd170-gameplay-active
+      #conquestFocusStrip
+      .conquest-focus-btn.objective.blue {
+      border-color: #70c9ff !important;
+      background: #0872b9 !important;
+    }
+
+    body.rd170-gameplay-active
+      #conquestFocusStrip
+      .conquest-focus-btn.objective.neutral {
+      border-color: #c0c8d2 !important;
+      background: #596370 !important;
+    }
+
+    body.rd170-gameplay-active
+      #conquestFocusStrip
+      .conquest-focus-btn.objective strong {
+      display: block !important;
+      margin: 0 !important;
+      font-size: 1.08rem !important;
+      font-weight: 1000 !important;
+      line-height: 1 !important;
+      text-align: center !important;
+    }
+
+    body.rd170-gameplay-active
+      #conquestFocusStrip
+      .conquest-focus-btn.objective
+      small,
+    body.rd170-gameplay-active
+      #conquestFocusStrip
+      .conquest-focus-btn.objective
+      .conquest-focus-arrow {
+      display: none !important;
+    }
+
+    body.rd170-gameplay-active
+      #conquestFocusStrip
+      .conquest-focus-btn.objective.rd172-under-pressure {
+      border-color: #e7edf5 !important;
+      background: #596370 !important;
+      box-shadow:
+        inset 0 0 0 2px rgba(255, 255, 255, 0.16),
+        0 3px 12px rgba(0, 0, 0, 0.38) !important;
+    }
+
+    .rd172-cache-notice {
+      position: fixed;
+      left: 50%;
+      bottom: max(22px, calc(env(safe-area-inset-bottom) + 12px));
+      z-index: 12050;
+      min-width: min(230px, calc(100vw - 36px));
+      max-width: calc(100vw - 36px);
+      padding: 10px 16px;
+      border: 2px solid #c7d0dc;
+      border-radius: 13px;
+      background: rgba(47, 56, 68, 0.96);
+      color: #ffffff;
+      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.52);
+      font-size: 0.9rem;
+      font-weight: 1000;
+      line-height: 1.1;
+      text-align: center;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    .rd172-cache-notice.hidden {
+      display: none !important;
+    }
+
+    .rd172-cache-notice.red {
+      border-color: #ff6972;
+      background: rgba(126, 22, 31, 0.97);
+    }
+
+    .rd172-cache-notice.blue {
+      border-color: #63c5ff;
+      background: rgba(5, 83, 137, 0.97);
+    }
+
+    .rd172-match-display-label {
+      grid-column: 1 / -1;
+      margin-top: 2px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(125, 148, 176, 0.22);
+      color: #9eb0c5;
+      font-size: 0.62rem;
+      font-weight: 950;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .rd172-match-display-btn.active[data-rd172-display="roads"] {
+      border-color: #ff8a17;
+      background: rgba(255, 138, 23, 0.16);
+      color: #ffb667;
+      box-shadow: inset 0 0 0 1px rgba(255, 138, 23, 0.28);
+    }
+
+    .rd172-match-display-btn.active[data-rd172-display="labels"] {
+      border-color: #67c7ff;
+      background: rgba(37, 136, 198, 0.18);
+      color: #aaddff;
+      box-shadow: inset 0 0 0 1px rgba(103, 199, 255, 0.22);
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+/* --------------------------------------------------
+   Full-colour objective controls                     */
+
+function rd172ObjectivePressureTeam(
+  objective
+) {
+  const candidates = [
+    objective?.pressure_team,
+    objective?.capturing_team,
+    objective?.capture_team,
+    objective?.attacking_team,
+    objective?.contesting_team
+  ];
+
+  for (const candidate of candidates) {
+    const team = String(
+      candidate || ""
+    ).toLowerCase();
+
+    if (["red", "blue"].includes(team)) {
+      return team;
+    }
+  }
+
+  const pressure = String(
+    objective?.pressure_state || ""
+  ).toLowerCase();
+
+  if (pressure.includes("red")) {
+    return "red";
+  }
+
+  if (pressure.includes("blue")) {
+    return "blue";
+  }
+
+  return "";
+}
+
+
+function rd172ObjectiveVisualState(
+  objective
+) {
+  const owner =
+    objective?.owner_team === "red"
+      ? "red"
+      : objective?.owner_team === "blue"
+        ? "blue"
+        : "neutral";
+
+  const pressure = String(
+    objective?.pressure_state || "empty"
+  ).toLowerCase();
+
+  const pressureTeam =
+    rd172ObjectivePressureTeam(
+      objective
+    );
+
+  const activelyChanging = Boolean(
+    pressure === "contested" ||
+    pressure.includes("neutral") ||
+    pressure.includes("captur") ||
+    pressure.includes("attack") ||
+    (
+      pressureTeam &&
+      owner !== "neutral" &&
+      pressureTeam !== owner
+    )
+  );
+
+  return {
+    owner:
+      activelyChanging
+        ? "neutral"
+        : owner,
+    pressureTeam,
+    activelyChanging
+  };
+}
+
+
+rd86ObjectiveFocusHtml = function (
+  objective
+) {
+  const code = String(
+    objective?.code || "?"
+  );
+
+  const visual =
+    rd172ObjectiveVisualState(
+      objective
+    );
+
+  const ownerLabel =
+    visual.owner === "red"
+      ? "Red team"
+      : visual.owner === "blue"
+        ? "Blue team"
+        : visual.activelyChanging
+          ? "being captured"
+          : "neutral";
+
+  return `
+    <button
+      class="conquest-focus-btn objective ${visual.owner}${
+        visual.activelyChanging
+          ? " rd172-under-pressure"
+          : ""
+      }"
+      type="button"
+      data-conquest-kind="objective"
+      data-conquest-id="${escapeHtml(code)}"
+      aria-label="Objective ${escapeHtml(code)}, ${escapeHtml(ownerLabel)}"
+      title="Objective ${escapeHtml(code)} • ${escapeHtml(ownerLabel)}"
+    >
+      <strong>${escapeHtml(code)}</strong>
+    </button>
+  `;
+};
+
+
+rd86RenderFocusStrip = function () {
+  const key = JSON.stringify(
+    (state.conquest.objectives || [])
+      .map((objective) => [
+        objective?.code,
+        objective?.owner_team,
+        objective?.pressure_state,
+        objective?.pressure_team,
+        objective?.capturing_team,
+        objective?.capture_team,
+        objective?.attacking_team,
+        objective?.contesting_team,
+        objective?.capture_progress,
+        objective?.pressure_progress
+      ])
+  );
+
+  if (
+    key !==
+      state.rd172LastFocusStateKey
+  ) {
+    state.rd172LastFocusStateKey = key;
+
+    if (
+      typeof rd116FocusRenderKey !==
+        "undefined"
+    ) {
+      rd116FocusRenderKey = "";
+    }
+  }
+
+  return roadDiscoveryV172
+    .renderFocusStrip();
+};
+
+
+/* --------------------------------------------------
+   Shared, team-coloured crate notices                */
+
+function rd172EnsureCacheNotice() {
+  let notice = $("rd172CacheNotice");
+
+  if (notice) return notice;
+
+  notice =
+    document.createElement("div");
+
+  notice.id = "rd172CacheNotice";
+  notice.className =
+    "rd172-cache-notice hidden";
+  notice.setAttribute("role", "status");
+  notice.setAttribute("aria-live", "polite");
+  notice.setAttribute("aria-atomic", "true");
+
+  document.body.appendChild(notice);
+
+  return notice;
+}
+
+
+function rd172PresentNextCacheNotice() {
+  const notice =
+    rd172EnsureCacheNotice();
+
+  if (
+    state.rd172CacheNoticeTimer !==
+      null ||
+    state.rd172CacheNoticeQueue
+      .length === 0
+  ) {
+    return;
+  }
+
+  const next =
+    state.rd172CacheNoticeQueue
+      .shift();
+
+  const team =
+    next.team === "red"
+      ? "red"
+      : next.team === "blue"
+        ? "blue"
+        : "neutral";
+
+  const teamLabel =
+    team === "red"
+      ? "Red"
+      : team === "blue"
+        ? "Blue"
+        : "Team";
+
+  notice.className =
+    `rd172-cache-notice ${team}`;
+
+  notice.textContent =
+    `${teamLabel} ${next.reward}+ crate`;
+
+  state.rd172CacheNoticeTimer =
+    window.setTimeout(() => {
+      notice.classList.add("hidden");
+
+      state.rd172CacheNoticeTimer =
+        null;
+
+      window.setTimeout(
+        rd172PresentNextCacheNotice,
+        140
+      );
+    }, 2800);
+}
+
+
+function rd172AnnounceCache(
+  team,
+  reward
+) {
+  const safeTeam =
+    team === "red"
+      ? "red"
+      : team === "blue"
+        ? "blue"
+        : "neutral";
+
+  const safeReward = Math.max(
+    0,
+    Math.round(Number(reward) || 0)
+  );
+
+  if (!safeReward) return;
+
+  const signature =
+    `${state.conquest.roundId || "round"}:` +
+    `${safeTeam}:${safeReward}`;
+
+  const now = Date.now();
+
+  for (
+    const [key, seenAt] of
+    state.rd172RecentCacheNotices
+  ) {
+    if (now - seenAt > 12000) {
+      state.rd172RecentCacheNotices
+        .delete(key);
+    }
+  }
+
+  if (
+    now -
+      Number(
+        state.rd172RecentCacheNotices
+          .get(signature) || 0
+      ) < 1800
+  ) {
+    return;
+  }
+
+  state.rd172RecentCacheNotices.set(
+    signature,
+    now
+  );
+
+  state.rd172CacheNoticeQueue.push({
+    team: safeTeam,
+    reward: safeReward
+  });
+
+  rd172PresentNextCacheNotice();
+}
+
+
+function rd172TeamFromCache(
+  cache,
+  redIncrease,
+  blueIncrease,
+  reward
+) {
+  const direct = [
+    cache?.collected_by_team,
+    cache?.collected_team,
+    cache?.collector_team,
+    cache?.claimed_by_team,
+    cache?.team
+  ]
+    .map((value) =>
+      String(value || "")
+        .toLowerCase()
+    )
+    .find((value) =>
+      ["red", "blue"].includes(value)
+    );
+
+  if (direct) return direct;
+
+  const collectorId = String(
+    cache?.collected_by ||
+    cache?.collected_by_user_id ||
+    cache?.collector_id ||
+    cache?.claimed_by ||
+    ""
+  );
+
+  if (collectorId) {
+    const collector =
+      (state.conquest.players || [])
+        .find((player) =>
+          String(player?.user_id || "") ===
+            collectorId
+        );
+
+    if (
+      ["red", "blue"].includes(
+        collector?.team
+      )
+    ) {
+      return collector.team;
+    }
+  }
+
+  const redFit =
+    redIncrease >= reward
+      ? redIncrease - reward
+      : Number.POSITIVE_INFINITY;
+
+  const blueFit =
+    blueIncrease >= reward
+      ? blueIncrease - reward
+      : Number.POSITIVE_INFINITY;
+
+  if (redFit < blueFit) return "red";
+  if (blueFit < redFit) return "blue";
+
+  if (redIncrease > blueIncrease) {
+    return "red";
+  }
+
+  if (blueIncrease > redIncrease) {
+    return "blue";
+  }
+
+  return "neutral";
+}
+
+
+rd86ApplyConquestState = function (
+  row
+) {
+  const previousRoundId = String(
+    state.conquest.roundId || ""
+  );
+
+  const incomingRoundId = String(
+    row?.round_id || ""
+  );
+
+  const previousPhase = String(
+    state.conquest.phase || ""
+  );
+
+  const previousRedScore = Number(
+    state.conquest.redScore
+  ) || 0;
+
+  const previousBlueScore = Number(
+    state.conquest.blueScore
+  ) || 0;
+
+  const beforeCaches = new Map(
+    (state.conquest.caches || [])
+      .map((cache) => [
+        String(cache?.id || ""),
+        cache
+      ])
+      .filter(([id]) => Boolean(id))
+  );
+
+  const incomingCaches =
+    rd86NormaliseJsonArray(
+      row?.caches
+    );
+
+  const afterCaches = new Map(
+    incomingCaches
+      .map((cache) => [
+        String(cache?.id || ""),
+        cache
+      ])
+      .filter(([id]) => Boolean(id))
+  );
+
+  const result =
+    roadDiscoveryV172
+      .applyConquestState(row);
+
+  const sameActiveRound = Boolean(
+    previousRoundId &&
+    previousRoundId ===
+      incomingRoundId &&
+    ["active", "overtime"].includes(
+      previousPhase
+    ) &&
+    ["active", "overtime"].includes(
+      String(row?.phase || "")
+    )
+  );
+
+  if (!sameActiveRound) {
+    if (
+      previousRoundId !==
+        incomingRoundId
+    ) {
+      state.rd172RecentCacheNotices
+        .clear();
+
+      state.rd172PlayerCachePoints
+        .clear();
+    }
+
+    return result;
+  }
+
+  const redIncrease = Math.max(
+    0,
+    (Number(row?.red_score) || 0) -
+      previousRedScore
+  );
+
+  const blueIncrease = Math.max(
+    0,
+    (Number(row?.blue_score) || 0) -
+      previousBlueScore
+  );
+
+  for (
+    const [cacheId, previousCache] of
+    beforeCaches
+  ) {
+    if (
+      String(
+        previousCache?.status || ""
+      ) !== "available"
+    ) {
+      continue;
+    }
+
+    const nextCache =
+      afterCaches.get(cacheId);
+
+    if (
+      nextCache &&
+      String(nextCache?.status || "") ===
+        "available"
+    ) {
+      continue;
+    }
+
+    const eventCache =
+      nextCache || previousCache;
+
+    const reward = Math.max(
+      0,
+      Number(
+        eventCache?.reward ||
+        previousCache?.reward
+      ) || 0
+    );
+
+    const team = rd172TeamFromCache(
+      eventCache,
+      redIncrease,
+      blueIncrease,
+      reward
+    );
+
+    rd172AnnounceCache(
+      team,
+      reward
+    );
+  }
+
+  return result;
+};
+
+
+rd112MergeVisiblePlayers = function (
+  players
+) {
+  const before = new Map(
+    (state.conquest.players || [])
+      .map((player) => [
+        String(player?.user_id || ""),
+        Number(player?.cache_points)
+      ])
+      .filter(
+        ([id, points]) =>
+          Boolean(id) &&
+          Number.isFinite(points)
+      )
+  );
+
+  const result =
+    roadDiscoveryV172
+      .mergeVisiblePlayers(players);
+
+  for (const player of players || []) {
+    const id = String(
+      player?.user_id || ""
+    );
+
+    const nextPoints = Number(
+      player?.cache_points
+    );
+
+    const previousPoints =
+      before.get(id);
+
+    if (
+      !id ||
+      !Number.isFinite(nextPoints) ||
+      !Number.isFinite(previousPoints) ||
+      nextPoints <= previousPoints
+    ) {
+      continue;
+    }
+
+    rd172AnnounceCache(
+      player?.team,
+      nextPoints - previousPoints
+    );
+  }
+
+  return result;
+};
+
+
+showToast = function (
+  message,
+  ...rest
+) {
+  const text = String(message || "");
+
+  const cacheMatch =
+    text.match(
+      /^(?:Bronze|Silver|Gold|Legendary|Road)\s+Cache\s+\+(\d+)$/i
+    );
+
+  if (
+    cacheMatch &&
+    hasActiveConquestRound()
+  ) {
+    rd172AnnounceCache(
+      state.conquest.viewerTeam,
+      Number(cacheMatch[1])
+    );
+
+    return;
+  }
+
+  return roadDiscoveryV172
+    .showToast(message, ...rest);
+};
+
+
+/* --------------------------------------------------
+   Match map overlays                                */
+
+function rd172EnforceRoadVisibility() {
+  if (
+    !rd170GameplayActive() ||
+    state.myRoadsVisible !== false ||
+    !state.map
+  ) {
+    return;
+  }
+
+  for (const layer of [
+    state.savedLayer,
+    state.tripLayer,
+    state.rd102TrailCoreGroup
+  ]) {
+    if (
+      layer &&
+      state.map.hasLayer?.(layer)
+    ) {
+      state.map.removeLayer(layer);
+    }
+  }
+}
+
+
+function rd172UpdateGameDisplayControls() {
+  const values = {
+    roads:
+      state.myRoadsVisible !== false,
+    labels:
+      state.mapLabelsVisible !== false
+  };
+
+  for (
+    const button of
+    document.querySelectorAll(
+      "[data-rd172-display]"
+    )
+  ) {
+    const key =
+      button.dataset.rd172Display;
+
+    const selected = Boolean(
+      values[key]
+    );
+
+    button.classList.toggle(
+      "active",
+      selected
+    );
+
+    button.setAttribute(
+      "aria-pressed",
+      String(selected)
+    );
+
+    const label =
+      key === "roads"
+        ? "Orange roads"
+        : "Map labels";
+
+    button.textContent =
+      `${label} · ${selected ? "On" : "Off"}`;
+  }
+}
+
+
+function rd172SetOrangeRoads(
+  visible
+) {
+  state.myRoadsVisible =
+    Boolean(visible);
+
+  rd53SaveMyRoadsVisible();
+  rd53ApplyRoadLayerVisibility();
+  rd172EnforceRoadVisibility();
+  rd172UpdateGameDisplayControls();
+
+  showToast(
+    state.myRoadsVisible
+      ? "Orange roads shown"
+      : "Orange roads hidden"
+  );
+}
+
+
+function rd172SetMapLabels(
+  visible
+) {
+  state.mapLabelsVisible =
+    Boolean(visible);
+
+  rd135SaveMapLabelsVisible();
+  rd135ApplyMapLabelVisibility();
+  rd172UpdateGameDisplayControls();
+
+  showToast(
+    state.mapLabelsVisible
+      ? "Map labels shown"
+      : "Map labels hidden"
+  );
+}
+
+
+function rd172EnsureGameDisplayControls() {
+  rd170EnsureMultiplayerMapSwitch();
+
+  const switcher = $(
+    "rd170MatchMapSwitch"
+  );
+
+  if (!switcher) return;
+
+  if (
+    !switcher.querySelector(
+      "[data-rd172-display]"
+    )
+  ) {
+    switcher.insertAdjacentHTML(
+      "beforeend",
+      `
+        <div class="rd172-match-display-label">
+          Match display
+        </div>
+
+        <button
+          class="rd170-match-map-btn rd172-match-display-btn"
+          type="button"
+          data-rd172-display="roads"
+        >
+          Orange roads
+        </button>
+
+        <button
+          class="rd170-match-map-btn rd172-match-display-btn"
+          type="button"
+          data-rd172-display="labels"
+        >
+          Map labels
+        </button>
+      `
+    );
+  }
+
+  if (
+    switcher.dataset.rd172Bound !==
+      "true"
+  ) {
+    switcher.dataset.rd172Bound =
+      "true";
+
+    switcher.addEventListener(
+      "click",
+      (event) => {
+        const button =
+          event.target.closest(
+            "[data-rd172-display]"
+          );
+
+        if (!button) return;
+
+        if (
+          button.dataset.rd172Display ===
+            "roads"
+        ) {
+          rd172SetOrangeRoads(
+            state.myRoadsVisible === false
+          );
+        } else {
+          rd172SetMapLabels(
+            state.mapLabelsVisible === false
+          );
+        }
+      }
+    );
+  }
+
+  rd172UpdateGameDisplayControls();
+}
+
+
+rd53ApplyRoadLayerVisibility =
+function () {
+  const result =
+    roadDiscoveryV172
+      .applyRoadLayerVisibility();
+
+  rd172EnforceRoadVisibility();
+  rd172UpdateGameDisplayControls();
+
+  return result;
+};
+
+
+rd170SyncGameShell = function () {
+  const result =
+    roadDiscoveryV172
+      .syncGameShell();
+
+  rd172EnforceRoadVisibility();
+  rd172UpdateGameDisplayControls();
+
+  return result;
+};
+
+
+/* --------------------------------------------------
+   Do not rebuild an open live menu every five seconds */
+
+function rd172LivePanelRenderKey() {
+  return JSON.stringify({
+    roomId:
+      state.multiplayer.roomId || "",
+
+    roundId:
+      state.conquest.roundId || "",
+
+    phase:
+      state.conquest.phase || "",
+
+    settingsOpen:
+      Boolean(
+        state.conquestSettings?.open
+      ),
+
+    busy: [
+      state.multiplayer.creating,
+      state.multiplayer.joining,
+      state.multiplayer.leaving,
+      state.conquest.starting,
+      state.conquest.leaving,
+      state.hideSeek.starting,
+      state.hideSeek.leaving
+    ].map(Boolean),
+
+    members:
+      (state.multiplayer.members || [])
+        .map((member) => [
+          member?.user_id,
+          member?.display_name,
+          member?.dot_colour,
+          member?.is_me
+        ]),
+
+    players:
+      (state.conquest.players || [])
+        .map((player) => [
+          player?.user_id,
+          player?.display_name,
+          player?.team,
+          player?.player_status,
+          player?.checked_in,
+          player?.is_me,
+          player?.is_bot
+        ])
+  });
+}
+
+
+function rd172RefreshLivePanelRows() {
+  renderMultiplayerMembers();
+  rd86RenderConquestPlayers();
+  rd172EnsureGameDisplayControls();
+  rd170UpdateMapSwitch();
+
+  if (
+    hasActiveConquestRound() &&
+    els.multiplayerStatusText
+  ) {
+    els.multiplayerStatusText.textContent =
+      state.isRecording
+        ? "Road Conquest is active. Your own Drive still saves normally."
+        : "Road Conquest is active. Team locations use the private game view.";
+  }
+}
+
+
+renderMultiplayerState = function () {
+  const panel =
+    els.multiplayerPanel ||
+    $("multiplayerPanel");
+
+  const panelVisible = Boolean(
+    panel &&
+    !panel.classList.contains("hidden")
+  );
+
+  const liveGame = Boolean(
+    hasActiveConquestRound() ||
+    rd170HideSeekGameplayActive()
+  );
+
+  const nextKey =
+    rd172LivePanelRenderKey();
+
+  if (
+    panelVisible &&
+    liveGame &&
+    nextKey ===
+      state.rd172LivePanelKey
+  ) {
+    rd172RefreshLivePanelRows();
+    return;
+  }
+
+  const result =
+    roadDiscoveryV172
+      .renderMultiplayerState();
+
+  state.rd172LivePanelKey =
+    rd172LivePanelRenderKey();
+
+  rd172EnsureGameDisplayControls();
+  rd172UpdateGameDisplayControls();
+
+  return result;
+};
+
+
+rd86ResetConquestState = function (
+  options = {}
+) {
+  const result =
+    roadDiscoveryV172
+      .resetConquestState(options);
+
+  state.rd172RecentCacheNotices.clear();
+  state.rd172PlayerCachePoints.clear();
+  state.rd172LastFocusStateKey = "";
+  state.rd172LivePanelKey = "";
+
+  return result;
+};
+
+
+function rd172InitConquestPolish() {
+  rd172InstallStyles();
+  rd172EnsureCacheNotice();
+  rd172EnsureGameDisplayControls();
+  rd172UpdateGameDisplayControls();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd172InitConquestPolish,
+    { once: true }
+  );
+} else {
+  rd172InitConquestPolish();
+}
+
+
+document.documentElement.dataset.roadDiscoveryConquestPolish =
+  "objective-crate-display-stable-menu-v172";
