@@ -59352,3 +59352,718 @@ if (
 
 document.documentElement.dataset.roadDiscoveryCrateNotice =
   "team-coloured-legendary-size-crate-notice-v174";
+
+
+/* ==================================================
+   Road Discovery AU v177
+   Stepped Conquest setup, bottom menu display controls
+   and a visible Game modes Beta label
+   ================================================== */
+
+const roadDiscoveryV177 = {
+  openConquestSettings:
+    rd95OpenConquestSettings,
+  closeConquestSettings:
+    rd95CloseConquestSettings,
+  renderConquestSettings:
+    rd95RenderConquestSettings,
+  renderConfirmationUi:
+    rd106RenderConfirmationUi,
+  openRosterConfirmation:
+    rd106OpenRosterConfirmation,
+  startConfirmedConquest:
+    rd106StartConfirmedConquest,
+  beginArenaPlacement:
+    rd94BeginArenaPlacement,
+  renderMultiplayerState,
+  openMultiplayerPanel
+};
+
+
+Object.assign(
+  state.customConquest,
+  {
+    rd177SetupStage: "settings"
+  }
+);
+
+
+function rd177SafeSetupStage(
+  value
+) {
+  return [
+    "settings",
+    "difficulty",
+    "arena"
+  ].includes(value)
+    ? value
+    : "settings";
+}
+
+
+function rd177InstallStyles() {
+  if ($("rd177ConquestFlowStyles")) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd177ConquestFlowStyles";
+
+  style.textContent = `
+    #customConquestBox
+      > #rd177ArenaStage {
+      display: none;
+    }
+
+    #customConquestBox[data-rd177-stage="settings"]
+      > #rd114SavedMaps,
+    #customConquestBox[data-rd177-stage="settings"]
+      > #rd177ArenaStage {
+      display: none !important;
+    }
+
+    #customConquestBox[data-rd177-stage="arena"]
+      > :not(#rd177ArenaStage):not(#rd114SavedMaps) {
+      display: none !important;
+    }
+
+    #customConquestBox[data-rd177-stage="arena"]
+      > #rd177ArenaStage:not([hidden]),
+    #customConquestBox[data-rd177-stage="arena"]
+      > #rd114SavedMaps:not([hidden]) {
+      display: grid !important;
+    }
+
+    .rd177-arena-stage {
+      gap: 9px;
+      margin: 0 0 12px;
+      padding: 12px;
+      border: 1px solid
+        rgba(255, 177, 61, 0.42);
+      border-radius: 15px;
+      background:
+        rgba(91, 50, 12, 0.16);
+    }
+
+    .rd177-arena-stage-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .rd177-arena-stage-copy {
+      display: grid;
+      gap: 3px;
+    }
+
+    .rd177-arena-stage-copy strong {
+      color: #fff4d6;
+      font-size: 1rem;
+      font-weight: 950;
+    }
+
+    .rd177-arena-stage-copy span {
+      color: #aebed3;
+      font-size: 0.74rem;
+      line-height: 1.4;
+    }
+
+    .rd177-back-stage-btn {
+      flex: 0 0 auto;
+      min-height: 36px;
+      padding: 7px 10px;
+      border: 1px solid
+        rgba(151, 174, 207, 0.3);
+      border-radius: 10px;
+      background:
+        rgba(27, 39, 58, 0.9);
+      color: #eef5ff;
+      font: inherit;
+      font-size: 0.7rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd177-beta-label {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 7px;
+      padding: 3px 7px;
+      border: 1px solid
+        rgba(255, 158, 36, 0.55);
+      border-radius: 999px;
+      background:
+        rgba(126, 63, 8, 0.22);
+      color: #ffb454;
+      font-size: 0.6rem;
+      font-weight: 1000;
+      letter-spacing: 0.08em;
+      line-height: 1;
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+
+    #rd170MatchMapSwitch.rd177-bottom-map-switch {
+      position: static !important;
+      inset: auto !important;
+      z-index: auto !important;
+      margin: 18px 0 12px !important;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd177EnsureArenaStage() {
+  const customBox =
+    $("customConquestBox");
+
+  if (!customBox) return null;
+
+  let stage =
+    $("rd177ArenaStage");
+
+  if (!stage) {
+    stage =
+      document.createElement(
+        "section"
+      );
+
+    stage.id =
+      "rd177ArenaStage";
+
+    stage.className =
+      "rd177-arena-stage";
+
+    stage.innerHTML = `
+      <div class="rd177-arena-stage-top">
+        <div class="rd177-arena-stage-copy">
+          <strong>Choose the Conquest map</strong>
+          <span>
+            Use one of your saved maps or place a new map yourself.
+          </span>
+        </div>
+
+        <button
+          id="rd177BackToBotDifficultyBtn"
+          class="rd177-back-stage-btn"
+          type="button"
+        >
+          Back
+        </button>
+      </div>
+    `;
+
+    stage.addEventListener(
+      "click",
+      (event) => {
+        if (
+          !event.target.closest(
+            "#rd177BackToBotDifficultyBtn"
+          )
+        ) {
+          return;
+        }
+
+        state.customConquest
+          .rd177SetupStage =
+            "difficulty";
+
+        state.customConquest
+          .confirmingRoster = true;
+
+        roadDiscoveryV177
+          .renderConfirmationUi();
+
+        rd177RenderSetupFlow();
+
+        window.setTimeout(() => {
+          $(
+            "rd106StartConfirmedConquestBtn"
+          )?.focus();
+        }, 0);
+      }
+    );
+
+    const savedMaps =
+      $("rd114SavedMaps");
+
+    customBox.insertBefore(
+      stage,
+      savedMaps ||
+        $("startCustomConquestBtn") ||
+        null
+    );
+  }
+
+  return stage;
+}
+
+
+function rd177SetHeading(
+  title,
+  subtitle
+) {
+  const heading =
+    document.querySelector(
+      ".rd95-conquest-settings-heading"
+    );
+
+  const titleElement =
+    heading?.querySelector("strong");
+
+  const subtitleElement =
+    heading?.querySelector("span");
+
+  if (titleElement) {
+    titleElement.textContent = title;
+  }
+
+  if (subtitleElement) {
+    subtitleElement.textContent =
+      subtitle;
+  }
+}
+
+
+function rd177RenderSetupFlow() {
+  rd177InstallStyles();
+
+  const customBox =
+    $("customConquestBox");
+
+  if (!customBox) return;
+
+  const stage =
+    rd177SafeSetupStage(
+      state.customConquest
+        .rd177SetupStage
+    );
+
+  state.customConquest
+    .rd177SetupStage = stage;
+
+  customBox.dataset.rd177Stage =
+    stage;
+
+  const arenaStage =
+    rd177EnsureArenaStage();
+
+  if (arenaStage) {
+    arenaStage.hidden =
+      stage !== "arena";
+  }
+
+  const savedMaps =
+    $("rd114SavedMaps");
+
+  if (
+    arenaStage &&
+    savedMaps &&
+    arenaStage.nextElementSibling !==
+      savedMaps
+  ) {
+    customBox.insertBefore(
+      arenaStage,
+      savedMaps
+    );
+  }
+
+  const placeMapButton =
+    $("rd114NewCustomMapBtn");
+
+  if (placeMapButton) {
+    placeMapButton.textContent =
+      "Place Your Own Map";
+  }
+
+  const startButton =
+    $("startCustomConquestBtn");
+
+  if (
+    startButton &&
+    !state.customConquest.starting
+  ) {
+    startButton.textContent =
+      "Confirm Conquest Settings";
+  }
+
+  const review =
+    $("rd106CustomConquestReview");
+
+  if (stage === "difficulty") {
+    customBox.classList.add(
+      "rd106-confirming-roster"
+    );
+
+    if (review) {
+      review.hidden = false;
+
+      const reviewTitle =
+        review.querySelector(
+          ".rd106-review-heading strong"
+        );
+
+      const reviewSubtitle =
+        review.querySelector(
+          ".rd106-review-heading span"
+        );
+
+      const confirmButton =
+        $(
+          "rd106StartConfirmedConquestBtn"
+        );
+
+      if (reviewTitle) {
+        reviewTitle.textContent =
+          "Bot difficulty";
+      }
+
+      if (reviewSubtitle) {
+        reviewSubtitle.textContent =
+          "Review the teams and choose the difficulty for each bot.";
+      }
+
+      if (confirmButton) {
+        confirmButton.textContent =
+          "Confirm Bot Difficulty";
+      }
+    }
+
+    rd177SetHeading(
+      "Bot Difficulty",
+      "Choose each bot's difficulty, then continue to map selection"
+    );
+
+  } else {
+    customBox.classList.remove(
+      "rd106-confirming-roster"
+    );
+
+    if (review) {
+      review.hidden = true;
+    }
+
+    if (stage === "arena") {
+      rd177SetHeading(
+        "Choose Map",
+        "Select a saved map or place your own map"
+      );
+
+      if (savedMaps) {
+        savedMaps.hidden =
+          !rd87IsRoomCreator();
+      }
+
+      void rd114LoadSavedMaps();
+
+    } else {
+      rd177SetHeading(
+        "Conquest Settings",
+        "Choose teams, match rules and objective settings"
+      );
+    }
+  }
+}
+
+
+function rd177EnsureGameModesBeta() {
+  rd100EnsureGameModeDividers();
+
+  const title =
+    $("rd100GameModesTitle");
+
+  if (!title) return;
+
+  let beta =
+    title.querySelector(
+      ".rd177-beta-label"
+    );
+
+  if (!beta) {
+    beta =
+      document.createElement("span");
+
+    beta.className =
+      "rd177-beta-label";
+
+    beta.textContent = "Beta";
+
+    title.appendChild(beta);
+  }
+
+  title.setAttribute(
+    "aria-label",
+    "Game modes, beta"
+  );
+}
+
+
+function rd177PlaceMapControlsAboveLeave() {
+  rd172EnsureGameDisplayControls();
+
+  const switcher =
+    $("rd170MatchMapSwitch");
+
+  const leaveButton =
+    $("leaveMultiplayerRoomBtn");
+
+  if (
+    !switcher ||
+    !leaveButton?.parentNode
+  ) {
+    return;
+  }
+
+  if (
+    switcher.parentNode !==
+      leaveButton.parentNode ||
+    switcher.nextElementSibling !==
+      leaveButton
+  ) {
+    leaveButton.parentNode.insertBefore(
+      switcher,
+      leaveButton
+    );
+  }
+
+  switcher.classList.remove(
+    "rd173-inline-map-switch"
+  );
+
+  switcher.classList.add(
+    "rd177-bottom-map-switch"
+  );
+}
+
+
+rd173PlaceMapControlsInScroller =
+function () {
+  rd177PlaceMapControlsAboveLeave();
+};
+
+
+rd106RenderConfirmationUi =
+function () {
+  const result =
+    roadDiscoveryV177
+      .renderConfirmationUi();
+
+  if (
+    state.customConquest
+      .confirmingRoster
+  ) {
+    state.customConquest
+      .rd177SetupStage =
+        "difficulty";
+
+  } else if (
+    state.customConquest
+      .rd177SetupStage ===
+        "difficulty"
+  ) {
+    state.customConquest
+      .rd177SetupStage =
+        "settings";
+  }
+
+  rd177RenderSetupFlow();
+
+  return result;
+};
+
+
+rd106OpenRosterConfirmation =
+function () {
+  const result =
+    roadDiscoveryV177
+      .openRosterConfirmation();
+
+  if (
+    state.customConquest
+      .confirmingRoster
+  ) {
+    state.customConquest
+      .rd177SetupStage =
+        "difficulty";
+
+    rd177RenderSetupFlow();
+  }
+
+  return result;
+};
+
+
+rd106StartConfirmedConquest =
+function () {
+  if (
+    state.customConquest
+      .rd177SetupStage !==
+        "difficulty"
+  ) {
+    return roadDiscoveryV177
+      .startConfirmedConquest();
+  }
+
+  const roster =
+    rd106SyncBotDifficulties();
+
+  if (
+    !rd87IsRoomCreator() ||
+    !roster.valid ||
+    state.customConquest.starting
+  ) {
+    showToast(
+      roster.errors[0] ||
+        "Choose a valid Red and Blue roster"
+    );
+
+    return;
+  }
+
+  rd106BotDifficultyPayload();
+
+  state.customConquest
+    .confirmingRoster = false;
+
+  state.customConquest
+    .rd177SetupStage = "arena";
+
+  roadDiscoveryV177
+    .renderConfirmationUi();
+
+  rd177RenderSetupFlow();
+
+  window.setTimeout(() => {
+    $("rd114SavedMapList")
+      ?.querySelector("button")
+      ?.focus();
+  }, 0);
+};
+
+
+rd95OpenConquestSettings =
+function () {
+  if (!state.conquestSettings.open) {
+    state.customConquest
+      .rd177SetupStage =
+        "settings";
+
+    state.customConquest
+      .confirmingRoster = false;
+  }
+
+  const result =
+    roadDiscoveryV177
+      .openConquestSettings();
+
+  rd177RenderSetupFlow();
+
+  return result;
+};
+
+
+rd95CloseConquestSettings =
+function () {
+  state.customConquest
+    .rd177SetupStage = "settings";
+
+  state.customConquest
+    .confirmingRoster = false;
+
+  return roadDiscoveryV177
+    .closeConquestSettings();
+};
+
+
+rd95RenderConquestSettings =
+function () {
+  const result =
+    roadDiscoveryV177
+      .renderConquestSettings();
+
+  rd177RenderSetupFlow();
+
+  return result;
+};
+
+
+rd94BeginArenaPlacement =
+async function (
+  startKind
+) {
+  if (
+    startKind === "custom" &&
+    state.conquestSettings.open
+  ) {
+    state.conquestSettings.open =
+      false;
+
+    rd95RenderConquestSettings();
+  }
+
+  return roadDiscoveryV177
+    .beginArenaPlacement(startKind);
+};
+
+
+renderMultiplayerState =
+function () {
+  const result =
+    roadDiscoveryV177
+      .renderMultiplayerState();
+
+  rd177EnsureGameModesBeta();
+  rd177RenderSetupFlow();
+  rd177PlaceMapControlsAboveLeave();
+
+  return result;
+};
+
+
+openMultiplayerPanel =
+function () {
+  const result =
+    roadDiscoveryV177
+      .openMultiplayerPanel();
+
+  rd177EnsureGameModesBeta();
+  rd177PlaceMapControlsAboveLeave();
+
+  window.requestAnimationFrame(() => {
+    rd177EnsureGameModesBeta();
+    rd177PlaceMapControlsAboveLeave();
+  });
+
+  return result;
+};
+
+
+function rd177Init() {
+  rd177InstallStyles();
+  rd177EnsureGameModesBeta();
+  rd177RenderSetupFlow();
+  rd177PlaceMapControlsAboveLeave();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd177Init,
+    { once: true }
+  );
+} else {
+  rd177Init();
+}
+
+
+document.documentElement.dataset.roadDiscoveryConquestSetup =
+  "settings-difficulty-map-beta-v177";
