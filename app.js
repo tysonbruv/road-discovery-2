@@ -60637,3 +60637,187 @@ async function (
 
 document.documentElement.dataset.roadDiscoveryRoadLoading =
   "multi-server-rally-retry-v179";
+
+
+/* ==================================================
+   Road Discovery AU v180
+   Stable Rally listener and retryable placement screen
+   ================================================== */
+
+const roadDiscoveryV180 = {
+  handleArenaMapClick:
+    rd94HandleArenaMapClick,
+
+  renderPlacementOverlay:
+    rd94RenderPlacementOverlay,
+
+  legacyArenaMapClick:
+    roadDiscoveryV179
+      .handleArenaMapClick
+};
+
+
+Object.assign(state, {
+  rd180RallyLookupActive: false,
+  rd180ArenaListenerAttached: false
+});
+
+
+function rd180RemoveArenaListeners() {
+  if (!state.map) return;
+
+  /*
+    Leaflet removes listeners by exact function reference.
+    Remove every Rally handler that may have been attached by
+    an earlier Conquest version before installing the one stable
+    v180 dispatcher.
+  */
+  const possibleHandlers = [
+    rd180HandleArenaMapClick,
+    roadDiscoveryV180
+      .handleArenaMapClick,
+    roadDiscoveryV180
+      .legacyArenaMapClick
+  ];
+
+  for (
+    const handler of
+      possibleHandlers
+  ) {
+    if (
+      typeof handler ===
+      "function"
+    ) {
+      state.map.off(
+        "click",
+        handler
+      );
+    }
+  }
+
+  state.conquestArena
+    .mapClickBound = false;
+
+  state.rd180ArenaListenerAttached =
+    false;
+}
+
+
+rd94UnbindArenaMapClick = function () {
+  rd180RemoveArenaListeners();
+};
+
+
+rd94BindArenaMapClick = function () {
+  if (!state.map) return;
+
+  /*
+    Always rebuild this one listener. Do not trust an old
+    mapClickBound flag left behind by an interrupted lookup.
+  */
+  rd180RemoveArenaListeners();
+
+  state.map.on(
+    "click",
+    rd180HandleArenaMapClick
+  );
+
+  state.conquestArena
+    .mapClickBound = true;
+
+  state.rd180ArenaListenerAttached =
+    true;
+};
+
+
+rd94RenderPlacementOverlay = function (
+  overrideMessage = ""
+) {
+  if (
+    state.rd180RallyLookupActive &&
+    state.conquestArena.active &&
+    !state.conquestArena.centre &&
+    !hasActiveConquestRound() &&
+    !hasActiveHideSeekRound()
+  ) {
+    /*
+      v125 normally removes the editor whenever it sees busy=true.
+      Rally loading is intentionally busy, so render through the
+      pre-v125 implementation and leave the map listener attached.
+    */
+    return roadDiscoveryV125
+      .renderPlacementOverlay(
+        overrideMessage
+      );
+  }
+
+  return roadDiscoveryV180
+    .renderPlacementOverlay(
+      overrideMessage
+    );
+};
+
+
+async function rd180HandleArenaMapClick(
+  event
+) {
+  if (
+    !state.conquestArena.active ||
+    state.conquestArena.busy
+  ) {
+    return;
+  }
+
+  const placingRally =
+    !state.conquestArena.centre;
+
+  if (!placingRally) {
+    return roadDiscoveryV180
+      .handleArenaMapClick(event);
+  }
+
+  state.rd180RallyLookupActive =
+    true;
+
+  try {
+    return await roadDiscoveryV180
+      .handleArenaMapClick(event);
+
+  } finally {
+    state.rd180RallyLookupActive =
+      false;
+
+    if (
+      state.conquestArena.active &&
+      !state.conquestArena.centre
+    ) {
+      state.conquestArena.busy =
+        false;
+
+      state.awaitingWaypointClick =
+        false;
+
+      /*
+        This is unconditional recovery: even if an older wrapper
+        removed the listener or left a stale flag, the next map tap
+        is guaranteed to reach the v180 dispatcher.
+      */
+      rd94BindArenaMapClick();
+
+      rd94RenderPlacementOverlay(
+        state.rd179LastRoadLoadFailed
+          ? "Road data could not load. Tap another location to retry."
+          : "Tap another safe public road or reachable parking entrance to retry."
+      );
+    }
+  }
+}
+
+
+rd94HandleArenaMapClick =
+  rd180HandleArenaMapClick;
+
+
+document.documentElement.dataset
+  .roadDiscoveryRallyRetry =
+    "stable-listener-v180";
