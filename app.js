@@ -1,6 +1,6 @@
 "use strict";
 
-/* Road Discovery AU v173
+/* Road Discovery AU v174
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -25162,7 +25162,7 @@ function rd86ConquestStatusText() {
   if (state.conquest.phase === "active") {
     return (
       "Capture A, B, C, D and E. Owned objectives score " +
-      "every three seconds. Collect Road Caches for bonuses."
+      "every three seconds. Collect Road Crates for bonuses."
     );
   }
 
@@ -25171,7 +25171,7 @@ function rd86ConquestStatusText() {
   ) {
     return (
       "Sudden victory: the next completed objective " +
-      "capture or Road Cache wins."
+      "capture or Road Crate wins."
     );
   }
 
@@ -25322,7 +25322,7 @@ function rd86CacheFocusHtml(cache) {
       type="button"
       data-conquest-kind="cache"
       data-conquest-id="${escapeHtml(id)}"
-      aria-label="Focus ${escapeHtml(tier)} Road Cache"
+      aria-label="Focus ${escapeHtml(tier)} Road Crate"
     >
       <span
         class="conquest-focus-arrow"
@@ -26126,7 +26126,7 @@ function rd86DrawCaches() {
           String(
             cache?.tier || "Road"
           )
-        )} Cache • +${Number(cache?.reward) || 0}`,
+        )} Crate • +${Number(cache?.reward) || 0}`,
         {
           direction: "top"
         }
@@ -26952,7 +26952,7 @@ function rd86ApplyConquestState(row) {
     phaseChanged &&
     state.conquest.phase === "overtime"
   ) {
-    showToast("Overtime • Next capture or cache wins");
+    showToast("Overtime • Next capture or crate wins");
   }
 
   if (
@@ -27109,7 +27109,7 @@ async function rd86MaybeSendConquestLocation(
     );
 
     showToast(
-      `${tier.charAt(0).toUpperCase()}${tier.slice(1)} Cache +${Number(data.cache_reward) || 0}`
+      `${tier.charAt(0).toUpperCase()}${tier.slice(1)} Crate +${Number(data.cache_reward) || 0}`
     );
   }
 
@@ -28952,7 +28952,7 @@ rd86ConquestStatusText = function () {
       state.conquest.phase === "active"
     ) {
       return (
-        "Spectator view • Tap a bot to follow it or tap A, B, C, D, E and caches to focus them."
+        "Spectator view • Tap a bot to follow it or tap A, B, C, D, E and crates to focus them."
       );
     }
 
@@ -28961,7 +28961,7 @@ rd86ConquestStatusText = function () {
       "overtime"
     ) {
       return (
-        "Spectator view • The next capture or Road Cache wins."
+        "Spectator view • The next capture or Road Crate wins."
       );
     }
   }
@@ -29704,12 +29704,12 @@ rd86ConquestStatusText = function () {
     return state.conquest.viewerIsSpectator
       ? (
           "Spectator view • Tap a bot, A–E, " +
-          "or a Road Cache to follow the action."
+          "or a Road Crate to follow the action."
         )
       : (
           "Capture A–E. Owned objectives score " +
           "every three seconds. Collect Road " +
-          "Caches for bonuses."
+          "Crates for bonuses."
         );
   }
 
@@ -30456,7 +30456,7 @@ rd86MaybeSendConquestLocation =
         tier.slice(1);
 
       showToast(
-        `${tierName} Cache +` +
+        `${tierName} Crate +` +
         `${Number(
           data.cache_reward
         ) || 0}`
@@ -32877,7 +32877,7 @@ async function rd94StartPreparedArena() {
     await rd94ValidateObjectiveRoutes();
 
     rd94RenderPlacementOverlay(
-      "Building safe cache locations inside A–E..."
+      "Building safe crate locations inside A–E..."
     );
 
     const candidates =
@@ -32888,7 +32888,7 @@ async function rd94StartPreparedArena() {
       RD86_CONQUEST_MIN_CANDIDATES
     ) {
       throw new Error(
-        "Not enough suitable cache and team-start roads exist inside this A–E boundary. Adjust the outer objectives and try again."
+        "Not enough suitable crate and team-start roads exist inside this A–E boundary. Adjust the outer objectives and try again."
       );
     }
 
@@ -37763,7 +37763,7 @@ function rd112LegendaryElement() {
 
     element.innerHTML = `
       <strong>
-        Legendary Cache In
+        Legendary Crate In
       </strong>
 
       <span>3</span>
@@ -37867,7 +37867,7 @@ function rd112RenderLegendaryCountdown() {
     element.querySelector(
       "strong"
     ).textContent =
-      "Legendary Cache In";
+      "Legendary Crate In";
 
     element.querySelector(
       "span"
@@ -37898,7 +37898,7 @@ function rd112RenderLegendaryCountdown() {
     element.querySelector(
       "strong"
     ).textContent =
-      "Legendary Cache";
+      "Legendary Crate";
 
     element.querySelector(
       "span"
@@ -37911,7 +37911,7 @@ function rd112RenderLegendaryCountdown() {
     );
 
     showToast(
-      "Legendary Cache appeared • +150"
+      "Legendary Crate appeared • +150"
     );
 
     void rd112PollLiveOverlay();
@@ -38577,8 +38577,8 @@ function rd112SelectWaypoint(
       : Number(
           target?.reward
         ) === 150
-        ? "Legendary Cache"
-        : "Road Cache";
+        ? "Legendary Crate"
+        : "Road Crate";
 
   showToast(
     `${label} waypoint set`
@@ -41635,12 +41635,12 @@ async function rd114SaveCurrentArena() {
         RD86_CONQUEST_MIN_CANDIDATES
     ) {
       throw new Error(
-        "Not enough suitable cache and team-start roads exist inside this arena."
+        "Not enough suitable crate and team-start roads exist inside this arena."
       );
     }
 
     rd94RenderPlacementOverlay(
-      "Verifying saved cache and team-start roads..."
+      "Verifying saved crate and team-start roads..."
     );
 
     const routeable =
@@ -41931,7 +41931,7 @@ if (
 
 /* ================================================== */
 /* Road Discovery AU v115                             */
-/* Compact Legendary Cache countdown                  */
+/* Compact Legendary Crate countdown                  */
 /* ================================================== */
 
 const roadDiscoveryV115 = {
@@ -43066,7 +43066,7 @@ function rd116ParticipantStatsText(
     `${captures} objective capture${
       captures === 1 ? "" : "s"
     } • ` +
-    `${caches} cache${
+    `${caches} crate${
       caches === 1 ? "" : "s"
     }`
   );
@@ -43113,7 +43113,7 @@ function rd116StatRowHtml(participant) {
       <span class="rd116-stat-points">
         +${Number(
           participant?.cache_points
-        ) || 0} cache pts
+        ) || 0} crate pts
       </span>
     </div>
   `;
@@ -43235,7 +43235,7 @@ function rd116SummaryCardHtml(data) {
                   )}
                   • +${Number(
                     mvp.cache_points
-                  ) || 0} cache points
+                  ) || 0} crate points
                 </span>
 
                 ${
@@ -43244,7 +43244,7 @@ function rd116SummaryCardHtml(data) {
                       <em
                         class="rd116-legendary-badge"
                       >
-                        Legendary Cache Collector
+                        Legendary Crate Collector
                       </em>
                     `
                     : ""
@@ -43291,7 +43291,7 @@ function rd116LoadingSummaryHtml() {
       </header>
 
       <div class="rd116-summary-loading">
-        Counting objective captures and Road Caches.
+        Counting objective captures and Road Crates.
       </div>
     </article>
   `;
@@ -46095,8 +46095,8 @@ async function (
             }`
           : Number(waypoint.reward) ===
               150
-            ? "Choose route to Legendary Cache"
-            : "Choose route to Road Cache";
+            ? "Choose route to Legendary Crate"
+            : "Choose route to Road Crate";
 
       rd120OpenRouteChoice({
         context: "conquest",
@@ -57467,7 +57467,7 @@ function rd171ConquestGuidanceText() {
       state.rd171LiveHintUntil
   ) {
     return (
-      "MATCH LIVE • Capture A–E and Road Caches"
+      "MATCH LIVE • Capture A–E and Road Crates"
     );
   }
 
@@ -58362,7 +58362,7 @@ showToast = function (
 
   const cacheMatch =
     text.match(
-      /^(?:Bronze|Silver|Gold|Legendary|Road)\s+Cache\s+\+(\d+)$/i
+      /^(?:Bronze|Silver|Gold|Legendary|Road)\s+(?:Cache|Crate)\s+\+(\d+)$/i
     );
 
   if (
@@ -59114,3 +59114,241 @@ if (
 
 document.documentElement.dataset.roadDiscoveryMenuStability =
   "centred-objectives-scroll-controls-stable-live-menu-v173";
+
+
+/* ==================================================
+   Road Discovery AU v174
+   Compact, team-coloured Road Crate pickup notice
+   ================================================== */
+
+function rd174InstallCrateNoticeStyles() {
+  if ($("rd174CrateNoticeStyles")) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd174CrateNoticeStyles";
+
+  style.textContent = `
+    .rd172-cache-notice.rd174-crate-notice {
+      left: auto !important;
+      right: max(
+        14px,
+        env(safe-area-inset-right)
+      ) !important;
+      bottom: max(
+        92px,
+        calc(
+          env(safe-area-inset-bottom) +
+          82px
+        )
+      ) !important;
+      box-sizing: border-box;
+      width: auto !important;
+      min-width: 108px !important;
+      max-width: min(
+        154px,
+        calc(100vw - 28px)
+      ) !important;
+      padding: 8px 11px !important;
+      border-width: 1px !important;
+      border-style: solid !important;
+      border-radius: 13px !important;
+      color: #ffffff !important;
+      box-shadow:
+        0 8px 24px
+          rgba(0, 0, 0, 0.38),
+        0 0 18px
+          rgba(255, 255, 255, 0.08) !important;
+      line-height: 1 !important;
+      text-align: center !important;
+      transform: none !important;
+      pointer-events: none;
+      backdrop-filter: blur(10px);
+    }
+
+    .rd172-cache-notice.rd174-crate-notice.red {
+      border-color: #ff7b83 !important;
+      background: #a5202d !important;
+    }
+
+    .rd172-cache-notice.rd174-crate-notice.blue {
+      border-color: #73caff !important;
+      background: #08649e !important;
+    }
+
+    .rd172-cache-notice.rd174-crate-notice.neutral {
+      border-color: #d2dae5 !important;
+      background: #3b4552 !important;
+    }
+
+    .rd172-cache-notice.rd174-crate-notice
+      strong {
+      display: block;
+      color: #ffffff;
+      font-size: 0.58rem;
+      font-weight: 1000;
+      letter-spacing: 0.08em;
+      line-height: 1.1;
+      text-transform: uppercase;
+    }
+
+    .rd172-cache-notice.rd174-crate-notice
+      span {
+      display: block;
+      margin-top: 3px;
+      color: #ffffff;
+      font-size: 1rem;
+      font-variant-numeric:
+        tabular-nums;
+      font-weight: 1000;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .rd172-cache-notice.rd174-crate-notice.rd174-above-legendary {
+      bottom: max(
+        151px,
+        calc(
+          env(safe-area-inset-bottom) +
+          141px
+        )
+      ) !important;
+    }
+
+    @media (max-width: 520px) {
+      .rd172-cache-notice.rd174-crate-notice {
+        right: max(
+          10px,
+          env(safe-area-inset-right)
+        ) !important;
+        bottom: max(
+          82px,
+          calc(
+            env(safe-area-inset-bottom) +
+            72px
+          )
+        ) !important;
+        min-width: 98px !important;
+        padding: 7px 9px !important;
+      }
+
+      .rd172-cache-notice.rd174-crate-notice.rd174-above-legendary {
+        bottom: max(
+          139px,
+          calc(
+            env(safe-area-inset-bottom) +
+            129px
+          )
+        ) !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+rd172PresentNextCacheNotice = function () {
+  const notice =
+    rd172EnsureCacheNotice();
+
+  if (
+    state.rd172CacheNoticeTimer !==
+      null ||
+    state.rd172CacheNoticeQueue
+      .length === 0
+  ) {
+    return;
+  }
+
+  const next =
+    state.rd172CacheNoticeQueue
+      .shift();
+
+  const team =
+    next.team === "red"
+      ? "red"
+      : next.team === "blue"
+        ? "blue"
+        : "neutral";
+
+  const teamLabel =
+    team === "red"
+      ? "Red"
+      : team === "blue"
+        ? "Blue"
+        : "Team";
+
+  const reward = Math.max(
+    0,
+    Math.round(
+      Number(next.reward) || 0
+    )
+  );
+
+  const legendaryClock =
+    $("rd115LegendaryClock");
+
+  const legendaryVisible = Boolean(
+    legendaryClock &&
+    !legendaryClock.hidden
+  );
+
+  notice.className =
+    `rd172-cache-notice ` +
+    `rd174-crate-notice ${team}`;
+
+  notice.classList.toggle(
+    "rd174-above-legendary",
+    legendaryVisible
+  );
+
+  notice.setAttribute(
+    "aria-label",
+    `${teamLabel} ${reward}+ Crate`
+  );
+
+  notice.innerHTML =
+    `<strong>${teamLabel}</strong>` +
+    `<span>${reward}+ CRATE</span>`;
+
+  state.rd172CacheNoticeTimer =
+    window.setTimeout(() => {
+      notice.classList.add("hidden");
+
+      state.rd172CacheNoticeTimer =
+        null;
+
+      window.setTimeout(
+        rd172PresentNextCacheNotice,
+        140
+      );
+    }, 2800);
+};
+
+
+function rd174InitCrateNotice() {
+  rd174InstallCrateNoticeStyles();
+  rd172EnsureCacheNotice();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd174InitCrateNotice,
+    { once: true }
+  );
+} else {
+  rd174InitCrateNotice();
+}
+
+
+document.documentElement.dataset.roadDiscoveryCrateNotice =
+  "team-coloured-legendary-size-crate-notice-v174";
