@@ -38793,7 +38793,7 @@ const roadDiscoveryV113 = {
 state.customConquest.enemyVisibility =
   "visible";
 
-state.customConquest.objectiveCount = 5;
+state.customConquest.objectiveCount = 7;
 
 
 function rd113SafeEnemyVisibility(
@@ -39039,14 +39039,6 @@ function rd113EnsureSettingsFields() {
           <button
             class="rd113-conquest-option-btn"
             type="button"
-            data-rd113-objectives="5"
-          >
-            5 • A–E
-          </button>
-
-          <button
-            class="rd113-conquest-option-btn"
-            type="button"
             data-rd113-objectives="7"
           >
             7 • A–G
@@ -39056,7 +39048,7 @@ function rd113EnsureSettingsFields() {
         <p
           class="rd113-conquest-option-note"
         >
-          Seven zones use F and G normally for capture, scoring, bot targets and cache boundaries.
+          Every new Conquest match uses A–G for capture, scoring, bot targets and Crate boundaries.
         </p>
       </section>
     `;
@@ -40560,7 +40552,7 @@ function rd114SavedMapCardHtml(
               savedMap.objectiveCount ===
                 7
                 ? "A–G"
-                : "A–E"
+                : "Legacy A–E"
             }
           </span>
         </div>
@@ -60067,3 +60059,133 @@ if (
 
 document.documentElement.dataset.roadDiscoveryConquestSetup =
   "settings-difficulty-map-beta-v177";
+
+
+/* ==================================================
+   Road Discovery AU v178
+   Seven objectives for every new Conquest match while
+   retaining support for legacy saved A–E maps
+   ================================================== */
+
+const roadDiscoveryV178 = {
+  openConquestSettings:
+    rd95OpenConquestSettings,
+  renderConquestSettings:
+    rd95RenderConquestSettings,
+  beginArenaPlacement:
+    rd94BeginArenaPlacement
+};
+
+
+function rd178UseSevenObjectives() {
+  state.customConquest
+    .objectiveCount = 7;
+
+  rd113ApplyObjectiveCodes();
+}
+
+
+function rd178EnsureSevenOnlyUi() {
+  const fiveButton =
+    document.querySelector(
+      '[data-rd113-objectives="5"]'
+    );
+
+  fiveButton?.remove();
+
+  const sevenButton =
+    document.querySelector(
+      '[data-rd113-objectives="7"]'
+    );
+
+  if (!sevenButton) return;
+
+  sevenButton.textContent =
+    "7 objectives • A–G";
+
+  sevenButton.classList.add(
+    "active"
+  );
+
+  sevenButton.setAttribute(
+    "aria-pressed",
+    "true"
+  );
+
+  const buttonRow =
+    sevenButton.parentElement;
+
+  if (buttonRow) {
+    buttonRow.style
+      .gridTemplateColumns = "1fr";
+  }
+}
+
+
+rd95OpenConquestSettings =
+function () {
+  if (!state.conquestSettings.open) {
+    rd178UseSevenObjectives();
+  }
+
+  const result =
+    roadDiscoveryV178
+      .openConquestSettings();
+
+  rd178EnsureSevenOnlyUi();
+
+  return result;
+};
+
+
+rd95RenderConquestSettings =
+function () {
+  const result =
+    roadDiscoveryV178
+      .renderConquestSettings();
+
+  rd178EnsureSevenOnlyUi();
+
+  return result;
+};
+
+
+rd94BeginArenaPlacement =
+async function (
+  startKind
+) {
+  if (startKind === "custom") {
+    /*
+      A newly placed map always uses A–G. Loading an old
+      saved map bypasses this path, so its A–E layout is
+      preserved and remains playable.
+    */
+    rd178UseSevenObjectives();
+  }
+
+  return roadDiscoveryV178
+    .beginArenaPlacement(startKind);
+};
+
+
+function rd178Init() {
+  rd178UseSevenObjectives();
+  rd178EnsureSevenOnlyUi();
+}
+
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd178Init,
+    { once: true }
+  );
+} else {
+  rd178Init();
+}
+
+
+document.documentElement.dataset.roadDiscoveryConquestObjectives =
+  "new-matches-seven-legacy-maps-supported-v178";
