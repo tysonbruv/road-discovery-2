@@ -23067,7 +23067,7 @@ async function rd81CheckMyLocation() {
 
     if (!discovery) {
       showToast(
-        "Not quite. Keep exploring."
+        "You're in the wrong spot. Try again."
       );
 
       return;
@@ -61035,3 +61035,247 @@ rd94HandleArenaMapClick =
 document.documentElement.dataset
   .roadDiscoveryObjectivePlacement =
     "reconnected-after-rally-v182";
+
+
+/* ==================================================
+   Road Discovery AU v183
+   Dual Hidden Discovery check buttons and feedback
+   ================================================== */
+
+const roadDiscoveryV183 = {
+  updateCheckButton:
+    rd81UpdateCheckButton
+};
+
+
+function rd183InstallHiddenCheckStyles() {
+  if ($("rd183HiddenCheckStyles")) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd183HiddenCheckStyles";
+
+  style.textContent = `
+    #rd72HiddenDiscoveryOverlay
+      .rd81-check-location-btn {
+      transform: translateY(0) scale(1);
+      transform-origin: center;
+      transition:
+        transform 110ms ease,
+        box-shadow 110ms ease,
+        filter 110ms ease;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    #rd72HiddenDiscoveryOverlay
+      .rd81-check-location-btn:not(:disabled):active,
+    #rd72HiddenDiscoveryOverlay
+      .rd81-check-location-btn:not(:disabled).rd183-pressed {
+      transform: translateY(3px) scale(0.985);
+      box-shadow:
+        inset 0 4px 9px rgba(0, 0, 0, 0.42),
+        0 1px 2px rgba(0, 0, 0, 0.28);
+      filter: brightness(0.9);
+    }
+
+    #rd183CheckHiddenLocationTopBtn {
+      margin: 12px 0 14px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #rd72HiddenDiscoveryOverlay
+        .rd81-check-location-btn {
+        transition: none;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd183BindPressFeedback(button) {
+  if (
+    !button ||
+    button.dataset.rd183PressFeedback ===
+      "ready"
+  ) {
+    return;
+  }
+
+  button.dataset.rd183PressFeedback =
+    "ready";
+
+  const release = () => {
+    button.classList.remove(
+      "rd183-pressed"
+    );
+  };
+
+  button.addEventListener(
+    "pointerdown",
+    () => {
+      if (!button.disabled) {
+        button.classList.add(
+          "rd183-pressed"
+        );
+      }
+    }
+  );
+
+  button.addEventListener(
+    "pointerup",
+    release
+  );
+
+  button.addEventListener(
+    "pointercancel",
+    release
+  );
+
+  button.addEventListener(
+    "pointerleave",
+    release
+  );
+
+  button.addEventListener(
+    "blur",
+    release
+  );
+}
+
+
+function rd183EnsureTopCheckButton() {
+  const bottomButton = $(
+    "rd81CheckHiddenLocationBtn"
+  );
+
+  rd183BindPressFeedback(
+    bottomButton
+  );
+
+  if ($("rd183CheckHiddenLocationTopBtn")) {
+    return $(
+      "rd183CheckHiddenLocationTopBtn"
+    );
+  }
+
+  const summary = document.querySelector(
+    "#rd72HiddenDiscoveryOverlay " +
+      ".rd-hidden-summary"
+  );
+
+  const heading = document.querySelector(
+    "#rd72HiddenDiscoveryOverlay " +
+      ".rd-hidden-state-heading"
+  );
+
+  if (!summary || !heading) {
+    return null;
+  }
+
+  const button =
+    document.createElement("button");
+
+  button.id =
+    "rd183CheckHiddenLocationTopBtn";
+
+  button.className =
+    "wide-btn rd81-check-location-btn hidden";
+
+  button.type = "button";
+
+  button.addEventListener(
+    "click",
+    rd81CheckMyLocation
+  );
+
+  heading.insertAdjacentElement(
+    "beforebegin",
+    button
+  );
+
+  rd183BindPressFeedback(button);
+
+  return button;
+}
+
+
+function rd183MirrorCheckButton() {
+  const bottomButton = $(
+    "rd81CheckHiddenLocationBtn"
+  );
+
+  const topButton =
+    rd183EnsureTopCheckButton();
+
+  if (!bottomButton || !topButton) {
+    return;
+  }
+
+  topButton.classList.toggle(
+    "hidden",
+    bottomButton.classList.contains(
+      "hidden"
+    )
+  );
+
+  topButton.disabled =
+    bottomButton.disabled;
+
+  topButton.textContent =
+    bottomButton.textContent;
+
+  const checking = Boolean(
+    state.rd81CheckingHiddenLocation
+  );
+
+  bottomButton.setAttribute(
+    "aria-busy",
+    checking ? "true" : "false"
+  );
+
+  topButton.setAttribute(
+    "aria-busy",
+    checking ? "true" : "false"
+  );
+}
+
+
+rd81UpdateCheckButton = function () {
+  const result =
+    roadDiscoveryV183
+      .updateCheckButton();
+
+  rd183MirrorCheckButton();
+
+  return result;
+};
+
+
+function rd183InitHiddenCheckButtons() {
+  rd183InstallHiddenCheckStyles();
+  rd183EnsureTopCheckButton();
+  rd81UpdateCheckButton();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd183InitHiddenCheckButtons,
+    { once: true }
+  );
+} else {
+  rd183InitHiddenCheckButtons();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryHiddenCheckButtons =
+    "dual-press-feedback-v183";
