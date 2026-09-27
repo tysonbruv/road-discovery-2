@@ -60189,3 +60189,451 @@ if (
 
 document.documentElement.dataset.roadDiscoveryConquestObjectives =
   "new-matches-seven-legacy-maps-supported-v178";
+
+
+/* ==================================================
+   Road Discovery AU v179
+   Resilient road loading plus retryable Rally placement
+   ================================================== */
+
+const roadDiscoveryV179 = {
+  handleArenaMapClick:
+    rd94HandleArenaMapClick
+};
+
+
+const RD179_OVERPASS_ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass.osm.jp/api/interpreter"
+];
+
+const RD179_ROAD_SERVER_TIMEOUT_MS =
+  10000;
+
+
+Object.assign(state, {
+  rd179PreferredRoadServerIndex: 0,
+  rd179LastRoadLoadFailed: false,
+  rd179RoadLoadAttempt: 0
+});
+
+
+function rd179RoadServerOrder() {
+  const preferred = Math.max(
+    0,
+    Math.min(
+      RD179_OVERPASS_ENDPOINTS.length - 1,
+      Number(
+        state.rd179PreferredRoadServerIndex
+      ) || 0
+    )
+  );
+
+  return [
+    preferred,
+    ...RD179_OVERPASS_ENDPOINTS
+      .map((endpoint, index) => index)
+      .filter((index) =>
+        index !== preferred
+      )
+  ];
+}
+
+
+function rd179RoadQuery(
+  lat,
+  lng,
+  radiusM
+) {
+  return `
+    [out:json][timeout:18];
+    way(around:${Math.round(radiusM)},${lat},${lng})
+      ["highway"]
+      ["highway"!~"footway|cycleway|path|steps|pedestrian|bridleway|corridor|elevator|platform|construction|proposed|raceway"];
+    out tags geom;
+  `;
+}
+
+
+function rd179UsableRoadWays(data) {
+  return (
+    Array.isArray(data?.elements)
+      ? data.elements
+      : []
+  ).filter((way) =>
+    Array.isArray(way?.geometry) &&
+    way.geometry.length >= 2
+  );
+}
+
+
+function rd179ShowBackupAttempt(
+  attemptNumber
+) {
+  state.rd179RoadLoadAttempt =
+    attemptNumber;
+
+  if (attemptNumber <= 1) return;
+
+  setDriveStatus(
+    "Trying backup road server"
+  );
+
+  if (
+    state.conquestArena?.active &&
+    !state.conquestArena.centre
+  ) {
+    rd94RenderPlacementOverlay(
+      `Road server busy • trying backup ${attemptNumber - 1} of ${RD179_OVERPASS_ENDPOINTS.length - 1}...`
+    );
+  }
+}
+
+
+async function rd179FetchRoadWays(
+  lat,
+  lng,
+  radiusM
+) {
+  const query = rd179RoadQuery(
+    lat,
+    lng,
+    radiusM
+  );
+
+  const order =
+    rd179RoadServerOrder();
+
+  for (
+    let attempt = 0;
+    attempt < order.length;
+    attempt += 1
+  ) {
+    const endpointIndex =
+      order[attempt];
+
+    const endpoint =
+      RD179_OVERPASS_ENDPOINTS[
+        endpointIndex
+      ];
+
+    const controller =
+      new AbortController();
+
+    const timeout =
+      window.setTimeout(
+        () => controller.abort(),
+        RD179_ROAD_SERVER_TIMEOUT_MS
+      );
+
+    rd179ShowBackupAttempt(
+      attempt + 1
+    );
+
+    try {
+      const response = await fetch(
+        endpoint,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/x-www-form-urlencoded;charset=UTF-8",
+            Accept: "application/json"
+          },
+          body: new URLSearchParams({
+            data: query
+          }),
+          signal: controller.signal
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Road server returned ${response.status}`
+        );
+      }
+
+      const ways =
+        rd179UsableRoadWays(
+          await response.json()
+        );
+
+      if (ways.length === 0) {
+        throw new Error(
+          "Road server returned no usable roads"
+        );
+      }
+
+      state.rd179PreferredRoadServerIndex =
+        endpointIndex;
+
+      return ways;
+
+    } catch (error) {
+      console.warn(
+        `Road server ${attempt + 1} failed.`,
+        error
+      );
+
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  return [];
+}
+
+
+function rd179FinishRoadCoverage(
+  driveLoad,
+  loaded,
+  radiusM,
+  reason,
+  previousCentre
+) {
+  if (!driveLoad) return;
+
+  state.rd57RoadCoverageLoading =
+    false;
+
+  if (
+    loaded &&
+    state.lastRoadLoadCenter
+  ) {
+    rd57DrawRoadCoverage(
+      state.lastRoadLoadCenter,
+      radiusM,
+      false
+    );
+
+  } else if (
+    reason === "auto" &&
+    previousCentre
+  ) {
+    rd57DrawRoadCoverage(
+      previousCentre,
+      LOAD_RADIUS_M,
+      false
+    );
+
+  } else {
+    rd57RemoveRoadCoverage();
+  }
+}
+
+
+loadRoads = function (
+  lat,
+  lng,
+  radiusM,
+  options = {}
+) {
+  if (state.roadLoadPromise) {
+    return state.roadLoadPromise;
+  }
+
+  const {
+    replace = false,
+    reason = "manual"
+  } = options;
+
+  const driveLoad =
+    rd53DriveRoadLayersActive();
+
+  const previousCentre =
+    state.lastRoadLoadCenter
+      ? { ...state.lastRoadLoadCenter }
+      : null;
+
+  state.roadLoadPromise =
+    (async () => {
+      state.isLoadingRoads = true;
+      state.rd179LastRoadLoadFailed =
+        false;
+
+      if (driveLoad) {
+        state.rd57RoadCoverageLoading =
+          true;
+
+        rd57DrawRoadCoverage(
+          {
+            lat: Number(lat),
+            lng: Number(lng)
+          },
+          radiusM,
+          true
+        );
+      }
+
+      if (reason === "auto") {
+        setDriveStatus(
+          "Loading more roads ahead"
+        );
+      } else if (reason !== "preview") {
+        setDriveStatus(
+          "Loading nearby roads"
+        );
+      }
+
+      const ways =
+        await rd179FetchRoadWays(
+          Number(lat),
+          Number(lng),
+          Number(radiusM) ||
+            LOAD_RADIUS_M
+        );
+
+      if (ways.length === 0) {
+        state.rd179LastRoadLoadFailed =
+          true;
+
+        if (reason === "auto") {
+          showToast(
+            "Road servers are busy • existing roads kept"
+          );
+        }
+
+        setDriveStatus(
+          state.isRecording
+            ? "Driving"
+            : "Ready to drive"
+        );
+
+        rd179FinishRoadCoverage(
+          driveLoad,
+          false,
+          radiusM,
+          reason,
+          previousCentre
+        );
+
+        return false;
+      }
+
+      if (replace) {
+        /*
+          Only discard the old road set after a backup server
+          has returned a usable replacement.
+        */
+        state.roadsLayer?.clearLayers();
+        state.roadSegments = [];
+        state.roadSegmentIds.clear();
+        state.lastRoadLoadCenter = null;
+      }
+
+      const before =
+        state.roadSegments.length;
+
+      buildSegmentsFromWays(ways);
+      drawNewSegments(before);
+
+      if (
+        state.needsSavedSegmentsSave
+      ) {
+        saveSavedSegments();
+
+        state.needsSavedSegmentsSave =
+          false;
+      }
+
+      const loaded =
+        state.roadSegments.length > 0;
+
+      if (loaded) {
+        state.lastRoadLoadCenter = {
+          lat: Number(lat),
+          lng: Number(lng),
+          timestamp: Date.now()
+        };
+
+        renderAllStats();
+      }
+
+      setDriveStatus(
+        state.isRecording
+          ? "Driving"
+          : "Ready to drive"
+      );
+
+      rd179FinishRoadCoverage(
+        driveLoad,
+        loaded,
+        radiusM,
+        reason,
+        previousCentre
+      );
+
+      return loaded;
+    })()
+      .catch((error) => {
+        console.error(error);
+
+        state.rd179LastRoadLoadFailed =
+          true;
+
+        setDriveStatus(
+          state.isRecording
+            ? "Driving"
+            : "Ready to drive"
+        );
+
+        rd179FinishRoadCoverage(
+          driveLoad,
+          false,
+          radiusM,
+          reason,
+          previousCentre
+        );
+
+        return false;
+      })
+      .finally(() => {
+        state.isLoadingRoads = false;
+        state.rd179RoadLoadAttempt = 0;
+        state.roadLoadPromise = null;
+      });
+
+  return state.roadLoadPromise;
+};
+
+
+rd94HandleArenaMapClick =
+async function (
+  event
+) {
+  try {
+    return await roadDiscoveryV179
+      .handleArenaMapClick(event);
+
+  } finally {
+    if (
+      state.conquestArena.active &&
+      !state.conquestArena.centre
+    ) {
+      /*
+        A failed Rally lookup must return to an interactive
+        placement state without losing any Conquest settings.
+      */
+      state.conquestArena.busy = false;
+      state.awaitingWaypointClick = false;
+
+      rd94UnbindArenaMapClick();
+      rd94BindArenaMapClick();
+
+      if (
+        state.rd179LastRoadLoadFailed
+      ) {
+        rd94RenderPlacementOverlay(
+          "Road data could not load. Tap another location to retry."
+        );
+      } else {
+        rd94RenderPlacementOverlay();
+      }
+    }
+  }
+};
+
+
+document.documentElement.dataset.roadDiscoveryRoadLoading =
+  "multi-server-rally-retry-v179";
