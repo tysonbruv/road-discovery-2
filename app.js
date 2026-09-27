@@ -60821,3 +60821,217 @@ rd94HandleArenaMapClick =
 document.documentElement.dataset
   .roadDiscoveryRallyRetry =
     "stable-listener-v180";
+
+
+/* ==================================================
+   Road Discovery AU v181
+   Visible Rally road-calculation status
+   ================================================== */
+
+const roadDiscoveryV181 = {
+  renderPlacementOverlay:
+    rd94RenderPlacementOverlay
+};
+
+
+const RD181_RALLY_LOADING_MESSAGE =
+  "Please wait while Road Discovery calculates roads for placement…";
+
+
+function rd181InstallRallyLoadingStyles() {
+  if (
+    document.getElementById(
+      "rd181RallyLoadingStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd181RallyLoadingStyles";
+
+  style.textContent = `
+    .rd94-arena-status.rd181-calculating {
+      position: relative;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      padding: 10px 12px 10px 43px;
+      border: 1px solid rgba(255, 139, 24, 0.72);
+      background: rgba(92, 49, 8, 0.42);
+      color: #ffd09b;
+      font-weight: 850;
+      box-shadow:
+        0 0 0 1px rgba(255, 139, 24, 0.08) inset;
+    }
+
+    .rd94-arena-status.rd181-calculating::before {
+      content: "";
+      position: absolute;
+      left: 15px;
+      top: 50%;
+      width: 15px;
+      height: 15px;
+      margin-top: -9px;
+      border: 2px solid rgba(255, 208, 155, 0.3);
+      border-top-color: #ff8b18;
+      border-radius: 50%;
+      animation: rd181-rally-spin 0.72s linear infinite;
+    }
+
+    @keyframes rd181-rally-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rd94-arena-status.rd181-calculating::before {
+        animation-duration: 1.5s;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd181RallyIsCalculating() {
+  return Boolean(
+    state.rd180RallyLookupActive &&
+    state.conquestArena.active &&
+    state.conquestArena.busy &&
+    !state.conquestArena.centre
+  );
+}
+
+
+rd94RenderPlacementOverlay = function (
+  overrideMessage = ""
+) {
+  rd181InstallRallyLoadingStyles();
+
+  const calculating =
+    rd181RallyIsCalculating();
+
+  const result =
+    roadDiscoveryV181
+      .renderPlacementOverlay(
+        calculating
+          ? RD181_RALLY_LOADING_MESSAGE
+          : overrideMessage
+      );
+
+  const status =
+    document.getElementById(
+      "rd94ArenaStatus"
+    );
+
+  if (status) {
+    status.classList.toggle(
+      "rd181-calculating",
+      calculating
+    );
+
+    status.setAttribute(
+      "role",
+      "status"
+    );
+
+    status.setAttribute(
+      "aria-live",
+      "polite"
+    );
+
+    status.setAttribute(
+      "aria-busy",
+      calculating
+        ? "true"
+        : "false"
+    );
+
+    if (calculating) {
+      status.classList.remove(
+        "good",
+        "bad"
+      );
+
+      status.textContent =
+        RD181_RALLY_LOADING_MESSAGE;
+    }
+  }
+
+  return result;
+};
+
+
+rd181InstallRallyLoadingStyles();
+
+
+document.documentElement.dataset
+  .roadDiscoveryRallyLoading =
+    "visible-calculation-status-v181";
+
+
+/* ==================================================
+   Road Discovery AU v182
+   Reconnect objective placement after Rally succeeds
+   ================================================== */
+
+const roadDiscoveryV182 = {
+  handleArenaMapClick:
+    rd180HandleArenaMapClick
+};
+
+
+async function rd182HandleArenaMapClick(
+  event
+) {
+  const beganAsRallyTap = Boolean(
+    state.conquestArena.active &&
+    !state.conquestArena.busy &&
+    !state.conquestArena.centre
+  );
+
+  try {
+    return await roadDiscoveryV182
+      .handleArenaMapClick(event);
+
+  } finally {
+    if (
+      beganAsRallyTap &&
+      state.conquestArena.active &&
+      state.conquestArena.centre
+    ) {
+      /*
+        The Rally calculation can cause an older editor guard to
+        remove its Leaflet listener. Rally is now complete, so
+        unconditionally install the stable dispatcher again before
+        the user taps Objective A.
+      */
+      state.conquestArena.busy =
+        false;
+
+      state.awaitingWaypointClick =
+        false;
+
+      rd94BindArenaMapClick();
+      rd94RenderPlacementOverlay();
+    }
+  }
+}
+
+
+rd180HandleArenaMapClick =
+  rd182HandleArenaMapClick;
+
+rd94HandleArenaMapClick =
+  rd182HandleArenaMapClick;
+
+
+document.documentElement.dataset
+  .roadDiscoveryObjectivePlacement =
+    "reconnected-after-rally-v182";
