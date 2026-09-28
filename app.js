@@ -61084,7 +61084,8 @@ function rd183InstallHiddenCheckStyles() {
     }
 
     #rd183CheckHiddenLocationTopBtn {
-      margin: 12px 0 14px;
+      width: calc(100% - 36px);
+      margin: 12px 18px 14px;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -61279,3 +61280,317 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryHiddenCheckButtons =
     "dual-press-feedback-v183";
+
+
+/* ==================================================
+   Road Discovery AU v184
+   Centre the upper Hidden Discovery check button
+   ================================================== */
+
+document.documentElement.dataset
+  .roadDiscoveryHiddenCheckAlignment =
+    "centred-equal-insets-v184";
+
+
+/* ==================================================
+   Road Discovery AU v185
+   Moved Rally recalculation and objective recovery
+   ================================================== */
+
+const roadDiscoveryV185 = {
+  arenaEditingAllowed:
+    rd125ArenaEditingAllowed,
+
+  renderPlacementOverlay:
+    rd94RenderPlacementOverlay,
+
+  snapRallyPoint:
+    rd109SnapRallyPoint
+};
+
+
+const RD185_RALLY_MOVE_MESSAGE =
+  "Please wait while Road Discovery recalculates roads for the moved Rally point…";
+
+
+state.rd185RallyMoveActive = false;
+
+
+function rd185InstallRallyMoveStyles() {
+  if (
+    document.getElementById(
+      "rd185RallyMoveStyles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd185RallyMoveStyles";
+
+  style.textContent = `
+    .rd185-rally-move-banner {
+      position: fixed;
+      z-index: 7000;
+      left: 50%;
+      bottom: calc(
+        18px + env(safe-area-inset-bottom)
+      );
+      width: min(520px, calc(100vw - 28px));
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid rgba(255, 139, 24, 0.72);
+      border-radius: 15px;
+      background: rgba(45, 27, 10, 0.96);
+      color: #ffd09b;
+      font-size: 0.78rem;
+      font-weight: 850;
+      line-height: 1.35;
+      text-align: center;
+      pointer-events: none;
+      transform: translateX(-50%);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(12px);
+    }
+
+    .rd185-rally-move-banner::before {
+      content: "";
+      width: 15px;
+      height: 15px;
+      flex: 0 0 15px;
+      border: 2px solid rgba(255, 208, 155, 0.3);
+      border-top-color: #ff8b18;
+      border-radius: 50%;
+      animation: rd181-rally-spin 0.72s linear infinite;
+    }
+
+    .rd185-rally-move-banner.hidden {
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rd185-rally-move-banner::before {
+        animation-duration: 1.5s;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd185EnsureRallyMoveBanner() {
+  let banner =
+    document.getElementById(
+      "rd185RallyMoveBanner"
+    );
+
+  if (banner) return banner;
+
+  banner =
+    document.createElement("div");
+
+  banner.id =
+    "rd185RallyMoveBanner";
+
+  banner.className =
+    "rd185-rally-move-banner hidden";
+
+  banner.setAttribute(
+    "role",
+    "status"
+  );
+
+  banner.setAttribute(
+    "aria-live",
+    "polite"
+  );
+
+  banner.setAttribute(
+    "aria-hidden",
+    "true"
+  );
+
+  banner.textContent =
+    RD185_RALLY_MOVE_MESSAGE;
+
+  document.body.appendChild(banner);
+
+  return banner;
+}
+
+
+function rd185SetRallyMoveLoading(active) {
+  state.rd185RallyMoveActive =
+    Boolean(active);
+
+  const banner =
+    rd185EnsureRallyMoveBanner();
+
+  banner.classList.toggle(
+    "hidden",
+    !active
+  );
+
+  banner.setAttribute(
+    "aria-hidden",
+    active ? "false" : "true"
+  );
+
+  banner.setAttribute(
+    "aria-busy",
+    active ? "true" : "false"
+  );
+
+  if (active) {
+    rd94RenderPlacementOverlay(
+      RD185_RALLY_MOVE_MESSAGE
+    );
+  }
+}
+
+
+function rd185RallyMoveIsActive() {
+  return Boolean(
+    state.rd185RallyMoveActive &&
+    state.conquestArena.active &&
+    state.conquestArena.busy &&
+    state.conquestArena.centre &&
+    !hasActiveConquestRound() &&
+    !hasActiveHideSeekRound()
+  );
+}
+
+
+rd125ArenaEditingAllowed = function () {
+  if (rd185RallyMoveIsActive()) {
+    /*
+      Moving Rally performs a real road refresh, but the editor
+      must remain visible and its listener must not be treated as
+      gameplay cleanup while that refresh is running.
+    */
+    return true;
+  }
+
+  return roadDiscoveryV185
+    .arenaEditingAllowed();
+};
+
+
+rd94RenderPlacementOverlay = function (
+  overrideMessage = ""
+) {
+  const movingRally =
+    rd185RallyMoveIsActive();
+
+  const result =
+    roadDiscoveryV185
+      .renderPlacementOverlay(
+        movingRally
+          ? RD185_RALLY_MOVE_MESSAGE
+          : overrideMessage
+      );
+
+  const status =
+    document.getElementById(
+      "rd94ArenaStatus"
+    );
+
+  if (status) {
+    status.classList.toggle(
+      "rd181-calculating",
+      movingRally
+    );
+
+    status.setAttribute(
+      "role",
+      "status"
+    );
+
+    status.setAttribute(
+      "aria-live",
+      "polite"
+    );
+
+    status.setAttribute(
+      "aria-busy",
+      movingRally ? "true" : "false"
+    );
+
+    if (movingRally) {
+      status.classList.remove(
+        "good",
+        "bad"
+      );
+
+      status.textContent =
+        RD185_RALLY_MOVE_MESSAGE;
+    }
+  }
+
+  return result;
+};
+
+
+rd109SnapRallyPoint = async function (
+  point
+) {
+  const movingExistingRally = Boolean(
+    state.conquestArena.active &&
+    state.conquestArena.busy &&
+    state.conquestArena.centre
+  );
+
+  if (!movingExistingRally) {
+    return roadDiscoveryV185
+      .snapRallyPoint(point);
+  }
+
+  rd185SetRallyMoveLoading(true);
+
+  try {
+    return await roadDiscoveryV185
+      .snapRallyPoint(point);
+
+  } finally {
+    /*
+      The legacy busy-state guard may already have detached the
+      Leaflet listener on dragend. Restore the single stable v182
+      dispatcher before the caller returns to objective placement.
+    */
+    state.awaitingWaypointClick = false;
+
+    rd94BindArenaMapClick();
+
+    rd185SetRallyMoveLoading(false);
+  }
+};
+
+
+function rd185InitRallyMoveRecovery() {
+  rd185InstallRallyMoveStyles();
+  rd185EnsureRallyMoveBanner();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd185InitRallyMoveRecovery,
+    { once: true }
+  );
+} else {
+  rd185InitRallyMoveRecovery();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryRallyMoveRecovery =
+    "visible-recalculation-and-objective-reconnect-v185";
