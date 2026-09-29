@@ -63548,7 +63548,7 @@ function rd187InstallStyles() {
   style.textContent = `
     .rd187-sidebar-content {
       display: grid;
-      gap: 11px;
+      gap: 12px;
     }
 
     .rd187-all-time-bar,
@@ -63561,6 +63561,13 @@ function rd187InstallStyles() {
       gap: 10px;
     }
 
+    .rd187-all-time-bar {
+      position: relative;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0 42px;
+    }
+
     .rd187-all-time-bar h3,
     .rd187-top-ten-head h3,
     .rd187-full-list-head h2,
@@ -63571,6 +63578,8 @@ function rd187InstallStyles() {
 
     .rd187-all-time-bar h3 {
       font-size: 1rem;
+      line-height: 1.2;
+      text-align: center;
     }
 
     .rd187-settings-button,
@@ -63595,6 +63604,37 @@ function rd187InstallStyles() {
       color: #ffbc70;
     }
 
+    .rd187-all-time-bar .rd187-settings-button {
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    .rd187-leaderboard-panel .rd186-standing {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .rd187-leaderboard-panel .rd186-standing article {
+      display: grid;
+      min-height: 72px;
+      align-content: center;
+      justify-items: center;
+      padding: 9px 7px;
+      text-align: center;
+    }
+
+    .rd187-leaderboard-panel .rd186-standing span {
+      line-height: 1.25;
+    }
+
+    .rd187-leaderboard-panel .rd186-standing strong {
+      width: 100%;
+      margin-top: 6px;
+      line-height: 1.15;
+      text-align: center;
+    }
+
     .rd187-top-ten-head h3 {
       font-size: 0.9rem;
     }
@@ -63604,6 +63644,16 @@ function rd187InstallStyles() {
       margin: 2px 0 0;
       color: #98a4b3;
       font-size: 0.67rem;
+    }
+
+    .rd187-refresh-button {
+      width: auto !important;
+      min-width: 0 !important;
+      min-height: 32px !important;
+      padding: 6px 11px !important;
+      flex: 0 0 auto;
+      border-radius: 9px !important;
+      font-size: 0.68rem !important;
     }
 
     .rd187-sidebar-list {
@@ -63616,11 +63666,11 @@ function rd187InstallStyles() {
       grid-template-columns: 27px minmax(0, 1fr) auto;
       align-items: center;
       gap: 8px;
-      min-height: 42px;
+      min-height: 40px;
       border: 1px solid #2f3a47;
       border-radius: 11px;
       background: #111820;
-      padding: 6px 9px;
+      padding: 5px 9px;
     }
 
     .rd187-sidebar-row.is-me {
@@ -63663,7 +63713,22 @@ function rd187InstallStyles() {
 
     .rd187-view-full-button {
       width: 100%;
-      min-height: 46px;
+      min-height: 40px;
+      border: 1px solid #96520f;
+      border-radius: 11px;
+      background: #20180f;
+      color: #ffb45d;
+      padding: 8px 12px;
+      font: inherit;
+      font-size: 0.72rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd187-view-full-button:hover,
+    .rd187-view-full-button:focus-visible {
+      border-color: #ff8b18;
+      background: #30200f;
     }
 
     .rd187-sidebar-note {
@@ -63891,7 +63956,7 @@ rd186BuildLeaderboardPanel = function () {
 
     <div class="panel-content rd187-sidebar-content">
       <div class="rd187-all-time-bar">
-        <h3>All Time</h3>
+        <h3>All Time Leaderboard</h3>
         <button
           id="rd187LeaderboardSettingsBtn"
           class="rd187-settings-button"
@@ -63903,8 +63968,7 @@ rd186BuildLeaderboardPanel = function () {
 
       <div class="rd186-standing">
         <article><span>Your position</span><strong id="rd186MyRank">—</strong></article>
-        <article><span>Period roads</span><strong id="rd186MyPeriodRoads">0</strong></article>
-        <article><span>All roads</span><strong id="rd186MyAllRoads">0</strong></article>
+        <article><span>Discovered Roads</span><strong id="rd186MyAllRoads">0</strong></article>
       </div>
 
       <div class="rd187-top-ten-head">
@@ -63912,12 +63976,12 @@ rd186BuildLeaderboardPanel = function () {
           <h3>Top 10</h3>
           <span id="rd187TopTenMeta">All-time Road Profiles</span>
         </div>
-        <button id="rd76LeaderboardRefreshBtn" class="ghost-btn" type="button">Refresh</button>
+        <button id="rd76LeaderboardRefreshBtn" class="ghost-btn rd187-refresh-button" type="button">Refresh</button>
       </div>
 
       <div id="rd186LeaderboardList" class="rd187-sidebar-list" aria-live="polite"></div>
 
-      <button id="rd187ViewFullLeaderboardBtn" class="wide-btn rd187-view-full-button" type="button">
+      <button id="rd187ViewFullLeaderboardBtn" class="rd187-view-full-button" type="button">
         View full leaderboard
       </button>
 
@@ -64144,10 +64208,10 @@ rd186RenderMiniLeaders = function () {
   const element = $("rd186MiniLeaders");
   if (!element) return;
 
-  element.innerHTML = rd186MiniLeaderLine(
-    "all_time",
-    "All time"
-  );
+  element.innerHTML =
+    rd186MiniLeaderLine("week", "This week") +
+    rd186MiniLeaderLine("month", "This month") +
+    rd186MiniLeaderLine("all_time", "All time");
 
   rd186UpdateMiniLeaderVisibility();
 };
@@ -64178,8 +64242,10 @@ rd186RenderLeaderboard = function () {
   );
 
   if ($("rd187TopTenMeta")) {
+    const totalProfiles = rd186State.totalEntries;
     $("rd187TopTenMeta").textContent =
-      `Top 10 of ${rd76Number(rd186State.totalEntries)} public profiles`;
+      `${rd76Number(totalProfiles)} public ` +
+      `profile${totalProfiles === 1 ? "" : "s"}`;
   }
 
   if ($("rd187FullLeaderboardMeta")) {
@@ -64451,6 +64517,7 @@ if (document.readyState === "loading") {
 }
 
 
+/* Road Discovery AU v188 leaderboard layout polish. */
 document.documentElement.dataset
   .roadDiscoveryPublicLeaderboardLayout =
-    "all-time-top-10-and-full-500-v187";
+    "all-time-top-10-and-full-500-v188";
