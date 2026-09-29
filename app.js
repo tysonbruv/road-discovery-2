@@ -61594,3 +61594,1927 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryRallyMoveRecovery =
     "visible-recalculation-and-objective-reconnect-v185";
+
+/* ================================================== */
+/* Road Discovery AU v186 Public Rankings + My Stats */
+/* 30K opt-in leaderboard, period leaders and stats  */
+/* ================================================== */
+
+const RD186_LEADERBOARD_UNLOCK = 30000;
+const RD186_ROAD_PIONEER_BADGE = 50000;
+const RD186_LEADERBOARD_PAGE_SIZE = 500;
+
+const RD186_PERIODS = Object.freeze({
+  week: {
+    label: "This week",
+    description: "Roads synced since Monday, Sydney time"
+  },
+  month: {
+    label: "This month",
+    description: "Roads synced since the first of this month"
+  },
+  all_time: {
+    label: "All time",
+    description: "Every road saved to each Road Profile"
+  }
+});
+
+const rd186State = {
+  period: "week",
+  page: 1,
+  totalPages: 1,
+  totalEntries: 0,
+  periodRoadCount: 0,
+  leaders: {
+    week: null,
+    month: null,
+    all_time: null
+  },
+  leadersLoading: false,
+  statsLoading: false,
+  statsLoaded: false,
+  statsError: "",
+  stats: null,
+  refreshTimer: null,
+  visibilityTimer: null
+};
+
+Object.assign(rd76Leaderboard, {
+  periodRoadCount: 0,
+  totalEntries: 0,
+  totalPages: 1,
+  page: 1,
+  has50kBadge: false
+});
+
+const roadDiscoveryV186 = {
+  resetLeaderboardState: rd76ResetLeaderboardState,
+  closePanels,
+  renderAuthState,
+  renderGeneralMenuProgress: rd73RenderGeneralMenuProgress
+};
+
+
+/* -------------------------------------------------- */
+/* Shared presentation helpers                       */
+/* -------------------------------------------------- */
+
+function rd186Count(value) {
+  const number = Number(value);
+
+  return Number.isFinite(number) && number >= 0
+    ? Math.floor(number)
+    : 0;
+}
+
+function rd186Percent(wins, games) {
+  const total = rd186Count(games);
+
+  if (!total) return "0%";
+
+  return `${Math.round(
+    (rd186Count(wins) / total) * 100
+  )}%`;
+}
+
+function rd186UsernameHtml(value) {
+  const username = String(
+    value || "No public record yet"
+  );
+
+  const match = username.match(
+    /^(road_user_)(.+)$/i
+  );
+
+  if (!match) {
+    return `<span class="rd186-name-prefix">${escapeHtml(username)}</span>`;
+  }
+
+  return `
+    <span class="rd186-name-prefix">${escapeHtml(match[1])}</span><span class="rd186-name-suffix">${escapeHtml(match[2])}</span>
+  `;
+}
+
+function rd186PeriodDetails() {
+  return (
+    RD186_PERIODS[rd186State.period] ||
+    RD186_PERIODS.week
+  );
+}
+
+function rd186CurrentHiddenDiscoveryStats() {
+  const discoveries =
+    typeof rd79AllDiscoveries === "function"
+      ? rd79AllDiscoveries()
+      : Array.isArray(RD72_HIDDEN_DISCOVERIES)
+        ? RD72_HIDDEN_DISCOVERIES
+        : [];
+
+  const completed = discoveries.filter(
+    (discovery) => Boolean(
+      state.hiddenDiscoveries?.completed?.[
+        discovery.id
+      ]
+    )
+  ).length;
+
+  return {
+    completed,
+    total: discoveries.length
+  };
+}
+
+function rd186BadgeDate(value) {
+  const date = new Date(`${value || ""}T12:00:00Z`);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Australia/Sydney"
+  }).format(date);
+}
+
+
+/* -------------------------------------------------- */
+/* Styles                                             */
+/* -------------------------------------------------- */
+
+function rd186InstallStyles() {
+  if ($("rd186Styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd186Styles";
+  style.textContent = `
+    .rd186-mini-leaders {
+      position: absolute;
+      z-index: 720;
+      left: calc(18px + env(safe-area-inset-left));
+      bottom: calc(116px + env(safe-area-inset-bottom));
+      display: grid;
+      gap: 2px;
+      max-width: min(310px, calc(100vw - 36px));
+      color: #f4f7fb;
+      font-size: 0.66rem;
+      font-weight: 800;
+      line-height: 1.24;
+      letter-spacing: 0.01em;
+      pointer-events: none;
+      text-shadow:
+        0 1px 2px #000,
+        0 0 7px #000,
+        0 0 12px #000;
+    }
+
+    .rd186-mini-leader {
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr);
+      align-items: baseline;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .rd186-mini-label {
+      color: #c8ced8;
+      white-space: nowrap;
+    }
+
+    .rd186-mini-name {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .rd186-name-prefix {
+      color: #fff;
+    }
+
+    .rd186-name-suffix {
+      color: #65c7ff;
+    }
+
+    body.conquest-game-active .rd186-mini-leaders,
+    body.hide-seek-playing-layout .rd186-mini-leaders {
+      display: none !important;
+    }
+
+    .rd186-leaderboard-panel .panel-content,
+    .rd186-stats-panel .panel-content {
+      display: grid;
+      gap: 12px;
+    }
+
+    .rd186-period-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 7px;
+    }
+
+    .rd186-period-tab {
+      min-height: 43px;
+      border: 1px solid #344151;
+      border-radius: 12px;
+      background: #18212c;
+      color: #eef2f7;
+      font: inherit;
+      font-size: 0.72rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd186-period-tab.active {
+      border-color: #ff8b18;
+      background: #38220f;
+      color: #ffbc70;
+      box-shadow: inset 0 0 0 1px rgba(255, 139, 24, 0.28);
+    }
+
+    .rd186-period-copy {
+      margin: -4px 1px 0;
+      color: #9faaba;
+      font-size: 0.7rem;
+      line-height: 1.4;
+    }
+
+    .rd186-unlock-card,
+    .rd186-privacy-card,
+    .rd186-stats-section,
+    .rd186-badge-card {
+      border: 1px solid #344151;
+      border-radius: 15px;
+      background: #111820;
+      padding: 13px;
+    }
+
+    .rd186-privacy-card {
+      border-color: #22516c;
+      background: #0d1b24;
+    }
+
+    .rd186-privacy-card strong,
+    .rd186-unlock-card strong,
+    .rd186-stats-section h3 {
+      color: #f7f9fc;
+    }
+
+    .rd186-privacy-card p,
+    .rd186-unlock-card p,
+    .rd186-stats-note {
+      margin: 6px 0 0;
+      color: #aeb8c7;
+      font-size: 0.72rem;
+      line-height: 1.45;
+    }
+
+    .rd186-unlock-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .rd186-unlock-head span {
+      color: #ffad58;
+      font-size: 0.73rem;
+      font-weight: 900;
+    }
+
+    .rd186-unlock-track {
+      height: 7px;
+      margin-top: 10px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #25303c;
+    }
+
+    .rd186-unlock-track span {
+      display: block;
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #ff7416, #ffad32);
+      transition: width 180ms ease;
+    }
+
+    .rd186-toggle-card {
+      border: 1px solid #344151;
+      border-radius: 15px;
+      background: #111820;
+      overflow: hidden;
+    }
+
+    .rd186-toggle-card .toggle-row {
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+    }
+
+    .rd186-map-toggle-row {
+      border-top: 1px solid #2b3643 !important;
+    }
+
+    .rd186-standing {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .rd186-standing article,
+    .rd186-stat-tile {
+      min-width: 0;
+      border: 1px solid #313c49;
+      border-radius: 12px;
+      background: #151d26;
+      padding: 10px;
+    }
+
+    .rd186-standing span,
+    .rd186-stat-tile span {
+      display: block;
+      color: #9ca8b8;
+      font-size: 0.61rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .rd186-standing strong,
+    .rd186-stat-tile strong {
+      display: block;
+      margin-top: 4px;
+      overflow: hidden;
+      color: #f7f9fc;
+      font-size: 1rem;
+      text-overflow: ellipsis;
+    }
+
+    .rd186-list-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .rd186-list-head div {
+      min-width: 0;
+    }
+
+    .rd186-list-head strong,
+    .rd186-list-head span {
+      display: block;
+    }
+
+    .rd186-list-head span {
+      margin-top: 2px;
+      color: #98a4b3;
+      font-size: 0.68rem;
+    }
+
+    .rd186-leader-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .rd186-leader-row {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 55px;
+      border: 1px solid #303c49;
+      border-radius: 13px;
+      background: #111820;
+      padding: 8px 10px;
+    }
+
+    .rd186-leader-row.is-me {
+      border-color: #ff8b18;
+      background: #20180f;
+    }
+
+    .rd186-rank {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: #222d39;
+      color: #dce4ed;
+      font-size: 0.75rem;
+      font-weight: 950;
+    }
+
+    .rd186-rank.podium {
+      background: #4a2d0f;
+      color: #ffc26f;
+    }
+
+    .rd186-leader-name {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: 0.78rem;
+      font-weight: 900;
+    }
+
+    .rd186-leader-name small {
+      display: block;
+      margin-top: 3px;
+      color: #8e9aaa;
+      font-size: 0.62rem;
+    }
+
+    .rd186-score {
+      text-align: right;
+    }
+
+    .rd186-score strong,
+    .rd186-score span {
+      display: block;
+    }
+
+    .rd186-score strong {
+      color: #fff;
+      font-size: 0.8rem;
+    }
+
+    .rd186-score span {
+      color: #9aa6b6;
+      font-size: 0.59rem;
+    }
+
+    .rd186-map-link {
+      grid-column: 2 / -1;
+      justify-self: start;
+      border: 0;
+      background: transparent;
+      color: #67c9ff;
+      padding: 0;
+      font: inherit;
+      font-size: 0.66rem;
+      font-weight: 850;
+      cursor: pointer;
+    }
+
+    .rd186-empty {
+      border: 1px dashed #3a4654;
+      border-radius: 13px;
+      padding: 18px 14px;
+      color: #aab4c1;
+      text-align: center;
+      font-size: 0.74rem;
+      line-height: 1.45;
+    }
+
+    .rd186-empty.error {
+      border-color: #7e3039;
+      color: #ff9ba4;
+    }
+
+    .rd186-pagination {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .rd186-pagination span {
+      color: #a9b4c2;
+      font-size: 0.68rem;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .rd186-pagination button:last-child {
+      justify-self: stretch;
+    }
+
+    .rd186-stats-section h3 {
+      margin: 0 0 10px;
+      font-size: 0.92rem;
+    }
+
+    .rd186-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .rd186-stat-grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .rd186-badges {
+      display: grid;
+      gap: 8px;
+    }
+
+    .rd186-badge-card {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+    }
+
+    .rd186-badge-mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border: 1px solid #b86a18;
+      border-radius: 50%;
+      background: #35210f;
+      color: #ffb45d;
+      font-weight: 950;
+    }
+
+    .rd186-badge-copy strong,
+    .rd186-badge-copy span {
+      display: block;
+    }
+
+    .rd186-badge-copy strong {
+      color: #f8fafc;
+      font-size: 0.78rem;
+    }
+
+    .rd186-badge-copy span {
+      margin-top: 3px;
+      color: #9da9b8;
+      font-size: 0.65rem;
+      line-height: 1.35;
+    }
+
+    @media (max-width: 520px) {
+      .rd186-mini-leaders {
+        left: calc(14px + env(safe-area-inset-left));
+        bottom: calc(112px + env(safe-area-inset-bottom));
+        font-size: 0.61rem;
+      }
+
+      .rd186-mini-leader {
+        grid-template-columns: 58px minmax(0, 1fr);
+      }
+
+      .rd186-standing,
+      .rd186-stat-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .rd186-period-tab {
+        padding-inline: 5px;
+        font-size: 0.65rem;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+/* -------------------------------------------------- */
+/* Passive leaders above the north/re-centre controls */
+/* -------------------------------------------------- */
+
+function rd186CreateMiniLeaders() {
+  if ($("rd186MiniLeaders")) return;
+
+  const leaders = document.createElement("section");
+  leaders.id = "rd186MiniLeaders";
+  leaders.className = "rd186-mini-leaders";
+  leaders.setAttribute(
+    "aria-label",
+    "Current public road leaders"
+  );
+  leaders.setAttribute("aria-live", "polite");
+
+  ($("appShell") || document.body).appendChild(leaders);
+  rd186RenderMiniLeaders();
+}
+
+function rd186MiniLeaderLine(period, label) {
+  const leader = rd186State.leaders[period];
+
+  return `
+    <div class="rd186-mini-leader">
+      <span class="rd186-mini-label">${label}</span>
+      <span class="rd186-mini-name">${rd186UsernameHtml(
+        leader?.road_username || "No public record yet"
+      )}</span>
+    </div>
+  `;
+}
+
+function rd186RenderMiniLeaders() {
+  const element = $("rd186MiniLeaders");
+  if (!element) return;
+
+  element.innerHTML =
+    rd186MiniLeaderLine("week", "This week") +
+    rd186MiniLeaderLine("month", "This month") +
+    rd186MiniLeaderLine("all_time", "All time");
+
+  rd186UpdateMiniLeaderVisibility();
+}
+
+function rd186UpdateMiniLeaderVisibility() {
+  const element = $("rd186MiniLeaders");
+  if (!element) return;
+
+  const playing = Boolean(
+    (typeof hasActiveConquestRound === "function" &&
+      hasActiveConquestRound()) ||
+    (typeof hasActiveHideSeekRound === "function" &&
+      hasActiveHideSeekRound())
+  );
+
+  element.classList.toggle("hidden", playing);
+  element.setAttribute(
+    "aria-hidden",
+    playing ? "true" : "false"
+  );
+}
+
+async function rd186LoadMiniLeaders() {
+  if (!state.auth.client || rd186State.leadersLoading) {
+    return false;
+  }
+
+  rd186State.leadersLoading = true;
+
+  try {
+    const { data, error } = await state.auth.client.rpc(
+      "rd186_get_public_road_leaders"
+    );
+
+    if (error) throw error;
+
+    const leaders = {
+      week: null,
+      month: null,
+      all_time: null
+    };
+
+    for (const row of Array.isArray(data) ? data : []) {
+      const period = String(row?.period_key || "");
+
+      if (period in leaders) {
+        leaders[period] = row;
+      }
+    }
+
+    rd186State.leaders = leaders;
+    rd186RenderMiniLeaders();
+    return true;
+  } catch (error) {
+    console.error(error);
+    return false;
+  } finally {
+    rd186State.leadersLoading = false;
+  }
+}
+
+
+/* -------------------------------------------------- */
+/* New General Menu item and My Stats panel           */
+/* -------------------------------------------------- */
+
+function rd186CreateMyStatsButton() {
+  if ($("rd186OpenMyStatsBtn")) return;
+
+  const leaderboardButton = $("rd76OpenLeaderboardBtn");
+  const settingsButton = $("rd73OpenSettingsBtn");
+  const list = settingsButton?.parentElement;
+
+  if (!list) return;
+
+  const button = document.createElement("button");
+  button.id = "rd186OpenMyStatsBtn";
+  button.className = "rd-general-menu-item";
+  button.type = "button";
+  button.innerHTML = `
+    <span class="rd-general-menu-icon trophy" aria-hidden="true">▥</span>
+    <span class="rd-general-menu-copy">
+      <strong>My Stats</strong>
+      <small id="rd186MyStatsMenuStatus">Games, roads and discoveries</small>
+    </span>
+    <span class="rd-general-menu-arrow" aria-hidden="true">›</span>
+  `;
+
+  if (
+    leaderboardButton &&
+    leaderboardButton.parentElement === list
+  ) {
+    leaderboardButton.insertAdjacentElement(
+      "afterend",
+      button
+    );
+  } else {
+    list.insertBefore(button, settingsButton);
+  }
+}
+
+function rd186CreateMyStatsPanel() {
+  if ($("rd186MyStatsPanel")) return;
+
+  const panel = document.createElement("aside");
+  panel.id = "rd186MyStatsPanel";
+  panel.className =
+    "side-panel rd186-stats-panel hidden";
+  panel.setAttribute("aria-hidden", "true");
+  panel.setAttribute("aria-label", "My Stats");
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="rd-leaderboard-heading">
+        <button
+          id="rd186MyStatsBackBtn"
+          class="panel-close-btn rd-leaderboard-back-btn"
+          type="button"
+          aria-label="Back to General Menu"
+        >‹</button>
+        <div>
+          <h2>My Stats</h2>
+          <p>Roads, competitive games and discoveries</p>
+        </div>
+      </div>
+      <button
+        id="rd186MyStatsCloseBtn"
+        class="panel-close-btn"
+        type="button"
+        aria-label="Close My Stats"
+      >×</button>
+    </div>
+    <div
+      id="rd186MyStatsContent"
+      class="panel-content"
+      aria-live="polite"
+    ></div>
+  `;
+
+  ($("appShell") || document.body).appendChild(panel);
+}
+
+function rd186CloseMyStatsOnly() {
+  const panel = $("rd186MyStatsPanel");
+  if (!panel) return;
+
+  panel.classList.add("hidden");
+  panel.setAttribute("aria-hidden", "true");
+}
+
+function rd186MyStatsMenuStatus() {
+  const element = $("rd186MyStatsMenuStatus");
+  if (!element) return;
+
+  if (!state.auth.user) {
+    element.textContent = "Sign in to view your saved records";
+    return;
+  }
+
+  const conquest = rd186State.stats?.conquest;
+
+  element.textContent = rd186State.statsLoaded
+    ? `${rd186Count(
+        conquest?.competitive_games
+      )} competitive Conquest games • View records`
+    : "Games, roads and discoveries";
+}
+
+function rd186StatTile(label, value) {
+  return `
+    <article class="rd186-stat-tile">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </article>
+  `;
+}
+
+function rd186BadgeHtml(badge) {
+  const type = String(badge?.badge_type || "");
+  const periodStart = rd186BadgeDate(badge?.period_start);
+  const periodEnd = rd186BadgeDate(badge?.period_end);
+  const period = periodStart
+    ? periodEnd && periodEnd !== periodStart
+      ? `${periodStart} – ${periodEnd}`
+      : periodStart
+    : type === "road_milestone"
+      ? "50,000 roads reached"
+      : "Permanent Road Profile badge";
+
+  return `
+    <article class="rd186-badge-card">
+      <span class="rd186-badge-mark" aria-hidden="true">★</span>
+      <div class="rd186-badge-copy">
+        <strong>${escapeHtml(badge?.title || "Road badge")}</strong>
+        <span>${escapeHtml(period)}${
+          rd186Count(badge?.road_count)
+            ? ` • ${rd76Number(
+                badge.road_count
+              )} roads`
+            : ""
+        }</span>
+      </div>
+    </article>
+  `;
+}
+
+function rd186RenderMyStats() {
+  const content = $("rd186MyStatsContent");
+  if (!content) return;
+
+  rd186MyStatsMenuStatus();
+
+  if (!state.auth.user) {
+    content.innerHTML = `
+      <div class="rd186-empty">
+        Sign in through your Road Profile to view My Stats.
+      </div>
+    `;
+    return;
+  }
+
+  if (rd186State.statsLoading && !rd186State.statsLoaded) {
+    content.innerHTML = `
+      <div class="rd186-empty">Loading your saved stats…</div>
+    `;
+    return;
+  }
+
+  if (rd186State.statsError) {
+    content.innerHTML = `
+      <div class="rd186-empty error">${escapeHtml(
+        rd186State.statsError
+      )}</div>
+      <button id="rd186StatsRetryBtn" class="wide-btn" type="button">
+        Try again
+      </button>
+    `;
+
+    $("rd186StatsRetryBtn")?.addEventListener(
+      "click",
+      () => void rd186LoadMyStats()
+    );
+    return;
+  }
+
+  const payload = rd186State.stats || {};
+  const roads = payload.roads || {};
+  const conquest = payload.conquest || {};
+  const hideSeek = payload.hide_seek || {};
+  const hidden = rd186CurrentHiddenDiscoveryStats();
+  const badges = Array.isArray(payload.badges)
+    ? payload.badges
+    : [];
+
+  const competitiveGames = rd186Count(
+    conquest.competitive_games
+  );
+  const conquestWins = rd186Count(conquest.wins);
+  const hideGames = rd186Count(hideSeek.games);
+  const hideWins = rd186Count(hideSeek.wins);
+  const solvedPercent = hidden.total
+    ? Math.round(
+        (hidden.completed / hidden.total) * 100
+      )
+    : 0;
+
+  content.innerHTML = `
+    <section class="rd186-stats-section">
+      <h3>Road discovery</h3>
+      <div class="rd186-stat-grid">
+        ${rd186StatTile(
+          "All time",
+          rd76Number(roads.all_time)
+        )}
+        ${rd186StatTile(
+          "This week",
+          rd76Number(roads.week)
+        )}
+        ${rd186StatTile(
+          "This month",
+          rd76Number(roads.month)
+        )}
+      </div>
+      <p class="rd186-stats-note">
+        Public leaderboards unlock at 30,000 synced roads. The Road
+        Pioneer badge remains a separate permanent 50,000-road milestone.
+      </p>
+    </section>
+
+    <section class="rd186-stats-section">
+      <h3>Conquest • Competitive</h3>
+      <div class="rd186-stat-grid">
+        ${rd186StatTile("Games", String(competitiveGames))}
+        ${rd186StatTile("Wins", String(conquestWins))}
+        ${rd186StatTile("Losses", String(rd186Count(conquest.losses)))}
+        ${rd186StatTile("Draws", String(rd186Count(conquest.draws)))}
+        ${rd186StatTile(
+          "Win rate",
+          rd186Percent(conquestWins, competitiveGames)
+        )}
+        ${rd186StatTile(
+          "Practice",
+          String(rd186Count(conquest.practice_games))
+        )}
+      </div>
+      <p class="rd186-stats-note">
+        Full-human and mixed human/bot rooms count here. A solo rider
+        practising against bots stays separate and does not affect the
+        competitive win rate.
+      </p>
+      <div class="rd186-stat-grid two" style="margin-top:8px">
+        ${rd186StatTile(
+          "Objectives",
+          String(rd186Count(conquest.objective_captures))
+        )}
+        ${rd186StatTile(
+          "Crates",
+          String(rd186Count(conquest.crates_collected))
+        )}
+      </div>
+    </section>
+
+    <section class="rd186-stats-section">
+      <h3>Hide &amp; Seek</h3>
+      <div class="rd186-stat-grid">
+        ${rd186StatTile("Games", String(hideGames))}
+        ${rd186StatTile("Wins", String(hideWins))}
+        ${rd186StatTile("Losses", String(rd186Count(hideSeek.losses)))}
+        ${rd186StatTile(
+          "Win rate",
+          rd186Percent(hideWins, hideGames)
+        )}
+        ${rd186StatTile(
+          "Wolf",
+          `${rd186Count(hideSeek.wolf_wins)} / ${rd186Count(
+            hideSeek.wolf_games
+          )}`
+        )}
+        ${rd186StatTile(
+          "Sheep",
+          `${rd186Count(hideSeek.sheep_wins)} / ${rd186Count(
+            hideSeek.sheep_games
+          )}`
+        )}
+      </div>
+      <p class="rd186-stats-note">
+        Wolf Pack rounds are included, with Wolf and Sheep records kept
+        separately so each role is easy to understand.
+      </p>
+    </section>
+
+    <section class="rd186-stats-section">
+      <h3>Hidden Discoveries</h3>
+      <div class="rd186-stat-grid">
+        ${rd186StatTile(
+          "Solved",
+          String(hidden.completed)
+        )}
+        ${rd186StatTile("Total", String(hidden.total))}
+        ${rd186StatTile("Solved rate", `${solvedPercent}%`)}
+      </div>
+    </section>
+
+    <section class="rd186-stats-section">
+      <h3>Permanent badges</h3>
+      <div class="rd186-badges">
+        ${
+          badges.length
+            ? badges.map(rd186BadgeHtml).join("")
+            : `<div class="rd186-empty">No permanent leaderboard badges yet.</div>`
+        }
+      </div>
+    </section>
+
+    <button id="rd186StatsRefreshBtn" class="wide-btn ghost-btn" type="button">
+      Refresh My Stats
+    </button>
+  `;
+
+  $("rd186StatsRefreshBtn")?.addEventListener(
+    "click",
+    () => void rd186LoadMyStats()
+  );
+}
+
+async function rd186LoadMyStats() {
+  if (
+    !state.auth.client ||
+    !state.auth.user ||
+    rd186State.statsLoading
+  ) {
+    rd186RenderMyStats();
+    return false;
+  }
+
+  rd186State.statsLoading = true;
+  rd186State.statsError = "";
+  rd186RenderMyStats();
+
+  try {
+    const { data, error } = await state.auth.client.rpc(
+      "rd186_get_my_stats"
+    );
+
+    if (error) throw error;
+
+    rd186State.stats = Array.isArray(data)
+      ? data[0]
+      : data;
+    rd186State.statsLoaded = true;
+    rd186State.statsError = "";
+    return true;
+  } catch (error) {
+    console.error(error);
+    rd186State.statsError = navigator.onLine
+      ? "Could not load My Stats. Try again."
+      : "My Stats are unavailable while offline.";
+    return false;
+  } finally {
+    rd186State.statsLoading = false;
+    rd186RenderMyStats();
+  }
+}
+
+function rd186OpenMyStats() {
+  openPanel("rd186MyStatsPanel");
+  rd186RenderMyStats();
+
+  if (state.auth.user) {
+    void rd186LoadMyStats();
+  }
+}
+
+function rd186BackFromMyStats() {
+  rd186CloseMyStatsOnly();
+  rd73OpenGeneralMenu();
+}
+
+
+/* -------------------------------------------------- */
+/* Rebuilt 30K public leaderboard panel               */
+/* -------------------------------------------------- */
+
+function rd186BuildLeaderboardPanel() {
+  const panel = $("rd76LeaderboardPanel");
+  if (!panel) return;
+
+  panel.classList.add("rd186-leaderboard-panel");
+  panel.innerHTML = `
+    <div class="panel-header rd-leaderboard-header">
+      <div class="rd-leaderboard-heading">
+        <button
+          id="rd76LeaderboardBackBtn"
+          class="panel-close-btn rd-leaderboard-back-btn"
+          type="button"
+          aria-label="Back to General Menu"
+        >‹</button>
+        <div>
+          <h2>Public Leaderboard</h2>
+          <p>Opt-in road-count rankings • Beta</p>
+        </div>
+      </div>
+      <button
+        id="rd76LeaderboardCloseBtn"
+        class="panel-close-btn"
+        type="button"
+        aria-label="Close Public Leaderboard"
+      >×</button>
+    </div>
+
+    <div class="panel-content">
+      <div class="rd186-period-tabs" role="tablist" aria-label="Leaderboard period">
+        <button class="rd186-period-tab" data-rd186-period="week" type="button">This week</button>
+        <button class="rd186-period-tab" data-rd186-period="month" type="button">This month</button>
+        <button class="rd186-period-tab" data-rd186-period="all_time" type="button">All time</button>
+      </div>
+      <p id="rd186PeriodCopy" class="rd186-period-copy"></p>
+
+      <section class="rd186-privacy-card">
+        <strong>Your routes and location stay private</strong>
+        <p>
+          Joining publishes only your generated Road username and road
+          count. Your email, friend code, exact roads and live location
+          remain private unless you separately enable your public map.
+        </p>
+      </section>
+
+      <section class="rd186-unlock-card">
+        <div class="rd186-unlock-head">
+          <strong id="rd186UnlockTitle">Public leaderboard unlock</strong>
+          <span id="rd186UnlockCount">0 / 30K</span>
+        </div>
+        <div class="rd186-unlock-track" aria-hidden="true">
+          <span id="rd186UnlockBar"></span>
+        </div>
+        <p id="rd186UnlockCopy">
+          Reach 30,000 synced roads, then choose whether to appear publicly.
+        </p>
+      </section>
+
+      <section class="rd186-toggle-card">
+        <label class="toggle-row" for="rd76LeaderboardToggle">
+          <div class="toggle-text">
+            <strong>Appear on Public Leaderboards</strong>
+            <span id="rd76LeaderboardToggleDescription">
+              Public participation is off by default.
+            </span>
+          </div>
+          <input id="rd76LeaderboardToggle" class="toggle-input" type="checkbox" />
+          <span class="toggle-switch" aria-hidden="true"><span class="toggle-knob"></span></span>
+        </label>
+
+        <label class="toggle-row rd186-map-toggle-row" for="rd77PublicMapToggle">
+          <div class="toggle-text">
+            <strong>Show my historical road map</strong>
+            <span id="rd77PublicMapToggleDescription">
+              Optional and separate from your leaderboard entry.
+            </span>
+          </div>
+          <input id="rd77PublicMapToggle" class="toggle-input" type="checkbox" />
+          <span class="toggle-switch" aria-hidden="true"><span class="toggle-knob"></span></span>
+        </label>
+      </section>
+
+      <div class="rd186-standing">
+        <article><span>Your position</span><strong id="rd186MyRank">—</strong></article>
+        <article><span>Period roads</span><strong id="rd186MyPeriodRoads">0</strong></article>
+        <article><span>All roads</span><strong id="rd186MyAllRoads">0</strong></article>
+      </div>
+
+      <div class="rd186-list-head">
+        <div>
+          <strong id="rd186ListTitle">This week</strong>
+          <span id="rd186ListMeta">Up to 500 Road Profiles per page</span>
+        </div>
+        <button id="rd76LeaderboardRefreshBtn" class="ghost-btn" type="button">Refresh</button>
+      </div>
+
+      <div id="rd186LeaderboardList" class="rd186-leader-list" aria-live="polite"></div>
+
+      <div class="rd186-pagination">
+        <button id="rd186PreviousPageBtn" class="ghost-btn" type="button">Previous</button>
+        <span id="rd186PageLabel">Page 1 of 1</span>
+        <button id="rd186NextPageBtn" class="ghost-btn" type="button">Next</button>
+      </div>
+
+      <p class="rd-leaderboard-sync-note">
+        Road totals use progress saved to your Road Profile. After Finish
+        Drive, allow the green progress backup to finish before refreshing.
+      </p>
+    </div>
+  `;
+}
+
+function rd186LeaderboardRow(entry) {
+  const position = rd186Count(entry?.rank_position);
+  const username = String(
+    entry?.road_username || "Road Profile"
+  );
+  const isMe = Boolean(entry?.is_me);
+  const hasMap = Boolean(entry?.has_public_map);
+
+  return `
+    <article class="rd186-leader-row${isMe ? " is-me" : ""}">
+      <span class="rd186-rank${position <= 3 ? " podium" : ""}">${position || "—"}</span>
+      <div class="rd186-leader-name">
+        ${rd186UsernameHtml(username)}
+        <small>${isMe ? "Your Road Profile" : "Road explorer"}</small>
+      </div>
+      <div class="rd186-score">
+        <strong>${rd76Number(entry?.road_count)}</strong>
+        <span>roads</span>
+      </div>
+      ${
+        hasMap
+          ? `<button class="rd186-map-link" type="button" data-rd186-map-user="${escapeHtml(username)}">View public road map</button>`
+          : ""
+      }
+    </article>
+  `;
+}
+
+function rd186RenderLeaderboardList() {
+  const list = $("rd186LeaderboardList");
+  if (!list) return;
+
+  if (rd76Leaderboard.loading && !rd76Leaderboard.loaded) {
+    list.innerHTML = `<div class="rd186-empty">Loading public rankings…</div>`;
+    return;
+  }
+
+  if (rd76Leaderboard.error) {
+    list.innerHTML = `<div class="rd186-empty error">${escapeHtml(
+      rd76Leaderboard.error
+    )}</div>`;
+    return;
+  }
+
+  if (!rd76Leaderboard.entries.length) {
+    list.innerHTML = `
+      <div class="rd186-empty">
+        No public road record exists for ${escapeHtml(
+          rd186PeriodDetails().label.toLowerCase()
+        )} yet.
+      </div>
+    `;
+    return;
+  }
+
+  list.innerHTML = rd76Leaderboard.entries
+    .map(rd186LeaderboardRow)
+    .join("");
+}
+
+function rd186RenderGeneralMenuLeaderboardStatus() {
+  const element = $("rd76GeneralMenuLeaderboardStatus");
+  if (!element) return;
+
+  if (!state.auth.user) {
+    element.textContent = "30K opt-in road rankings • Beta";
+    return;
+  }
+
+  if (!rd76Leaderboard.loaded) {
+    element.textContent = "30K opt-in road rankings • Beta";
+    return;
+  }
+
+  if (!rd76Leaderboard.eligible) {
+    element.textContent =
+      `${rd76Number(rd76Leaderboard.roadCount)} / 30K roads • Locked`;
+    return;
+  }
+
+  element.textContent = rd76Leaderboard.isPublic
+    ? "Public • Weekly, monthly and all-time rankings"
+    : "Unlocked • You are hidden";
+}
+
+function rd186RenderLeaderboard() {
+  const signedIn = Boolean(state.auth.user);
+  const busy = Boolean(
+    rd76Leaderboard.loading || rd76Leaderboard.saving
+  );
+  const eligible = Boolean(
+    signedIn && rd76Leaderboard.eligible
+  );
+  const roadCount = rd186Count(
+    rd76Leaderboard.roadCount
+  );
+  const progress = Math.min(
+    100,
+    (roadCount / RD186_LEADERBOARD_UNLOCK) * 100
+  );
+  const details = rd186PeriodDetails();
+
+  document
+    .querySelectorAll("[data-rd186-period]")
+    .forEach((button) => {
+      const active =
+        button.dataset.rd186Period === rd186State.period;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", String(active));
+      button.disabled = busy;
+    });
+
+  if ($("rd186PeriodCopy")) {
+    $("rd186PeriodCopy").textContent = details.description;
+  }
+
+  if ($("rd186UnlockTitle")) {
+    $("rd186UnlockTitle").textContent = eligible
+      ? "30K public leaderboard unlocked"
+      : "Public leaderboard unlock";
+  }
+
+  if ($("rd186UnlockCount")) {
+    $("rd186UnlockCount").textContent =
+      `${rd76Number(roadCount)} / 30K`;
+  }
+
+  if ($("rd186UnlockBar")) {
+    $("rd186UnlockBar").style.width = `${progress}%`;
+  }
+
+  if ($("rd186UnlockCopy")) {
+    $("rd186UnlockCopy").textContent = !signedIn
+      ? "Sign in to check your synced-road total."
+      : eligible
+        ? rd76Leaderboard.has50kBadge
+          ? "Public ranking is optional. Your separate 50K Road Pioneer badge is permanent."
+          : "Public ranking is optional. Road Pioneer remains a separate 50K badge."
+        : `${rd76Number(
+            rd76Leaderboard.roadsUntilUnlock
+          )} more synced roads are needed.`;
+  }
+
+  const leaderboardToggle = $("rd76LeaderboardToggle");
+  if (leaderboardToggle) {
+    leaderboardToggle.checked = Boolean(
+      eligible && rd76Leaderboard.isPublic
+    );
+    leaderboardToggle.disabled = !eligible || busy;
+  }
+
+  if ($("rd76LeaderboardToggleDescription")) {
+    $("rd76LeaderboardToggleDescription").textContent = !signedIn
+      ? "Sign in before joining."
+      : !eligible
+        ? "Unlocks at 30,000 synced roads."
+        : rd76Leaderboard.isPublic
+          ? "Your generated username and road totals are public."
+          : "Unlocked, but hidden until you opt in.";
+  }
+
+  const mapToggle = $("rd77PublicMapToggle");
+  if (mapToggle) {
+    mapToggle.checked = Boolean(
+      eligible &&
+      rd76Leaderboard.isPublic &&
+      rd76Leaderboard.publicMapVisible
+    );
+    mapToggle.disabled =
+      !eligible || !rd76Leaderboard.isPublic || busy;
+  }
+
+  if ($("rd77PublicMapToggleDescription")) {
+    $("rd77PublicMapToggleDescription").textContent =
+      !eligible
+        ? "Available after the 30K leaderboard unlock."
+        : !rd76Leaderboard.isPublic
+          ? "Join publicly before sharing a historical road map."
+          : rd76Leaderboard.publicMapVisible
+            ? "Signed-in users can open your historical road map."
+            : "Off. Your exact discovered roads remain private.";
+  }
+
+  if ($("rd186MyRank")) {
+    $("rd186MyRank").textContent = rd76Leaderboard.rank
+      ? String(rd76Leaderboard.rank)
+      : "—";
+  }
+
+  if ($("rd186MyPeriodRoads")) {
+    $("rd186MyPeriodRoads").textContent = rd76Number(
+      rd76Leaderboard.periodRoadCount
+    );
+  }
+
+  if ($("rd186MyAllRoads")) {
+    $("rd186MyAllRoads").textContent = rd76Number(
+      roadCount
+    );
+  }
+
+  if ($("rd186ListTitle")) {
+    $("rd186ListTitle").textContent = details.label;
+  }
+
+  if ($("rd186ListMeta")) {
+    $("rd186ListMeta").textContent =
+      `${rd76Number(rd186State.totalEntries)} public ` +
+      `Road Profile${rd186State.totalEntries === 1 ? "" : "s"}`;
+  }
+
+  if ($("rd76LeaderboardRefreshBtn")) {
+    $("rd76LeaderboardRefreshBtn").disabled = busy;
+    $("rd76LeaderboardRefreshBtn").textContent =
+      rd76Leaderboard.loading ? "Loading…" : "Refresh";
+  }
+
+  if ($("rd186PageLabel")) {
+    $("rd186PageLabel").textContent =
+      `Page ${rd186State.page} of ${rd186State.totalPages}`;
+  }
+
+  if ($("rd186PreviousPageBtn")) {
+    $("rd186PreviousPageBtn").disabled =
+      busy || rd186State.page <= 1;
+  }
+
+  if ($("rd186NextPageBtn")) {
+    $("rd186NextPageBtn").disabled =
+      busy || rd186State.page >= rd186State.totalPages;
+  }
+
+  rd186RenderLeaderboardList();
+  rd186RenderGeneralMenuLeaderboardStatus();
+}
+
+async function rd186LoadLeaderboard(options = {}) {
+  const { quiet = false } = options;
+
+  if (!state.auth.client) {
+    rd186RenderLeaderboard();
+    return false;
+  }
+
+  if (rd76Leaderboard.loading || rd76Leaderboard.saving) {
+    return false;
+  }
+
+  rd76Leaderboard.loading = true;
+  rd76Leaderboard.error = "";
+  rd186RenderLeaderboard();
+
+  try {
+    const leaderboardPromise = state.auth.client.rpc(
+      "rd186_get_public_road_leaderboard",
+      {
+        p_period: rd186State.period,
+        p_page: rd186State.page,
+        p_page_size: RD186_LEADERBOARD_PAGE_SIZE
+      }
+    );
+
+    const statusPromise = state.auth.user
+      ? state.auth.client.rpc(
+          "rd186_get_my_leaderboard_status",
+          { p_period: rd186State.period }
+        )
+      : Promise.resolve({ data: [], error: null });
+
+    const [statusResult, leaderboardResult] =
+      await Promise.all([
+        statusPromise,
+        leaderboardPromise
+      ]);
+
+    if (statusResult.error) throw statusResult.error;
+    if (leaderboardResult.error) throw leaderboardResult.error;
+
+    const status = Array.isArray(statusResult.data)
+      ? statusResult.data[0]
+      : statusResult.data;
+
+    const entries = Array.isArray(leaderboardResult.data)
+      ? leaderboardResult.data
+      : [];
+
+    rd76Leaderboard.entries = entries;
+    rd76Leaderboard.loaded = true;
+    rd76Leaderboard.error = "";
+
+    if (status && typeof status === "object") {
+      rd76Leaderboard.isPublic = Boolean(status.is_public);
+      rd76Leaderboard.publicMapVisible = Boolean(
+        status.public_map_visible
+      );
+      rd76Leaderboard.eligible = Boolean(status.is_eligible);
+      rd76Leaderboard.roadCount = rd186Count(status.road_count);
+      rd76Leaderboard.periodRoadCount = rd186Count(
+        status.period_road_count
+      );
+      rd76Leaderboard.roadsUntilUnlock = rd186Count(
+        status.roads_until_unlock
+      );
+      rd76Leaderboard.rank = rd76NormaliseRank(
+        status.leaderboard_rank
+      );
+      rd76Leaderboard.has50kBadge = Boolean(
+        status.has_50k_badge
+      );
+      rd186State.totalEntries = rd186Count(
+        status.public_entries
+      );
+    } else {
+      rd76Leaderboard.isPublic = false;
+      rd76Leaderboard.publicMapVisible = false;
+      rd76Leaderboard.eligible = false;
+      rd76Leaderboard.roadCount = 0;
+      rd76Leaderboard.periodRoadCount = 0;
+      rd76Leaderboard.roadsUntilUnlock =
+        RD186_LEADERBOARD_UNLOCK;
+      rd76Leaderboard.rank = null;
+      rd76Leaderboard.has50kBadge = false;
+      rd186State.totalEntries = rd186Count(
+        entries[0]?.total_entries
+      );
+    }
+
+    if (entries.length) {
+      rd186State.totalEntries = rd186Count(
+        entries[0].total_entries
+      );
+      rd186State.totalPages = Math.max(
+        1,
+        rd186Count(entries[0].total_pages)
+      );
+    } else {
+      rd186State.totalPages = Math.max(
+        1,
+        Math.ceil(
+          rd186State.totalEntries /
+            RD186_LEADERBOARD_PAGE_SIZE
+        )
+      );
+    }
+
+    if (rd186State.page > rd186State.totalPages) {
+      rd186State.page = rd186State.totalPages;
+      rd76Leaderboard.loading = false;
+      return rd186LoadLeaderboard(options);
+    }
+
+    rd76Leaderboard.page = rd186State.page;
+    rd76Leaderboard.totalPages = rd186State.totalPages;
+    rd76Leaderboard.totalEntries = rd186State.totalEntries;
+
+    if (state.auth.profile && status) {
+      state.auth.profile.show_leaderboard =
+        rd76Leaderboard.isPublic;
+      state.auth.profile.show_public_map =
+        rd76Leaderboard.publicMapVisible;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(error);
+    rd76Leaderboard.error = navigator.onLine
+      ? "Could not load the public leaderboard. Try again."
+      : "Public leaderboards are unavailable while offline.";
+
+    if (!quiet) {
+      showToast("Could not load public leaderboard");
+    }
+
+    return false;
+  } finally {
+    rd76Leaderboard.loading = false;
+    rd186RenderLeaderboard();
+  }
+}
+
+async function rd186ChangeLeaderboardVisibility(visible) {
+  if (!state.auth.client || !state.auth.user) {
+    showToast("Sign in before joining public leaderboards");
+    rd186RenderLeaderboard();
+    return;
+  }
+
+  if (visible && !rd76Leaderboard.eligible) {
+    showToast("Public leaderboards unlock at 30,000 roads");
+    rd186RenderLeaderboard();
+    return;
+  }
+
+  if (visible && !rd76Leaderboard.isPublic) {
+    const confirmed = window.confirm(
+      "Appear on Public Leaderboards?\n\n" +
+      "Only your generated Road username and road totals will appear. " +
+      "Your email, live location and exact roads remain private."
+    );
+
+    if (!confirmed) {
+      rd186RenderLeaderboard();
+      return;
+    }
+  }
+
+  const previous = rd76Leaderboard.isPublic;
+  rd76Leaderboard.saving = true;
+  rd76Leaderboard.isPublic = Boolean(visible);
+  rd186RenderLeaderboard();
+
+  try {
+    const { data, error } = await state.auth.client.rpc(
+      "rd186_set_my_leaderboard_visibility",
+      { p_visible: Boolean(visible) }
+    );
+
+    if (error) throw error;
+
+    rd76Leaderboard.isPublic = Boolean(data);
+
+    if (!rd76Leaderboard.isPublic) {
+      rd76Leaderboard.publicMapVisible = false;
+    }
+
+    showToast(
+      rd76Leaderboard.isPublic
+        ? "You joined Public Leaderboards"
+        : "You left Public Leaderboards"
+    );
+  } catch (error) {
+    console.error(error);
+    rd76Leaderboard.isPublic = previous;
+    showToast("Could not update leaderboard privacy");
+  } finally {
+    rd76Leaderboard.saving = false;
+    await rd186LoadLeaderboard({ quiet: true });
+    void rd186LoadMiniLeaders();
+  }
+}
+
+async function rd186ChangePublicMapVisibility(visible) {
+  if (
+    !state.auth.client ||
+    !state.auth.user ||
+    !rd76Leaderboard.eligible ||
+    !rd76Leaderboard.isPublic
+  ) {
+    showToast("Join the 30K public leaderboard first");
+    rd186RenderLeaderboard();
+    return;
+  }
+
+  if (visible && !rd76Leaderboard.publicMapVisible) {
+    const confirmed = window.confirm(
+      "Show your historical road map?\n\n" +
+      "Signed-in Road Discovery users will be able to open your " +
+      "painted-road map. Live tracking is never shared."
+    );
+
+    if (!confirmed) {
+      rd186RenderLeaderboard();
+      return;
+    }
+  }
+
+  const previous = rd76Leaderboard.publicMapVisible;
+  rd76Leaderboard.saving = true;
+  rd76Leaderboard.publicMapVisible = Boolean(visible);
+  rd186RenderLeaderboard();
+
+  try {
+    const { data, error } = await state.auth.client.rpc(
+      "rd186_set_my_public_map_visibility",
+      { p_visible: Boolean(visible) }
+    );
+
+    if (error) throw error;
+
+    rd76Leaderboard.publicMapVisible = Boolean(data);
+    showToast(
+      rd76Leaderboard.publicMapVisible
+        ? "Public historical road map on"
+        : "Public historical road map off"
+    );
+  } catch (error) {
+    console.error(error);
+    rd76Leaderboard.publicMapVisible = previous;
+    showToast("Could not update public map privacy");
+  } finally {
+    rd76Leaderboard.saving = false;
+    await rd186LoadLeaderboard({ quiet: true });
+  }
+}
+
+function rd186SetPeriod(period) {
+  if (!(period in RD186_PERIODS)) return;
+  if (rd186State.period === period) return;
+
+  rd186State.period = period;
+  rd186State.page = 1;
+  rd76Leaderboard.loaded = false;
+  rd186RenderLeaderboard();
+  void rd186LoadLeaderboard();
+}
+
+function rd186ChangeLeaderboardPage(delta) {
+  const next = Math.min(
+    rd186State.totalPages,
+    Math.max(1, rd186State.page + delta)
+  );
+
+  if (next === rd186State.page) return;
+
+  rd186State.page = next;
+  rd76Leaderboard.loaded = false;
+  rd186RenderLeaderboard();
+  void rd186LoadLeaderboard();
+}
+
+function rd186BindLeaderboardEvents() {
+  $("rd76OpenLeaderboardBtn")?.addEventListener(
+    "click",
+    () => {
+      window.setTimeout(
+        () => void rd186LoadLeaderboard(),
+        0
+      );
+    }
+  );
+
+  $("rd76LeaderboardBackBtn")?.addEventListener(
+    "click",
+    () => {
+      rd76CloseLeaderboardOnly();
+      rd73OpenGeneralMenu();
+    }
+  );
+
+  $("rd76LeaderboardCloseBtn")?.addEventListener(
+    "click",
+    () => closePanels()
+  );
+
+  document
+    .querySelectorAll("[data-rd186-period]")
+    .forEach((button) => {
+      button.addEventListener("click", () => {
+        rd186SetPeriod(button.dataset.rd186Period);
+      });
+    });
+
+  $("rd76LeaderboardToggle")?.addEventListener(
+    "change",
+    (event) => void rd186ChangeLeaderboardVisibility(
+      Boolean(event.currentTarget.checked)
+    )
+  );
+
+  $("rd77PublicMapToggle")?.addEventListener(
+    "change",
+    (event) => void rd186ChangePublicMapVisibility(
+      Boolean(event.currentTarget.checked)
+    )
+  );
+
+  $("rd76LeaderboardRefreshBtn")?.addEventListener(
+    "click",
+    () => void rd186LoadLeaderboard()
+  );
+
+  $("rd186PreviousPageBtn")?.addEventListener(
+    "click",
+    () => rd186ChangeLeaderboardPage(-1)
+  );
+
+  $("rd186NextPageBtn")?.addEventListener(
+    "click",
+    () => rd186ChangeLeaderboardPage(1)
+  );
+
+  $("rd186LeaderboardList")?.addEventListener(
+    "click",
+    (event) => {
+      const button = event.target.closest(
+        "[data-rd186-map-user]"
+      );
+
+      if (!button) return;
+
+      void rd77OpenPublicMap(
+        button.dataset.rd186MapUser
+      );
+    }
+  );
+}
+
+
+/* -------------------------------------------------- */
+/* Lifecycle overrides                                */
+/* -------------------------------------------------- */
+
+rd76ResetLeaderboardState = function (userId = "") {
+  const result = roadDiscoveryV186
+    .resetLeaderboardState(userId);
+
+  rd76Leaderboard.periodRoadCount = 0;
+  rd76Leaderboard.totalEntries = 0;
+  rd76Leaderboard.totalPages = 1;
+  rd76Leaderboard.page = 1;
+  rd76Leaderboard.has50kBadge = false;
+  rd186State.page = 1;
+  rd186State.totalPages = 1;
+  rd186State.totalEntries = 0;
+
+  return result;
+};
+
+rd76RenderLeaderboard = rd186RenderLeaderboard;
+rd76RenderGeneralMenuStatus =
+  rd186RenderGeneralMenuLeaderboardStatus;
+rd76LoadLeaderboard = rd186LoadLeaderboard;
+rd76ChangeLeaderboardVisibility =
+  rd186ChangeLeaderboardVisibility;
+rd77ChangePublicMapVisibility =
+  rd186ChangePublicMapVisibility;
+
+closePanels = function (hideBackdrop = true) {
+  const result = roadDiscoveryV186.closePanels(
+    hideBackdrop
+  );
+  rd186CloseMyStatsOnly();
+  return result;
+};
+
+renderAuthState = function () {
+  const result = roadDiscoveryV186.renderAuthState();
+
+  rd186State.statsLoaded = false;
+  rd186State.stats = null;
+  rd186State.statsError = "";
+  rd186MyStatsMenuStatus();
+  rd186RenderLeaderboard();
+
+  window.setTimeout(() => {
+    void rd186LoadMiniLeaders();
+  }, 0);
+
+  return result;
+};
+
+rd73RenderGeneralMenuProgress = function () {
+  const result = roadDiscoveryV186
+    .renderGeneralMenuProgress();
+
+  rd186MyStatsMenuStatus();
+  rd186RenderGeneralMenuLeaderboardStatus();
+  return result;
+};
+
+function rd186UpdateAchievementCopy() {
+  const unlock = RD68_ACHIEVEMENTS.find(
+    (achievement) =>
+      achievement.threshold ===
+      RD186_LEADERBOARD_UNLOCK
+  );
+
+  const pioneer = RD68_ACHIEVEMENTS.find(
+    (achievement) =>
+      achievement.threshold ===
+      RD186_ROAD_PIONEER_BADGE
+  );
+
+  if (unlock) {
+    unlock.reward = "Public leaderboard access";
+  }
+
+  if (pioneer) {
+    pioneer.reward = "Permanent Road Pioneer profile badge";
+  }
+}
+
+function rd186BindStatsEvents() {
+  $("rd186OpenMyStatsBtn")?.addEventListener(
+    "click",
+    rd186OpenMyStats
+  );
+  $("rd186MyStatsBackBtn")?.addEventListener(
+    "click",
+    rd186BackFromMyStats
+  );
+  $("rd186MyStatsCloseBtn")?.addEventListener(
+    "click",
+    () => closePanels()
+  );
+}
+
+function rd186InitPublicRankingsAndStats() {
+  rd186InstallStyles();
+  rd186UpdateAchievementCopy();
+  rd186CreateMiniLeaders();
+  rd186CreateMyStatsButton();
+  rd186CreateMyStatsPanel();
+  rd186BuildLeaderboardPanel();
+  rd186BindLeaderboardEvents();
+  rd186BindStatsEvents();
+  rd186RenderLeaderboard();
+  rd186RenderMyStats();
+  rd186MyStatsMenuStatus();
+
+  void rd186LoadMiniLeaders();
+
+  window.clearInterval(rd186State.refreshTimer);
+  rd186State.refreshTimer = window.setInterval(
+    () => void rd186LoadMiniLeaders(),
+    5 * 60 * 1000
+  );
+
+  window.clearInterval(rd186State.visibilityTimer);
+  rd186State.visibilityTimer = window.setInterval(
+    rd186UpdateMiniLeaderVisibility,
+    1000
+  );
+
+  window.addEventListener("online", () => {
+    void rd186LoadMiniLeaders();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      void rd186LoadMiniLeaders();
+    }
+  });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd186InitPublicRankingsAndStats,
+    { once: true }
+  );
+} else {
+  rd186InitPublicRankingsAndStats();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryPublicRankings =
+    "30k-period-leaders-and-player-stats-v186";
