@@ -62705,7 +62705,7 @@ function rd186BuildLeaderboardPanel() {
 
       <section class="rd186-unlock-card">
         <div class="rd186-unlock-head">
-          <strong id="rd186UnlockTitle">Public leaderboard unlock</strong>
+          <strong id="rd186UnlockTitle">30K public leaderboard unlocked</strong>
           <span id="rd186UnlockCount">0 / 30K</span>
         </div>
         <div class="rd186-unlock-track" aria-hidden="true">
@@ -63518,3 +63518,939 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryPublicRankings =
     "30k-period-leaders-and-player-stats-v186";
+
+
+/* ================================================== */
+/* Road Discovery AU v187 All-Time Leaderboard       */
+/* Compact top 10 sidebar + separate 500-player page */
+/* ================================================== */
+
+const RD187_SIDEBAR_LIMIT = 10;
+
+const rd187State = {
+  fullOpen: false,
+  settingsOpen: false,
+  topEntries: []
+};
+
+const roadDiscoveryV187 = {
+  renderLeaderboard: rd186RenderLeaderboard,
+  loadLeaderboard: rd186LoadLeaderboard,
+  closePanels
+};
+
+
+function rd187InstallStyles() {
+  if ($("rd187Styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd187Styles";
+  style.textContent = `
+    .rd187-sidebar-content {
+      display: grid;
+      gap: 11px;
+    }
+
+    .rd187-all-time-bar,
+    .rd187-top-ten-head,
+    .rd187-full-list-head,
+    .rd187-settings-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .rd187-all-time-bar h3,
+    .rd187-top-ten-head h3,
+    .rd187-full-list-head h2,
+    .rd187-settings-head h3 {
+      margin: 0;
+      color: #f7f9fc;
+    }
+
+    .rd187-all-time-bar h3 {
+      font-size: 1rem;
+    }
+
+    .rd187-settings-button,
+    .rd187-settings-close {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      flex: 0 0 34px;
+      border: 1px solid #344151;
+      border-radius: 10px;
+      background: #151d26;
+      color: #e8edf4;
+      font: inherit;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    .rd187-settings-button[aria-expanded="true"] {
+      border-color: #ff8b18;
+      background: #38220f;
+      color: #ffbc70;
+    }
+
+    .rd187-top-ten-head h3 {
+      font-size: 0.9rem;
+    }
+
+    .rd187-top-ten-head span,
+    .rd187-full-list-head p {
+      margin: 2px 0 0;
+      color: #98a4b3;
+      font-size: 0.67rem;
+    }
+
+    .rd187-sidebar-list {
+      display: grid;
+      gap: 5px;
+    }
+
+    .rd187-sidebar-row {
+      display: grid;
+      grid-template-columns: 27px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      border: 1px solid #2f3a47;
+      border-radius: 11px;
+      background: #111820;
+      padding: 6px 9px;
+    }
+
+    .rd187-sidebar-row.is-me {
+      border-color: #ff8b18;
+      background: #20180f;
+    }
+
+    .rd187-compact-rank {
+      display: grid;
+      place-items: center;
+      width: 25px;
+      height: 25px;
+      border-radius: 8px;
+      background: #222d39;
+      color: #dce4ed;
+      font-size: 0.68rem;
+      font-weight: 950;
+    }
+
+    .rd187-compact-rank.podium {
+      background: #4a2d0f;
+      color: #ffc26f;
+    }
+
+    .rd187-compact-name {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: 0.72rem;
+      font-weight: 900;
+    }
+
+    .rd187-compact-score {
+      color: #f8fafc;
+      font-size: 0.72rem;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .rd187-view-full-button {
+      width: 100%;
+      min-height: 46px;
+    }
+
+    .rd187-sidebar-note {
+      margin: 0;
+      color: #8f9baa;
+      font-size: 0.66rem;
+      line-height: 1.4;
+      text-align: center;
+    }
+
+    .rd187-privacy-bottom {
+      margin-top: 1px;
+    }
+
+    .rd187-settings-sheet {
+      position: absolute;
+      z-index: 30;
+      inset: 76px 0 0;
+      overflow-y: auto;
+      display: grid;
+      align-content: start;
+      gap: 12px;
+      padding: 15px;
+      padding-bottom: calc(22px + env(safe-area-inset-bottom));
+      border-top: 1px solid #2d3946;
+      background: #090e14;
+    }
+
+    .rd187-settings-sheet.hidden {
+      display: none !important;
+    }
+
+    .rd187-settings-head p {
+      margin: 3px 0 0;
+      color: #96a3b2;
+      font-size: 0.68rem;
+    }
+
+    body.rd187-full-leaderboard-open {
+      overflow: hidden;
+    }
+
+    .rd187-full-page {
+      position: fixed;
+      z-index: 9500;
+      inset: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      background:
+        radial-gradient(circle at top, rgba(255, 139, 24, 0.08), transparent 32%),
+        #070b10;
+      color: #f7f9fc;
+    }
+
+    .rd187-full-page.hidden {
+      display: none !important;
+    }
+
+    .rd187-full-shell {
+      width: min(1120px, calc(100% - 28px));
+      margin: 0 auto;
+      padding:
+        calc(16px + env(safe-area-inset-top))
+        0
+        calc(26px + env(safe-area-inset-bottom));
+    }
+
+    .rd187-full-header {
+      position: sticky;
+      z-index: 5;
+      top: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+      padding: 10px 0 12px;
+      border-bottom: 1px solid #2d3946;
+      background: rgba(7, 11, 16, 0.96);
+      backdrop-filter: blur(14px);
+    }
+
+    .rd187-full-title {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .rd187-full-title h1 {
+      margin: 0;
+      color: #f7f9fc;
+      font-size: clamp(1.15rem, 3vw, 1.55rem);
+    }
+
+    .rd187-full-title p {
+      margin: 3px 0 0;
+      color: #9ba7b6;
+      font-size: 0.72rem;
+    }
+
+    .rd187-full-header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .rd187-full-list-head {
+      margin-bottom: 10px;
+      padding: 12px 14px;
+      border: 1px solid #303c49;
+      border-radius: 14px;
+      background: #101720;
+    }
+
+    .rd187-full-list-head h2 {
+      font-size: 1rem;
+    }
+
+    .rd187-full-list {
+      display: grid;
+      gap: 5px;
+    }
+
+    .rd187-full-row {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 12px;
+      min-height: 48px;
+      border: 1px solid #2c3743;
+      border-radius: 11px;
+      background: #0f161e;
+      padding: 7px 11px;
+    }
+
+    .rd187-full-row.is-me {
+      border-color: #ff8b18;
+      background: #20180f;
+    }
+
+    .rd187-full-row .rd187-compact-name {
+      font-size: 0.79rem;
+    }
+
+    .rd187-full-map-button {
+      border: 0;
+      background: transparent;
+      color: #66c8ff;
+      padding: 5px;
+      font: inherit;
+      font-size: 0.66rem;
+      font-weight: 850;
+      cursor: pointer;
+    }
+
+    .rd187-full-pagination {
+      margin: 14px 0;
+    }
+
+    @media (max-width: 650px) {
+      .rd187-full-shell {
+        width: min(100% - 18px, 1120px);
+      }
+
+      .rd187-full-header {
+        gap: 8px;
+      }
+
+      .rd187-full-header-actions button:not(.panel-close-btn) {
+        display: none;
+      }
+
+      .rd187-full-row {
+        grid-template-columns: 32px minmax(0, 1fr) auto;
+        gap: 8px;
+      }
+
+      .rd187-full-map-button {
+        grid-column: 2 / -1;
+        justify-self: start;
+        padding: 0 0 3px;
+      }
+
+      .rd187-full-row .rd187-compact-rank {
+        width: 28px;
+        height: 28px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+rd186BuildLeaderboardPanel = function () {
+  const panel = $("rd76LeaderboardPanel");
+  if (!panel) return;
+
+  panel.classList.add(
+    "rd186-leaderboard-panel",
+    "rd187-leaderboard-panel"
+  );
+
+  panel.innerHTML = `
+    <div class="panel-header rd-leaderboard-header">
+      <div class="rd-leaderboard-heading">
+        <button
+          id="rd76LeaderboardBackBtn"
+          class="panel-close-btn rd-leaderboard-back-btn"
+          type="button"
+          aria-label="Back to General Menu"
+        >‹</button>
+        <div>
+          <h2>Public Leaderboard</h2>
+          <p>All-time opt-in road rankings • Beta</p>
+        </div>
+      </div>
+      <button
+        id="rd76LeaderboardCloseBtn"
+        class="panel-close-btn"
+        type="button"
+        aria-label="Close Public Leaderboard"
+      >×</button>
+    </div>
+
+    <div class="panel-content rd187-sidebar-content">
+      <div class="rd187-all-time-bar">
+        <h3>All Time</h3>
+        <button
+          id="rd187LeaderboardSettingsBtn"
+          class="rd187-settings-button"
+          type="button"
+          aria-label="Leaderboard settings"
+          aria-expanded="false"
+        >⚙</button>
+      </div>
+
+      <div class="rd186-standing">
+        <article><span>Your position</span><strong id="rd186MyRank">—</strong></article>
+        <article><span>Period roads</span><strong id="rd186MyPeriodRoads">0</strong></article>
+        <article><span>All roads</span><strong id="rd186MyAllRoads">0</strong></article>
+      </div>
+
+      <div class="rd187-top-ten-head">
+        <div>
+          <h3>Top 10</h3>
+          <span id="rd187TopTenMeta">All-time Road Profiles</span>
+        </div>
+        <button id="rd76LeaderboardRefreshBtn" class="ghost-btn" type="button">Refresh</button>
+      </div>
+
+      <div id="rd186LeaderboardList" class="rd187-sidebar-list" aria-live="polite"></div>
+
+      <button id="rd187ViewFullLeaderboardBtn" class="wide-btn rd187-view-full-button" type="button">
+        View full leaderboard
+      </button>
+
+      <p class="rd187-sidebar-note">
+        Road totals use progress saved to your Road Profile. After Finish
+        Drive, allow the green progress backup to finish before refreshing.
+      </p>
+
+      <section class="rd186-privacy-card rd187-privacy-bottom">
+        <strong>Your routes and location stay private</strong>
+        <p>
+          Joining publishes only your generated Road username and road
+          count. Your email, friend code, exact roads and live location
+          remain private unless you separately enable your public map.
+        </p>
+      </section>
+    </div>
+
+    <section id="rd187LeaderboardSettingsSheet" class="rd187-settings-sheet hidden" aria-hidden="true">
+      <div class="rd187-settings-head">
+        <div>
+          <h3>Leaderboard settings</h3>
+          <p>Public ranking and historical-map controls</p>
+        </div>
+        <button id="rd187LeaderboardSettingsCloseBtn" class="rd187-settings-close" type="button" aria-label="Close leaderboard settings">×</button>
+      </div>
+
+      <section class="rd186-unlock-card">
+        <div class="rd186-unlock-head">
+          <strong id="rd186UnlockTitle">30K public leaderboard unlocked</strong>
+          <span id="rd186UnlockCount">0 / 30K</span>
+        </div>
+        <div class="rd186-unlock-track" aria-hidden="true">
+          <span id="rd186UnlockBar"></span>
+        </div>
+        <p id="rd186UnlockCopy">
+          Public ranking is optional. Road Pioneer remains a separate 50K badge.
+        </p>
+      </section>
+
+      <section class="rd186-toggle-card">
+        <label class="toggle-row" for="rd76LeaderboardToggle">
+          <div class="toggle-text">
+            <strong>Appear on Public Leaderboards</strong>
+            <span id="rd76LeaderboardToggleDescription">
+              Your generated username and road totals are public.
+            </span>
+          </div>
+          <input id="rd76LeaderboardToggle" class="toggle-input" type="checkbox" />
+          <span class="toggle-switch" aria-hidden="true"><span class="toggle-knob"></span></span>
+        </label>
+
+        <label class="toggle-row rd186-map-toggle-row" for="rd77PublicMapToggle">
+          <div class="toggle-text">
+            <strong>Show my historical road map</strong>
+            <span id="rd77PublicMapToggleDescription">
+              Optional and separate from your leaderboard entry.
+            </span>
+          </div>
+          <input id="rd77PublicMapToggle" class="toggle-input" type="checkbox" />
+          <span class="toggle-switch" aria-hidden="true"><span class="toggle-knob"></span></span>
+        </label>
+      </section>
+    </section>
+  `;
+};
+
+
+function rd187CreateFullLeaderboardPage() {
+  if ($("rd187FullLeaderboardPage")) return;
+
+  const page = document.createElement("section");
+  page.id = "rd187FullLeaderboardPage";
+  page.className = "rd187-full-page hidden";
+  page.setAttribute("aria-hidden", "true");
+  page.setAttribute("aria-label", "Full public leaderboard");
+  page.innerHTML = `
+    <div class="rd187-full-shell">
+      <header class="rd187-full-header">
+        <div class="rd187-full-title">
+          <button id="rd187FullLeaderboardBackBtn" class="panel-close-btn" type="button" aria-label="Back to leaderboard summary">‹</button>
+          <div>
+            <h1>Public Leaderboard</h1>
+            <p>All Time • Up to 500 Road Profiles per page</p>
+          </div>
+        </div>
+        <div class="rd187-full-header-actions">
+          <button id="rd187FullLeaderboardRefreshBtn" class="ghost-btn" type="button">Refresh</button>
+          <button id="rd187FullLeaderboardCloseBtn" class="panel-close-btn" type="button" aria-label="Close full leaderboard">×</button>
+        </div>
+      </header>
+
+      <div class="rd187-full-list-head">
+        <div>
+          <h2>All Time</h2>
+          <p id="rd187FullLeaderboardMeta">Loading public Road Profiles…</p>
+        </div>
+        <span id="rd187FullPageTopLabel">Page 1 of 1</span>
+      </div>
+
+      <div class="rd186-pagination rd187-full-pagination">
+        <button id="rd186PreviousPageBtn" class="ghost-btn" type="button">Previous</button>
+        <span id="rd186PageLabel">Page 1 of 1</span>
+        <button id="rd186NextPageBtn" class="ghost-btn" type="button">Next</button>
+      </div>
+
+      <div id="rd187FullLeaderboardList" class="rd187-full-list" aria-live="polite"></div>
+
+      <div class="rd186-pagination rd187-full-pagination">
+        <button id="rd187FullPreviousBottomBtn" class="ghost-btn" type="button">Previous</button>
+        <span id="rd187FullPageBottomLabel">Page 1 of 1</span>
+        <button id="rd187FullNextBottomBtn" class="ghost-btn" type="button">Next</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(page);
+}
+
+
+function rd187CompactRow(entry, full = false) {
+  const position = rd186Count(entry?.rank_position);
+  const username = String(entry?.road_username || "Road Profile");
+  const isMe = Boolean(entry?.is_me);
+  const hasMap = Boolean(entry?.has_public_map);
+
+  if (!full) {
+    return `
+      <article class="rd187-sidebar-row${isMe ? " is-me" : ""}">
+        <span class="rd187-compact-rank${position <= 3 ? " podium" : ""}">${position || "—"}</span>
+        <div class="rd187-compact-name">${rd186UsernameHtml(username)}</div>
+        <strong class="rd187-compact-score">${rd76Number(entry?.road_count)}</strong>
+      </article>
+    `;
+  }
+
+  return `
+    <article class="rd187-full-row${isMe ? " is-me" : ""}">
+      <span class="rd187-compact-rank${position <= 3 ? " podium" : ""}">${position || "—"}</span>
+      <div class="rd187-compact-name">${rd186UsernameHtml(username)}</div>
+      <strong class="rd187-compact-score">${rd76Number(entry?.road_count)} roads</strong>
+      ${
+        hasMap
+          ? `<button class="rd187-full-map-button" type="button" data-rd186-map-user="${escapeHtml(username)}">View road map</button>`
+          : ""
+      }
+    </article>
+  `;
+}
+
+
+function rd187ListMessage(message, error = false) {
+  return `<div class="rd186-empty${error ? " error" : ""}">${escapeHtml(message)}</div>`;
+}
+
+
+rd186RenderLeaderboardList = function () {
+  const sidebar = $("rd186LeaderboardList");
+  const fullList = $("rd187FullLeaderboardList");
+
+  if (rd76Leaderboard.loading && !rd76Leaderboard.loaded) {
+    if (sidebar) sidebar.innerHTML = rd187ListMessage("Loading top 10…");
+    if (fullList && rd187State.fullOpen) {
+      fullList.innerHTML = rd187ListMessage("Loading up to 500 Road Profiles…");
+    }
+    return;
+  }
+
+  if (rd76Leaderboard.error) {
+    const message = rd187ListMessage(rd76Leaderboard.error, true);
+    if (sidebar) sidebar.innerHTML = message;
+    if (fullList && rd187State.fullOpen) fullList.innerHTML = message;
+    return;
+  }
+
+  const topEntries = rd187State.topEntries.length
+    ? rd187State.topEntries
+    : rd76Leaderboard.entries.slice(0, RD187_SIDEBAR_LIMIT);
+
+  if (sidebar) {
+    sidebar.innerHTML = topEntries.length
+      ? topEntries.map((entry) => rd187CompactRow(entry)).join("")
+      : rd187ListMessage("No public all-time road records yet.");
+  }
+
+  if (fullList && rd187State.fullOpen) {
+    fullList.innerHTML = rd76Leaderboard.entries.length
+      ? rd76Leaderboard.entries
+          .map((entry) => rd187CompactRow(entry, true))
+          .join("")
+      : rd187ListMessage("No public all-time road records yet.");
+  }
+};
+
+
+function rd187RenderGeneralMenuLeaderboardStatus() {
+  const element = $("rd76GeneralMenuLeaderboardStatus");
+  if (!element) return;
+
+  if (!state.auth.user || !rd76Leaderboard.loaded) {
+    element.textContent = "30K opt-in all-time road rankings • Beta";
+    return;
+  }
+
+  if (!rd76Leaderboard.eligible) {
+    element.textContent =
+      `${rd76Number(rd76Leaderboard.roadCount)} / 30K roads • Locked`;
+    return;
+  }
+
+  element.textContent = rd76Leaderboard.isPublic
+    ? "Public • All-time road ranking"
+    : "Unlocked • You are hidden";
+}
+
+
+rd186RenderGeneralMenuLeaderboardStatus =
+  rd187RenderGeneralMenuLeaderboardStatus;
+rd76RenderGeneralMenuStatus =
+  rd187RenderGeneralMenuLeaderboardStatus;
+
+
+rd186RenderMiniLeaders = function () {
+  const element = $("rd186MiniLeaders");
+  if (!element) return;
+
+  element.innerHTML = rd186MiniLeaderLine(
+    "all_time",
+    "All time"
+  );
+
+  rd186UpdateMiniLeaderVisibility();
+};
+
+
+rd186RenderLeaderboard = function () {
+  rd186State.period = "all_time";
+  roadDiscoveryV187.renderLeaderboard();
+
+  const settingsButton = $("rd187LeaderboardSettingsBtn");
+  const settingsSheet = $("rd187LeaderboardSettingsSheet");
+  const busy = Boolean(
+    rd76Leaderboard.loading || rd76Leaderboard.saving
+  );
+
+  settingsButton?.setAttribute(
+    "aria-expanded",
+    String(rd187State.settingsOpen)
+  );
+
+  settingsSheet?.classList.toggle(
+    "hidden",
+    !rd187State.settingsOpen
+  );
+  settingsSheet?.setAttribute(
+    "aria-hidden",
+    rd187State.settingsOpen ? "false" : "true"
+  );
+
+  if ($("rd187TopTenMeta")) {
+    $("rd187TopTenMeta").textContent =
+      `Top 10 of ${rd76Number(rd186State.totalEntries)} public profiles`;
+  }
+
+  if ($("rd187FullLeaderboardMeta")) {
+    $("rd187FullLeaderboardMeta").textContent =
+      `${rd76Number(rd186State.totalEntries)} public Road ` +
+      `Profile${rd186State.totalEntries === 1 ? "" : "s"} • 500 per page`;
+  }
+
+  const pageText =
+    `Page ${rd186State.page} of ${rd186State.totalPages}`;
+
+  if ($("rd187FullPageTopLabel")) {
+    $("rd187FullPageTopLabel").textContent = pageText;
+  }
+
+  if ($("rd187FullPageBottomLabel")) {
+    $("rd187FullPageBottomLabel").textContent = pageText;
+  }
+
+  if ($("rd187FullLeaderboardRefreshBtn")) {
+    $("rd187FullLeaderboardRefreshBtn").disabled = busy;
+    $("rd187FullLeaderboardRefreshBtn").textContent =
+      rd76Leaderboard.loading ? "Loading…" : "Refresh";
+  }
+
+  if ($("rd187FullPreviousBottomBtn")) {
+    $("rd187FullPreviousBottomBtn").disabled =
+      busy || rd186State.page <= 1;
+  }
+
+  if ($("rd187FullNextBottomBtn")) {
+    $("rd187FullNextBottomBtn").disabled =
+      busy || rd186State.page >= rd186State.totalPages;
+  }
+
+  rd187RenderGeneralMenuLeaderboardStatus();
+};
+
+
+rd186LoadLeaderboard = async function (options = {}) {
+  rd186State.period = "all_time";
+
+  if (!rd187State.fullOpen) {
+    rd186State.page = 1;
+  }
+
+  const result = await roadDiscoveryV187.loadLeaderboard(options);
+
+  if (rd186State.page === 1 && rd76Leaderboard.loaded) {
+    rd187State.topEntries = rd76Leaderboard.entries
+      .slice(0, RD187_SIDEBAR_LIMIT);
+  }
+
+  rd186RenderLeaderboard();
+  return result;
+};
+
+
+rd76RenderLeaderboard = rd186RenderLeaderboard;
+rd76LoadLeaderboard = rd186LoadLeaderboard;
+
+
+function rd187ToggleSettings(force) {
+  rd187State.settingsOpen =
+    typeof force === "boolean"
+      ? force
+      : !rd187State.settingsOpen;
+
+  rd186RenderLeaderboard();
+}
+
+
+function rd187SetFullPageVisible(visible) {
+  const page = $("rd187FullLeaderboardPage");
+  rd187State.fullOpen = Boolean(visible);
+
+  page?.classList.toggle("hidden", !visible);
+  page?.setAttribute(
+    "aria-hidden",
+    visible ? "false" : "true"
+  );
+  document.body.classList.toggle(
+    "rd187-full-leaderboard-open",
+    Boolean(visible)
+  );
+}
+
+
+function rd187OpenFullLeaderboard() {
+  rd187State.settingsOpen = false;
+  rd187State.fullOpen = true;
+  rd186State.period = "all_time";
+  rd186State.page = 1;
+  rd76Leaderboard.loaded = false;
+
+  rd76CloseLeaderboardOnly();
+  rd187SetFullPageVisible(true);
+  rd186RenderLeaderboard();
+  void rd186LoadLeaderboard();
+}
+
+
+function rd187BackToLeaderboardSummary() {
+  rd187SetFullPageVisible(false);
+  rd186State.page = 1;
+  rd76Leaderboard.loaded = false;
+  rd76OpenLeaderboard();
+}
+
+
+function rd187CloseFullLeaderboard() {
+  rd187SetFullPageVisible(false);
+  rd187State.settingsOpen = false;
+  rd186State.page = 1;
+  roadDiscoveryV187.closePanels();
+}
+
+
+closePanels = function (hideBackdrop = true) {
+  rd187SetFullPageVisible(false);
+  rd187State.settingsOpen = false;
+  return roadDiscoveryV187.closePanels(hideBackdrop);
+};
+
+
+function rd187OpenPublicRoadMap(username) {
+  rd187SetFullPageVisible(false);
+  void rd77OpenPublicMap(username);
+}
+
+
+function rd187BindLeaderboardEvents() {
+  $("rd76OpenLeaderboardBtn")?.addEventListener(
+    "click",
+    () => {
+      rd187State.fullOpen = false;
+      rd187State.settingsOpen = false;
+      rd186State.period = "all_time";
+      rd186State.page = 1;
+    }
+  );
+
+  $("rd76LeaderboardBackBtn")?.addEventListener(
+    "click",
+    () => {
+      rd76CloseLeaderboardOnly();
+      rd73OpenGeneralMenu();
+    }
+  );
+
+  $("rd76LeaderboardCloseBtn")?.addEventListener(
+    "click",
+    () => closePanels()
+  );
+
+  $("rd187LeaderboardSettingsBtn")?.addEventListener(
+    "click",
+    () => rd187ToggleSettings()
+  );
+
+  $("rd187LeaderboardSettingsCloseBtn")?.addEventListener(
+    "click",
+    () => rd187ToggleSettings(false)
+  );
+
+  $("rd76LeaderboardToggle")?.addEventListener(
+    "change",
+    (event) => void rd186ChangeLeaderboardVisibility(
+      Boolean(event.currentTarget.checked)
+    )
+  );
+
+  $("rd77PublicMapToggle")?.addEventListener(
+    "change",
+    (event) => void rd186ChangePublicMapVisibility(
+      Boolean(event.currentTarget.checked)
+    )
+  );
+
+  $("rd76LeaderboardRefreshBtn")?.addEventListener(
+    "click",
+    () => void rd186LoadLeaderboard()
+  );
+
+  $("rd187ViewFullLeaderboardBtn")?.addEventListener(
+    "click",
+    rd187OpenFullLeaderboard
+  );
+
+  $("rd187FullLeaderboardBackBtn")?.addEventListener(
+    "click",
+    rd187BackToLeaderboardSummary
+  );
+
+  $("rd187FullLeaderboardCloseBtn")?.addEventListener(
+    "click",
+    rd187CloseFullLeaderboard
+  );
+
+  $("rd187FullLeaderboardRefreshBtn")?.addEventListener(
+    "click",
+    () => void rd186LoadLeaderboard()
+  );
+
+  $("rd186PreviousPageBtn")?.addEventListener(
+    "click",
+    () => rd186ChangeLeaderboardPage(-1)
+  );
+
+  $("rd186NextPageBtn")?.addEventListener(
+    "click",
+    () => rd186ChangeLeaderboardPage(1)
+  );
+
+  $("rd187FullPreviousBottomBtn")?.addEventListener(
+    "click",
+    () => rd186ChangeLeaderboardPage(-1)
+  );
+
+  $("rd187FullNextBottomBtn")?.addEventListener(
+    "click",
+    () => rd186ChangeLeaderboardPage(1)
+  );
+
+  $("rd187FullLeaderboardList")?.addEventListener(
+    "click",
+    (event) => {
+      const button = event.target.closest(
+        "[data-rd186-map-user]"
+      );
+
+      if (!button) return;
+      rd187OpenPublicRoadMap(button.dataset.rd186MapUser);
+    }
+  );
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+
+    if (rd187State.settingsOpen) {
+      rd187ToggleSettings(false);
+    } else if (rd187State.fullOpen) {
+      rd187BackToLeaderboardSummary();
+    }
+  });
+}
+
+
+function rd187InitAllTimeLeaderboard() {
+  rd187InstallStyles();
+  rd186State.period = "all_time";
+  rd186State.page = 1;
+  rd186BuildLeaderboardPanel();
+  rd187CreateFullLeaderboardPage();
+  rd187BindLeaderboardEvents();
+  rd186RenderMiniLeaders();
+  rd186RenderLeaderboard();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd187InitAllTimeLeaderboard,
+    { once: true }
+  );
+} else {
+  rd187InitAllTimeLeaderboard();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryPublicLeaderboardLayout =
+    "all-time-top-10-and-full-500-v187";
