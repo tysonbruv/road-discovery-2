@@ -62500,8 +62500,9 @@ function rd186RenderMyStats() {
         )}
       </div>
       <p class="rd186-stats-note">
-        Public leaderboards unlock at 30,000 synced roads. The Road
-        Pioneer badge remains a separate permanent 50,000-road milestone.
+        Weekly and monthly public leaderboards are available from the
+        start. All Time unlocks at 30,000 synced roads. The Road Pioneer
+        badge remains a separate permanent 50,000-road milestone.
       </p>
     </section>
 
@@ -63444,7 +63445,7 @@ function rd186UpdateAchievementCopy() {
   );
 
   if (unlock) {
-    unlock.reward = "Public leaderboard access";
+    unlock.reward = "All-Time public leaderboard access";
   }
 
   if (pioneer) {
@@ -64772,3 +64773,1370 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryMiniLeaderLayout =
     "above-lower-left-controls-v189";
+
+
+/* ================================================== */
+/* Road Discovery AU v190 flexible public rankings   */
+/* Weekly/monthly from day one; 30K gates All Time   */
+/* ================================================== */
+
+const RD190_PERIOD_SEQUENCE = Object.freeze([
+  "all_time",
+  "month",
+  "week"
+]);
+
+const RD190_PERIOD_LABELS = Object.freeze({
+  all_time: "All Time",
+  month: "Monthly",
+  week: "Weekly"
+});
+
+const RD190_WEEKLY_DISTANCE_KEY =
+  "roadDiscoveryWeeklyDrivenDistanceV190";
+
+Object.assign(rd76Leaderboard, {
+  weeklyPublic: false,
+  monthlyPublic: false,
+  allTimePublic: false,
+  allTimeEligible: false
+});
+
+Object.assign(rd187State, {
+  privacyOpen: false
+});
+
+const roadDiscoveryV190 = {
+  onGpsPosition,
+  renderAllStats,
+  resetLeaderboardState: rd76ResetLeaderboardState,
+  closePanels,
+  loadMiniLeaders: rd186LoadMiniLeaders
+};
+
+
+/* -------------------------------------------------- */
+/* Weekly driven kilometres                           */
+/* -------------------------------------------------- */
+
+function rd190SydneyWeekKey(timestamp = Date.now()) {
+  const parts = new Intl.DateTimeFormat(
+    "en-AU",
+    {
+      timeZone: "Australia/Sydney",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }
+  ).formatToParts(new Date(timestamp));
+
+  const values = {};
+
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      values[part.type] = Number(part.value);
+    }
+  }
+
+  const sydneyDate = new Date(Date.UTC(
+    values.year,
+    values.month - 1,
+    values.day
+  ));
+  const daysSinceMonday =
+    (sydneyDate.getUTCDay() + 6) % 7;
+
+  sydneyDate.setUTCDate(
+    sydneyDate.getUTCDate() - daysSinceMonday
+  );
+
+  return sydneyDate.toISOString().slice(0, 10);
+}
+
+function rd190ReadWeeklyDistance() {
+  const weekStart = rd190SydneyWeekKey();
+  const stored = readJson(
+    RD190_WEEKLY_DISTANCE_KEY,
+    null
+  );
+
+  if (
+    !stored ||
+    stored.weekStart !== weekStart ||
+    !Number.isFinite(Number(stored.meters))
+  ) {
+    const fresh = {
+      weekStart,
+      meters: 0,
+      updatedAt: new Date().toISOString()
+    };
+
+    writeJson(RD190_WEEKLY_DISTANCE_KEY, fresh);
+    return fresh;
+  }
+
+  return {
+    weekStart,
+    meters: Math.max(0, Number(stored.meters) || 0),
+    updatedAt: stored.updatedAt || null
+  };
+}
+
+function rd190AddWeeklyDrivenMeters(value) {
+  const meters = Number(value);
+
+  if (!Number.isFinite(meters) || meters <= 0) {
+    return;
+  }
+
+  const weekly = rd190ReadWeeklyDistance();
+  weekly.meters += meters;
+  weekly.updatedAt = new Date().toISOString();
+  writeJson(RD190_WEEKLY_DISTANCE_KEY, weekly);
+}
+
+function rd190RenderWeeklyDistance() {
+  const stat = els.todayStat || $("todayStat");
+  if (!stat) return;
+
+  const label = stat
+    .closest?.(".stat-card")
+    ?.querySelector?.(".stat-label");
+
+  if (label) label.textContent = "Weekly";
+
+  stat.textContent =
+    `${(rd190ReadWeeklyDistance().meters / 1000).toFixed(2)} km`;
+}
+
+onGpsPosition = function (position) {
+  const before = Number(state.tripDistanceM) || 0;
+  const result = roadDiscoveryV190.onGpsPosition(position);
+  const after = Number(state.tripDistanceM) || 0;
+  const added = after - before;
+
+  if (state.isRecording && added > 0 && added < 150) {
+    rd190AddWeeklyDrivenMeters(added);
+    rd190RenderWeeklyDistance();
+  }
+
+  return result;
+};
+
+renderAllStats = function () {
+  const result = roadDiscoveryV190.renderAllStats();
+  rd190RenderWeeklyDistance();
+  return result;
+};
+
+
+/* -------------------------------------------------- */
+/* Leaderboard presentation                           */
+/* -------------------------------------------------- */
+
+function rd190PeriodLabel(period = rd186State.period) {
+  return RD190_PERIOD_LABELS[period] || "All Time";
+}
+
+function rd190PeriodPublic(period = rd186State.period) {
+  if (period === "week") {
+    return Boolean(rd76Leaderboard.weeklyPublic);
+  }
+
+  if (period === "month") {
+    return Boolean(rd76Leaderboard.monthlyPublic);
+  }
+
+  return Boolean(rd76Leaderboard.allTimePublic);
+}
+
+function rd190SetPeriodPublic(period, visible) {
+  if (period === "week") {
+    rd76Leaderboard.weeklyPublic = Boolean(visible);
+  } else if (period === "month") {
+    rd76Leaderboard.monthlyPublic = Boolean(visible);
+  } else {
+    rd76Leaderboard.allTimePublic = Boolean(visible);
+  }
+
+  if (period === rd186State.period) {
+    rd76Leaderboard.isPublic = Boolean(visible);
+  }
+}
+
+function rd190InstallStyles() {
+  if ($("rd190Styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd190Styles";
+  style.textContent = `
+    .rd190-period-bar {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 38px;
+      padding: 0 45px;
+    }
+
+    .rd190-period-switcher {
+      display: grid;
+      grid-template-columns: 34px minmax(92px, auto) 34px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .rd190-period-switcher h3 {
+      margin: 0;
+      color: #f7f9fc;
+      font-size: 1rem;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .rd190-period-arrow,
+    .rd190-privacy-button {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border: 1px solid #344151;
+      border-radius: 10px;
+      background: #151d26;
+      color: #e8edf4;
+      padding: 0;
+      font: inherit;
+      font-size: 1.15rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd190-period-arrow:disabled {
+      cursor: wait;
+      opacity: 0.5;
+    }
+
+    .rd190-period-bar .rd187-settings-button {
+      position: absolute;
+      top: 50%;
+      right: 0;
+      transform: translateY(-50%);
+    }
+
+    .rd190-bottom-tools {
+      display: flex;
+      justify-content: flex-end;
+      min-height: 34px;
+    }
+
+    .rd190-privacy-button {
+      border-radius: 50%;
+      font-size: 0.86rem;
+    }
+
+    .rd190-privacy-button[aria-expanded="true"] {
+      border-color: #65c7ff;
+      background: #102736;
+      color: #9dddff;
+    }
+
+    .rd190-period-toggle + .rd190-period-toggle,
+    .rd190-period-toggle + .rd186-map-toggle-row {
+      border-top: 1px solid #2b3643 !important;
+    }
+
+    .rd190-settings-section-label {
+      margin: 1px 2px -4px;
+      color: #9aa7b7;
+      font-size: 0.65rem;
+      font-weight: 900;
+      letter-spacing: 0.055em;
+      text-transform: uppercase;
+    }
+
+    .rd190-privacy-sheet p {
+      margin: 0;
+      color: #aeb8c7;
+      font-size: 0.75rem;
+      line-height: 1.55;
+    }
+
+    .rd190-privacy-sheet strong {
+      color: #f7f9fc;
+    }
+
+    @media (max-width: 420px) {
+      .rd190-period-bar {
+        padding-inline: 40px;
+      }
+
+      .rd190-period-switcher {
+        grid-template-columns: 32px minmax(82px, auto) 32px;
+        gap: 5px;
+      }
+
+      .rd190-period-arrow,
+      .rd190-privacy-button {
+        width: 32px;
+        height: 32px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function rd190BuildLeaderboardPanel() {
+  const panel = $("rd76LeaderboardPanel");
+  if (!panel) return;
+
+  panel.classList.add(
+    "rd186-leaderboard-panel",
+    "rd187-leaderboard-panel",
+    "rd190-leaderboard-panel"
+  );
+
+  panel.innerHTML = `
+    <div class="panel-header rd-leaderboard-header">
+      <div class="rd-leaderboard-heading">
+        <button id="rd76LeaderboardBackBtn" class="panel-close-btn rd-leaderboard-back-btn" type="button" aria-label="Back to General Menu">‹</button>
+        <div>
+          <h2>Public Leaderboard</h2>
+          <p>Optional road-count rankings • Beta</p>
+        </div>
+      </div>
+      <button id="rd76LeaderboardCloseBtn" class="panel-close-btn" type="button" aria-label="Close Public Leaderboard">×</button>
+    </div>
+
+    <div class="panel-content rd187-sidebar-content">
+      <div class="rd190-period-bar">
+        <div class="rd190-period-switcher" aria-label="Leaderboard period">
+          <button id="rd190PreviousPeriodBtn" class="rd190-period-arrow" type="button" aria-label="Previous leaderboard period">‹</button>
+          <h3 id="rd190PeriodTitle">All Time</h3>
+          <button id="rd190NextPeriodBtn" class="rd190-period-arrow" type="button" aria-label="Next leaderboard period">›</button>
+        </div>
+        <button id="rd187LeaderboardSettingsBtn" class="rd187-settings-button" type="button" aria-label="Leaderboard settings" aria-expanded="false">⚙</button>
+      </div>
+
+      <div class="rd186-standing">
+        <article><span>Your position</span><strong id="rd186MyRank">—</strong></article>
+        <article><span>Discovered Roads</span><strong id="rd186MyAllRoads">0</strong></article>
+      </div>
+
+      <div class="rd187-top-ten-head">
+        <div>
+          <h3>Top 10</h3>
+          <span id="rd187TopTenMeta">Loading public profiles…</span>
+        </div>
+        <button id="rd76LeaderboardRefreshBtn" class="ghost-btn rd187-refresh-button" type="button">Refresh</button>
+      </div>
+
+      <div id="rd186LeaderboardList" class="rd187-sidebar-list" aria-live="polite"></div>
+
+      <button id="rd187ViewFullLeaderboardBtn" class="rd187-view-full-button" type="button">
+        View full leaderboard
+      </button>
+
+      <p class="rd187-sidebar-note">
+        Road totals use progress saved to your Road Profile. After Finish
+        Drive, allow the green progress backup to finish before refreshing.
+      </p>
+
+      <div class="rd190-bottom-tools">
+        <button id="rd190LeaderboardPrivacyBtn" class="rd190-privacy-button" type="button" aria-label="Leaderboard privacy information" aria-expanded="false">?</button>
+      </div>
+    </div>
+
+    <section id="rd187LeaderboardSettingsSheet" class="rd187-settings-sheet hidden" aria-hidden="true">
+      <div class="rd187-settings-head">
+        <div>
+          <h3>Leaderboard settings</h3>
+          <p>Choose which public rankings you join</p>
+        </div>
+        <button id="rd187LeaderboardSettingsCloseBtn" class="rd187-settings-close" type="button" aria-label="Close leaderboard settings">×</button>
+      </div>
+
+      <section class="rd186-unlock-card">
+        <div class="rd186-unlock-head">
+          <strong id="rd186UnlockTitle">All-Time leaderboard unlock</strong>
+          <span id="rd186UnlockCount">0 / 30K</span>
+        </div>
+        <div class="rd186-unlock-track" aria-hidden="true"><span id="rd186UnlockBar"></span></div>
+        <p id="rd186UnlockCopy">Weekly and Monthly are available immediately. Only All Time requires 30,000 synced roads.</p>
+      </section>
+
+      <p class="rd190-settings-section-label">Public leaderboard choices</p>
+
+      <section class="rd186-toggle-card">
+        <label class="toggle-row rd190-period-toggle" for="rd190WeeklyLeaderboardToggle">
+          <div class="toggle-text">
+            <strong>Appear on Weekly Leaderboard</strong>
+            <span id="rd190WeeklyToggleDescription">Available from the start and off by default.</span>
+          </div>
+          <input id="rd190WeeklyLeaderboardToggle" class="toggle-input" type="checkbox" />
+          <span class="toggle-switch" aria-hidden="true"><span class="toggle-knob"></span></span>
+        </label>
+
+        <label class="toggle-row rd190-period-toggle" for="rd190MonthlyLeaderboardToggle">
+          <div class="toggle-text">
+            <strong>Appear on Monthly Leaderboard</strong>
+            <span id="rd190MonthlyToggleDescription">Available from the start and off by default.</span>
+          </div>
+          <input id="rd190MonthlyLeaderboardToggle" class="toggle-input" type="checkbox" />
+          <span class="toggle-switch" aria-hidden="true"><span class="toggle-knob"></span></span>
+        </label>
+
+        <label class="toggle-row rd190-period-toggle" for="rd76LeaderboardToggle">
+          <div class="toggle-text">
+            <strong>Appear on All-Time Leaderboard</strong>
+            <span id="rd76LeaderboardToggleDescription">Unlocks at 30,000 synced roads.</span>
+          </div>
+          <input id="rd76LeaderboardToggle" class="toggle-input" type="checkbox" />
+          <span class="toggle-switch" aria-hidden="true"><span class="toggle-knob"></span></span>
+        </label>
+
+        <label class="toggle-row rd186-map-toggle-row" for="rd77PublicMapToggle">
+          <div class="toggle-text">
+            <strong>Show my historical road map</strong>
+            <span id="rd77PublicMapToggleDescription">Optional and connected only to your All-Time entry.</span>
+          </div>
+          <input id="rd77PublicMapToggle" class="toggle-input" type="checkbox" />
+          <span class="toggle-switch" aria-hidden="true"><span class="toggle-knob"></span></span>
+        </label>
+      </section>
+    </section>
+
+    <section id="rd190LeaderboardPrivacySheet" class="rd187-settings-sheet rd190-privacy-sheet hidden" aria-hidden="true">
+      <div class="rd187-settings-head">
+        <div>
+          <h3>Leaderboard privacy</h3>
+          <p>What becomes public when you opt in</p>
+        </div>
+        <button id="rd190LeaderboardPrivacyCloseBtn" class="rd187-settings-close" type="button" aria-label="Close leaderboard privacy information">×</button>
+      </div>
+
+      <section class="rd186-privacy-card">
+        <strong>Your routes and location stay private</strong>
+        <p>
+          Joining publishes only your generated Road username and the road
+          count for each leaderboard you enable. Your email, friend code,
+          exact roads and live location remain private unless you separately
+          enable your historical public map.
+        </p>
+      </section>
+    </section>
+  `;
+}
+
+rd186BuildLeaderboardPanel = rd190BuildLeaderboardPanel;
+
+
+function rd190ListMessage(message, error = false) {
+  return `<div class="rd186-empty${error ? " error" : ""}">${escapeHtml(message)}</div>`;
+}
+
+function rd190RenderLeaderboardList() {
+  const sidebar = $("rd186LeaderboardList");
+  const fullList = $("rd187FullLeaderboardList");
+
+  if (rd76Leaderboard.loading && !rd76Leaderboard.loaded) {
+    if (sidebar) sidebar.innerHTML = rd190ListMessage("Loading top 10…");
+    if (fullList && rd187State.fullOpen) {
+      fullList.innerHTML = rd190ListMessage("Loading up to 500 Road Profiles…");
+    }
+    return;
+  }
+
+  if (rd76Leaderboard.error) {
+    const message = rd190ListMessage(rd76Leaderboard.error, true);
+    if (sidebar) sidebar.innerHTML = message;
+    if (fullList && rd187State.fullOpen) fullList.innerHTML = message;
+    return;
+  }
+
+  const topEntries = rd187State.topEntries.length
+    ? rd187State.topEntries
+    : rd76Leaderboard.entries.slice(0, RD187_SIDEBAR_LIMIT);
+  const periodName = rd190PeriodLabel().toLowerCase();
+
+  if (sidebar) {
+    sidebar.innerHTML = topEntries.length
+      ? topEntries.map((entry) => rd187CompactRow(entry)).join("")
+      : rd190ListMessage(`No public ${periodName} road records yet.`);
+  }
+
+  if (fullList && rd187State.fullOpen) {
+    fullList.innerHTML = rd76Leaderboard.entries.length
+      ? rd76Leaderboard.entries
+          .map((entry) => rd187CompactRow(entry, true))
+          .join("")
+      : rd190ListMessage("No public all-time road records yet.");
+  }
+}
+
+rd186RenderLeaderboardList = rd190RenderLeaderboardList;
+
+
+function rd190RenderGeneralMenuLeaderboardStatus() {
+  const element = $("rd76GeneralMenuLeaderboardStatus");
+  if (!element) return;
+
+  if (!state.auth.user || !rd76Leaderboard.loaded) {
+    element.textContent =
+      "Weekly and monthly rankings available • Beta";
+    return;
+  }
+
+  const publicPeriods = [
+    rd76Leaderboard.weeklyPublic,
+    rd76Leaderboard.monthlyPublic,
+    rd76Leaderboard.allTimePublic
+  ].filter(Boolean).length;
+
+  if (publicPeriods > 0) {
+    element.textContent =
+      `${publicPeriods} public ranking${publicPeriods === 1 ? "" : "s"} enabled`;
+    return;
+  }
+
+  element.textContent = rd76Leaderboard.allTimeEligible
+    ? "All rankings hidden • Tap to choose"
+    : `Weekly and monthly available • ${rd76Number(
+        rd76Leaderboard.roadCount
+      )} / 30K All Time`;
+}
+
+rd186RenderGeneralMenuLeaderboardStatus =
+  rd190RenderGeneralMenuLeaderboardStatus;
+rd187RenderGeneralMenuLeaderboardStatus =
+  rd190RenderGeneralMenuLeaderboardStatus;
+rd76RenderGeneralMenuStatus =
+  rd190RenderGeneralMenuLeaderboardStatus;
+
+
+function rd190RenderLeaderboard() {
+  roadDiscoveryV187.renderLeaderboard();
+
+  const signedIn = Boolean(state.auth.user);
+  const busy = Boolean(
+    rd76Leaderboard.loading || rd76Leaderboard.saving
+  );
+  const roadCount = rd186Count(rd76Leaderboard.roadCount);
+  const progress = Math.min(
+    100,
+    (roadCount / RD186_LEADERBOARD_UNLOCK) * 100
+  );
+  const allTimeEligible = Boolean(
+    signedIn && rd76Leaderboard.allTimeEligible
+  );
+
+  rd76Leaderboard.isPublic = rd190PeriodPublic();
+
+  if ($("rd190PeriodTitle")) {
+    $("rd190PeriodTitle").textContent = rd190PeriodLabel();
+  }
+
+  ["rd190PreviousPeriodBtn", "rd190NextPeriodBtn"].forEach(
+    (id) => {
+      if ($(id)) $(id).disabled = busy;
+    }
+  );
+
+  const settingsButton = $("rd187LeaderboardSettingsBtn");
+  const settingsSheet = $("rd187LeaderboardSettingsSheet");
+  const privacyButton = $("rd190LeaderboardPrivacyBtn");
+  const privacySheet = $("rd190LeaderboardPrivacySheet");
+
+  settingsButton?.setAttribute(
+    "aria-expanded",
+    String(rd187State.settingsOpen)
+  );
+  settingsSheet?.classList.toggle(
+    "hidden",
+    !rd187State.settingsOpen
+  );
+  settingsSheet?.setAttribute(
+    "aria-hidden",
+    rd187State.settingsOpen ? "false" : "true"
+  );
+
+  privacyButton?.setAttribute(
+    "aria-expanded",
+    String(rd187State.privacyOpen)
+  );
+  privacySheet?.classList.toggle(
+    "hidden",
+    !rd187State.privacyOpen
+  );
+  privacySheet?.setAttribute(
+    "aria-hidden",
+    rd187State.privacyOpen ? "false" : "true"
+  );
+
+  if ($("rd186UnlockTitle")) {
+    $("rd186UnlockTitle").textContent = allTimeEligible
+      ? "30K All-Time leaderboard unlocked"
+      : "All-Time leaderboard unlock";
+  }
+
+  if ($("rd186UnlockCount")) {
+    $("rd186UnlockCount").textContent =
+      `${rd76Number(roadCount)} / 30K`;
+  }
+
+  if ($("rd186UnlockBar")) {
+    $("rd186UnlockBar").style.width = `${progress}%`;
+  }
+
+  if ($("rd186UnlockCopy")) {
+    $("rd186UnlockCopy").textContent = !signedIn
+      ? "Sign in to use Weekly or Monthly and check All-Time progress."
+      : allTimeEligible
+        ? "Weekly and Monthly are available immediately. All Time is now unlocked and remains optional."
+        : `Weekly and Monthly are available now. ${rd76Number(
+            rd76Leaderboard.roadsUntilUnlock
+          )} more synced roads are needed for All Time.`;
+  }
+
+  const weeklyToggle = $("rd190WeeklyLeaderboardToggle");
+  if (weeklyToggle) {
+    weeklyToggle.checked = Boolean(
+      signedIn && rd76Leaderboard.weeklyPublic
+    );
+    weeklyToggle.disabled = !signedIn || busy;
+  }
+
+  const monthlyToggle = $("rd190MonthlyLeaderboardToggle");
+  if (monthlyToggle) {
+    monthlyToggle.checked = Boolean(
+      signedIn && rd76Leaderboard.monthlyPublic
+    );
+    monthlyToggle.disabled = !signedIn || busy;
+  }
+
+  const allTimeToggle = $("rd76LeaderboardToggle");
+  if (allTimeToggle) {
+    allTimeToggle.checked = Boolean(
+      allTimeEligible && rd76Leaderboard.allTimePublic
+    );
+    allTimeToggle.disabled = !allTimeEligible || busy;
+  }
+
+  if ($("rd190WeeklyToggleDescription")) {
+    $("rd190WeeklyToggleDescription").textContent = !signedIn
+      ? "Sign in to choose this leaderboard."
+      : rd76Leaderboard.weeklyPublic
+        ? "Your generated username and this week's road count are public."
+        : "Available from the start and currently hidden.";
+  }
+
+  if ($("rd190MonthlyToggleDescription")) {
+    $("rd190MonthlyToggleDescription").textContent = !signedIn
+      ? "Sign in to choose this leaderboard."
+      : rd76Leaderboard.monthlyPublic
+        ? "Your generated username and this month's road count are public."
+        : "Available from the start and currently hidden.";
+  }
+
+  if ($("rd76LeaderboardToggleDescription")) {
+    $("rd76LeaderboardToggleDescription").textContent = !signedIn
+      ? "Sign in before joining."
+      : !allTimeEligible
+        ? "Unlocks at 30,000 synced roads."
+        : rd76Leaderboard.allTimePublic
+          ? "Your generated username and total road count are public."
+          : "Unlocked and currently hidden.";
+  }
+
+  const mapToggle = $("rd77PublicMapToggle");
+  if (mapToggle) {
+    mapToggle.checked = Boolean(
+      allTimeEligible &&
+      rd76Leaderboard.allTimePublic &&
+      rd76Leaderboard.publicMapVisible
+    );
+    mapToggle.disabled =
+      !allTimeEligible ||
+      !rd76Leaderboard.allTimePublic ||
+      busy;
+  }
+
+  if ($("rd77PublicMapToggleDescription")) {
+    $("rd77PublicMapToggleDescription").textContent =
+      !allTimeEligible
+        ? "Available after the 30K All-Time unlock."
+        : !rd76Leaderboard.allTimePublic
+          ? "Join All Time before sharing a historical map."
+          : rd76Leaderboard.publicMapVisible
+            ? "Signed-in users can open your historical road map."
+            : "Off. Your exact discovered roads remain private.";
+  }
+
+  if ($("rd186MyRank")) {
+    $("rd186MyRank").textContent = rd76Leaderboard.rank
+      ? String(rd76Leaderboard.rank)
+      : "—";
+  }
+
+  if ($("rd186MyAllRoads")) {
+    const displayedRoads = rd186State.period === "all_time"
+      ? roadCount
+      : rd76Leaderboard.periodRoadCount;
+
+    $("rd186MyAllRoads").textContent =
+      rd76Number(displayedRoads);
+  }
+
+  if ($("rd187TopTenMeta")) {
+    const totalProfiles = rd186State.totalEntries;
+    $("rd187TopTenMeta").textContent =
+      `${rd76Number(totalProfiles)} public ` +
+      `${rd190PeriodLabel().toLowerCase()} ` +
+      `profile${totalProfiles === 1 ? "" : "s"}`;
+  }
+
+  const fullButton = $("rd187ViewFullLeaderboardBtn");
+  if (fullButton) {
+    const allTime = rd186State.period === "all_time";
+    fullButton.classList.toggle("hidden", !allTime);
+    fullButton.disabled = busy || !allTime;
+  }
+
+  if ($("rd76LeaderboardRefreshBtn")) {
+    $("rd76LeaderboardRefreshBtn").disabled = busy;
+    $("rd76LeaderboardRefreshBtn").textContent =
+      rd76Leaderboard.loading ? "Loading…" : "Refresh";
+  }
+
+  if ($("rd187FullLeaderboardMeta")) {
+    $("rd187FullLeaderboardMeta").textContent =
+      `${rd76Number(rd186State.totalEntries)} public Road ` +
+      `Profile${rd186State.totalEntries === 1 ? "" : "s"} • 500 per page`;
+  }
+
+  const pageText =
+    `Page ${rd186State.page} of ${rd186State.totalPages}`;
+
+  if ($("rd187FullPageTopLabel")) {
+    $("rd187FullPageTopLabel").textContent = pageText;
+  }
+
+  if ($("rd187FullPageBottomLabel")) {
+    $("rd187FullPageBottomLabel").textContent = pageText;
+  }
+
+  if ($("rd187FullLeaderboardRefreshBtn")) {
+    $("rd187FullLeaderboardRefreshBtn").disabled = busy;
+    $("rd187FullLeaderboardRefreshBtn").textContent =
+      rd76Leaderboard.loading ? "Loading…" : "Refresh";
+  }
+
+  if ($("rd187FullPreviousBottomBtn")) {
+    $("rd187FullPreviousBottomBtn").disabled =
+      busy || rd186State.page <= 1;
+  }
+
+  if ($("rd187FullNextBottomBtn")) {
+    $("rd187FullNextBottomBtn").disabled =
+      busy || rd186State.page >= rd186State.totalPages;
+  }
+
+  rd190RenderLeaderboardList();
+  rd190RenderGeneralMenuLeaderboardStatus();
+}
+
+rd186RenderLeaderboard = rd190RenderLeaderboard;
+rd76RenderLeaderboard = rd190RenderLeaderboard;
+
+
+/* -------------------------------------------------- */
+/* Period-aware data                                  */
+/* -------------------------------------------------- */
+
+async function rd190LoadLeaderboard(options = {}) {
+  const { quiet = false } = options;
+
+  if (!state.auth.client) {
+    rd190RenderLeaderboard();
+    return false;
+  }
+
+  if (rd76Leaderboard.loading || rd76Leaderboard.saving) {
+    return false;
+  }
+
+  const requestId = ++rd76Leaderboard.requestId;
+  const requestPeriod = rd186State.period;
+  const pageSize = rd187State.fullOpen
+    ? RD186_LEADERBOARD_PAGE_SIZE
+    : RD187_SIDEBAR_LIMIT;
+
+  rd76Leaderboard.loading = true;
+  rd76Leaderboard.error = "";
+  rd190RenderLeaderboard();
+
+  try {
+    const leaderboardPromise = state.auth.client.rpc(
+      "rd190_get_public_road_leaderboard",
+      {
+        p_period: requestPeriod,
+        p_page: rd186State.page,
+        p_page_size: pageSize
+      }
+    );
+
+    const statusPromise = state.auth.user
+      ? state.auth.client.rpc(
+          "rd190_get_my_leaderboard_status",
+          { p_period: requestPeriod }
+        )
+      : Promise.resolve({ data: [], error: null });
+
+    const [statusResult, leaderboardResult] =
+      await Promise.all([
+        statusPromise,
+        leaderboardPromise
+      ]);
+
+    if (statusResult.error) throw statusResult.error;
+    if (leaderboardResult.error) throw leaderboardResult.error;
+
+    if (
+      requestId !== rd76Leaderboard.requestId ||
+      requestPeriod !== rd186State.period
+    ) {
+      return false;
+    }
+
+    const status = Array.isArray(statusResult.data)
+      ? statusResult.data[0]
+      : statusResult.data;
+    const entries = Array.isArray(leaderboardResult.data)
+      ? leaderboardResult.data
+      : [];
+
+    rd76Leaderboard.entries = entries;
+    rd76Leaderboard.loaded = true;
+    rd76Leaderboard.error = "";
+
+    if (status && typeof status === "object") {
+      rd76Leaderboard.weeklyPublic = Boolean(
+        status.weekly_public
+      );
+      rd76Leaderboard.monthlyPublic = Boolean(
+        status.monthly_public
+      );
+      rd76Leaderboard.allTimePublic = Boolean(
+        status.all_time_public
+      );
+      rd76Leaderboard.isPublic = Boolean(status.is_public);
+      rd76Leaderboard.publicMapVisible = Boolean(
+        status.public_map_visible
+      );
+      rd76Leaderboard.eligible = Boolean(status.is_eligible);
+      rd76Leaderboard.allTimeEligible = Boolean(
+        status.all_time_eligible
+      );
+      rd76Leaderboard.roadCount = rd186Count(status.road_count);
+      rd76Leaderboard.periodRoadCount = rd186Count(
+        status.period_road_count
+      );
+      rd76Leaderboard.roadsUntilUnlock = rd186Count(
+        status.roads_until_unlock
+      );
+      rd76Leaderboard.rank = rd76NormaliseRank(
+        status.leaderboard_rank
+      );
+      rd76Leaderboard.has50kBadge = Boolean(
+        status.has_50k_badge
+      );
+      rd186State.totalEntries = rd186Count(
+        status.public_entries
+      );
+    } else {
+      rd76Leaderboard.isPublic = false;
+      rd76Leaderboard.publicMapVisible = false;
+      rd76Leaderboard.eligible = false;
+      rd76Leaderboard.allTimeEligible = false;
+      rd76Leaderboard.roadCount = 0;
+      rd76Leaderboard.periodRoadCount = 0;
+      rd76Leaderboard.roadsUntilUnlock =
+        RD186_LEADERBOARD_UNLOCK;
+      rd76Leaderboard.rank = null;
+      rd76Leaderboard.has50kBadge = false;
+      rd186State.totalEntries = rd186Count(
+        entries[0]?.total_entries
+      );
+    }
+
+    if (entries.length) {
+      rd186State.totalEntries = rd186Count(
+        entries[0].total_entries
+      );
+      rd186State.totalPages = Math.max(
+        1,
+        rd186Count(entries[0].total_pages)
+      );
+    } else {
+      rd186State.totalPages = Math.max(
+        1,
+        Math.ceil(rd186State.totalEntries / pageSize)
+      );
+    }
+
+    if (rd186State.page > rd186State.totalPages) {
+      rd186State.page = rd186State.totalPages;
+      rd76Leaderboard.loading = false;
+      return rd190LoadLeaderboard(options);
+    }
+
+    rd76Leaderboard.page = rd186State.page;
+    rd76Leaderboard.totalPages = rd186State.totalPages;
+    rd76Leaderboard.totalEntries = rd186State.totalEntries;
+
+    if (!rd187State.fullOpen && rd186State.page === 1) {
+      rd187State.topEntries = entries.slice(
+        0,
+        RD187_SIDEBAR_LIMIT
+      );
+    }
+
+    if (state.auth.profile && status) {
+      state.auth.profile.show_weekly_leaderboard =
+        rd76Leaderboard.weeklyPublic;
+      state.auth.profile.show_monthly_leaderboard =
+        rd76Leaderboard.monthlyPublic;
+      state.auth.profile.show_leaderboard =
+        rd76Leaderboard.allTimePublic;
+      state.auth.profile.show_public_map =
+        rd76Leaderboard.publicMapVisible;
+    }
+
+    return true;
+  } catch (error) {
+    console.error(error);
+    rd76Leaderboard.error = navigator.onLine
+      ? "Could not load the public leaderboard. Try again."
+      : "Public leaderboards are unavailable while offline.";
+
+    if (!quiet) {
+      showToast("Could not load public leaderboard");
+    }
+
+    return false;
+  } finally {
+    if (requestId === rd76Leaderboard.requestId) {
+      rd76Leaderboard.loading = false;
+      rd190RenderLeaderboard();
+    }
+  }
+}
+
+rd186LoadLeaderboard = rd190LoadLeaderboard;
+rd76LoadLeaderboard = rd190LoadLeaderboard;
+
+
+async function rd190LoadMiniLeaders() {
+  if (!state.auth.client || rd186State.leadersLoading) {
+    return false;
+  }
+
+  rd186State.leadersLoading = true;
+
+  try {
+    const { data, error } = await state.auth.client.rpc(
+      "rd190_get_public_road_leaders"
+    );
+
+    if (error) throw error;
+
+    const leaders = {
+      week: null,
+      month: null,
+      all_time: null
+    };
+
+    for (const row of Array.isArray(data) ? data : []) {
+      const period = String(row?.period_key || "");
+
+      if (period in leaders) {
+        leaders[period] = row;
+      }
+    }
+
+    rd186State.leaders = leaders;
+    rd186RenderMiniLeaders();
+    return true;
+  } catch (error) {
+    console.error(error);
+    return false;
+  } finally {
+    rd186State.leadersLoading = false;
+  }
+}
+
+rd186LoadMiniLeaders = rd190LoadMiniLeaders;
+
+
+/* -------------------------------------------------- */
+/* Privacy changes                                    */
+/* -------------------------------------------------- */
+
+async function rd190ChangeLeaderboardVisibility(
+  period,
+  visible
+) {
+  if (!state.auth.client || !state.auth.user) {
+    showToast("Sign in before joining public leaderboards");
+    rd190RenderLeaderboard();
+    return;
+  }
+
+  if (
+    period === "all_time" &&
+    visible &&
+    !rd76Leaderboard.allTimeEligible
+  ) {
+    showToast("All Time unlocks at 30,000 roads");
+    rd190RenderLeaderboard();
+    return;
+  }
+
+  const previous = rd190PeriodPublic(period);
+
+  if (visible && !previous) {
+    const label = rd190PeriodLabel(period);
+    const confirmed = window.confirm(
+      `Appear on the ${label} Leaderboard?\n\n` +
+      "Only your generated Road username and the road count for this " +
+      "period will appear. Your email, live location and exact roads " +
+      "remain private."
+    );
+
+    if (!confirmed) {
+      rd190RenderLeaderboard();
+      return;
+    }
+  }
+
+  rd76Leaderboard.saving = true;
+  rd190SetPeriodPublic(period, visible);
+  rd190RenderLeaderboard();
+
+  try {
+    const { data, error } = await state.auth.client.rpc(
+      "rd190_set_my_leaderboard_visibility",
+      {
+        p_period: period,
+        p_visible: Boolean(visible)
+      }
+    );
+
+    if (error) throw error;
+
+    rd190SetPeriodPublic(period, Boolean(data));
+
+    if (period === "all_time" && !Boolean(data)) {
+      rd76Leaderboard.publicMapVisible = false;
+    }
+
+    showToast(
+      Boolean(data)
+        ? `${rd190PeriodLabel(period)} leaderboard on`
+        : `${rd190PeriodLabel(period)} leaderboard off`
+    );
+  } catch (error) {
+    console.error(error);
+    rd190SetPeriodPublic(period, previous);
+    showToast("Could not update leaderboard privacy");
+  } finally {
+    rd76Leaderboard.saving = false;
+    rd76Leaderboard.loaded = false;
+    await rd190LoadLeaderboard({ quiet: true });
+    void rd190LoadMiniLeaders();
+  }
+}
+
+
+async function rd190ChangePublicMapVisibility(visible) {
+  if (
+    !state.auth.client ||
+    !state.auth.user ||
+    !rd76Leaderboard.allTimeEligible ||
+    !rd76Leaderboard.allTimePublic
+  ) {
+    showToast("Join the 30K All-Time leaderboard first");
+    rd190RenderLeaderboard();
+    return;
+  }
+
+  if (visible && !rd76Leaderboard.publicMapVisible) {
+    const confirmed = window.confirm(
+      "Show your historical road map?\n\n" +
+      "Signed-in Road Discovery users will be able to open your " +
+      "painted-road map. Live tracking is never shared."
+    );
+
+    if (!confirmed) {
+      rd190RenderLeaderboard();
+      return;
+    }
+  }
+
+  const previous = rd76Leaderboard.publicMapVisible;
+  rd76Leaderboard.saving = true;
+  rd76Leaderboard.publicMapVisible = Boolean(visible);
+  rd190RenderLeaderboard();
+
+  try {
+    const { data, error } = await state.auth.client.rpc(
+      "rd186_set_my_public_map_visibility",
+      { p_visible: Boolean(visible) }
+    );
+
+    if (error) throw error;
+
+    rd76Leaderboard.publicMapVisible = Boolean(data);
+    showToast(
+      rd76Leaderboard.publicMapVisible
+        ? "Public historical road map on"
+        : "Public historical road map off"
+    );
+  } catch (error) {
+    console.error(error);
+    rd76Leaderboard.publicMapVisible = previous;
+    showToast("Could not update public map privacy");
+  } finally {
+    rd76Leaderboard.saving = false;
+    rd76Leaderboard.loaded = false;
+    await rd190LoadLeaderboard({ quiet: true });
+  }
+}
+
+rd76ChangeLeaderboardVisibility = function (visible) {
+  return rd190ChangeLeaderboardVisibility(
+    rd186State.period,
+    visible
+  );
+};
+rd77ChangePublicMapVisibility =
+  rd190ChangePublicMapVisibility;
+
+
+/* -------------------------------------------------- */
+/* Period, settings and privacy interactions          */
+/* -------------------------------------------------- */
+
+function rd190CyclePeriod(direction) {
+  if (rd76Leaderboard.loading || rd76Leaderboard.saving) {
+    return;
+  }
+
+  const current = Math.max(
+    0,
+    RD190_PERIOD_SEQUENCE.indexOf(rd186State.period)
+  );
+  const next = (
+    current +
+    (direction < 0 ? -1 : 1) +
+    RD190_PERIOD_SEQUENCE.length
+  ) % RD190_PERIOD_SEQUENCE.length;
+
+  rd186State.period = RD190_PERIOD_SEQUENCE[next];
+  rd186State.page = 1;
+  rd186State.totalPages = 1;
+  rd187State.topEntries = [];
+  rd76Leaderboard.loaded = false;
+  rd190RenderLeaderboard();
+  void rd190LoadLeaderboard();
+}
+
+function rd190TogglePrivacy(force) {
+  rd187State.privacyOpen =
+    typeof force === "boolean"
+      ? force
+      : !rd187State.privacyOpen;
+
+  if (rd187State.privacyOpen) {
+    rd187State.settingsOpen = false;
+  }
+
+  rd190RenderLeaderboard();
+}
+
+rd187ToggleSettings = function (force) {
+  rd187State.settingsOpen =
+    typeof force === "boolean"
+      ? force
+      : !rd187State.settingsOpen;
+
+  if (rd187State.settingsOpen) {
+    rd187State.privacyOpen = false;
+  }
+
+  rd190RenderLeaderboard();
+};
+
+function rd190PrepareLeaderboardOpen() {
+  rd187State.fullOpen = false;
+  rd187State.settingsOpen = false;
+  rd187State.privacyOpen = false;
+  rd186State.period = "all_time";
+  rd186State.page = 1;
+  rd186State.totalPages = 1;
+  rd187State.topEntries = [];
+  rd76Leaderboard.loaded = false;
+}
+
+function rd190BindLeaderboardEvents() {
+  $("rd76OpenLeaderboardBtn")?.addEventListener(
+    "click",
+    rd190PrepareLeaderboardOpen,
+    true
+  );
+
+  $("rd76LeaderboardBackBtn")?.addEventListener(
+    "click",
+    () => {
+      rd76CloseLeaderboardOnly();
+      rd73OpenGeneralMenu();
+    }
+  );
+
+  $("rd76LeaderboardCloseBtn")?.addEventListener(
+    "click",
+    () => closePanels()
+  );
+
+  $("rd190PreviousPeriodBtn")?.addEventListener(
+    "click",
+    () => rd190CyclePeriod(-1)
+  );
+
+  $("rd190NextPeriodBtn")?.addEventListener(
+    "click",
+    () => rd190CyclePeriod(1)
+  );
+
+  $("rd187LeaderboardSettingsBtn")?.addEventListener(
+    "click",
+    () => rd187ToggleSettings()
+  );
+
+  $("rd187LeaderboardSettingsCloseBtn")?.addEventListener(
+    "click",
+    () => rd187ToggleSettings(false)
+  );
+
+  $("rd190LeaderboardPrivacyBtn")?.addEventListener(
+    "click",
+    () => rd190TogglePrivacy()
+  );
+
+  $("rd190LeaderboardPrivacyCloseBtn")?.addEventListener(
+    "click",
+    () => rd190TogglePrivacy(false)
+  );
+
+  $("rd190WeeklyLeaderboardToggle")?.addEventListener(
+    "change",
+    (event) => void rd190ChangeLeaderboardVisibility(
+      "week",
+      Boolean(event.currentTarget.checked)
+    )
+  );
+
+  $("rd190MonthlyLeaderboardToggle")?.addEventListener(
+    "change",
+    (event) => void rd190ChangeLeaderboardVisibility(
+      "month",
+      Boolean(event.currentTarget.checked)
+    )
+  );
+
+  $("rd76LeaderboardToggle")?.addEventListener(
+    "change",
+    (event) => void rd190ChangeLeaderboardVisibility(
+      "all_time",
+      Boolean(event.currentTarget.checked)
+    )
+  );
+
+  $("rd77PublicMapToggle")?.addEventListener(
+    "change",
+    (event) => void rd190ChangePublicMapVisibility(
+      Boolean(event.currentTarget.checked)
+    )
+  );
+
+  $("rd76LeaderboardRefreshBtn")?.addEventListener(
+    "click",
+    () => void rd190LoadLeaderboard()
+  );
+
+  $("rd187ViewFullLeaderboardBtn")?.addEventListener(
+    "click",
+    () => {
+      if (rd186State.period === "all_time") {
+        rd187OpenFullLeaderboard();
+      }
+    }
+  );
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && rd187State.privacyOpen) {
+      rd190TogglePrivacy(false);
+    }
+  });
+}
+
+
+/* -------------------------------------------------- */
+/* Lifecycle                                          */
+/* -------------------------------------------------- */
+
+rd76ResetLeaderboardState = function (userId = "") {
+  const result = roadDiscoveryV190
+    .resetLeaderboardState(userId);
+
+  rd76Leaderboard.weeklyPublic = false;
+  rd76Leaderboard.monthlyPublic = false;
+  rd76Leaderboard.allTimePublic = false;
+  rd76Leaderboard.allTimeEligible = false;
+  rd187State.topEntries = [];
+  rd187State.settingsOpen = false;
+  rd187State.privacyOpen = false;
+
+  return result;
+};
+
+closePanels = function (hideBackdrop = true) {
+  rd187State.privacyOpen = false;
+  rd187State.settingsOpen = false;
+  return roadDiscoveryV190.closePanels(hideBackdrop);
+};
+
+function rd190InitFlexibleLeaderboards() {
+  rd190InstallStyles();
+  rd190RenderWeeklyDistance();
+  rd190PrepareLeaderboardOpen();
+  rd190BuildLeaderboardPanel();
+  rd187CreateFullLeaderboardPage();
+  rd190BindLeaderboardEvents();
+  rd190RenderLeaderboard();
+  void rd190LoadMiniLeaders();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd190InitFlexibleLeaderboards,
+    { once: true }
+  );
+} else {
+  rd190InitFlexibleLeaderboards();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryPublicLeaderboardLayout =
+    "period-arrows-independent-opt-ins-privacy-help-v190";
