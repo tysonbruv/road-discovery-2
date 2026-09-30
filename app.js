@@ -64521,3 +64521,254 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryPublicLeaderboardLayout =
     "all-time-top-10-and-full-500-v188";
+
+
+/* ================================================== */
+/* Road Discovery AU v189 mobile leaderboard spacing */
+/* Keep passive leaders above lower-left map controls */
+/* ================================================== */
+
+const RD189_MINI_LEADER_CONTROL_GAP = 14;
+
+const roadDiscoveryV189 = {
+  renderMiniLeaders: rd186RenderMiniLeaders
+};
+
+let rd189MiniLeaderFrame = 0;
+let rd189MiniLeaderResizeObserver = null;
+let rd189MiniLeaderMutationObserver = null;
+
+
+function rd189VisibleElementRect(element) {
+  if (
+    !element ||
+    typeof element.getBoundingClientRect !== "function"
+  ) {
+    return null;
+  }
+
+  const rect = element.getBoundingClientRect();
+
+  if (rect.width <= 1 || rect.height <= 1) {
+    return null;
+  }
+
+  if (typeof window.getComputedStyle === "function") {
+    const computed = window.getComputedStyle(element);
+
+    if (
+      computed.display === "none" ||
+      computed.visibility === "hidden"
+    ) {
+      return null;
+    }
+  }
+
+  return rect;
+}
+
+
+function rd189PositionMiniLeaders() {
+  rd189MiniLeaderFrame = 0;
+
+  const leaders = $("rd186MiniLeaders");
+  const appShell = $("appShell") || document.body;
+
+  if (!leaders || !appShell) return false;
+
+  const appRect = rd189VisibleElementRect(appShell);
+  const controlRects = [
+    $("mapNorthIndicator"),
+    $("locateBtn")
+  ]
+    .map(rd189VisibleElementRect)
+    .filter(Boolean);
+
+  if (!appRect || !controlRects.length) {
+    return false;
+  }
+
+  const controlsTop = Math.min(
+    ...controlRects.map((rect) => rect.top)
+  );
+
+  const bottomOffset = Math.ceil(
+    appRect.bottom -
+      controlsTop +
+      RD189_MINI_LEADER_CONTROL_GAP
+  );
+
+  if (!Number.isFinite(bottomOffset) || bottomOffset <= 0) {
+    return false;
+  }
+
+  leaders.style.setProperty(
+    "bottom",
+    `${bottomOffset}px`,
+    "important"
+  );
+
+  return true;
+}
+
+
+function rd189ScheduleMiniLeaderPosition() {
+  if (rd189MiniLeaderFrame) {
+    window.cancelAnimationFrame?.(
+      rd189MiniLeaderFrame
+    );
+  }
+
+  if (typeof window.requestAnimationFrame !== "function") {
+    window.setTimeout(rd189PositionMiniLeaders, 0);
+    return;
+  }
+
+  rd189MiniLeaderFrame =
+    window.requestAnimationFrame(
+      rd189PositionMiniLeaders
+    );
+}
+
+
+rd186RenderMiniLeaders = function () {
+  const result = roadDiscoveryV189.renderMiniLeaders();
+  rd189ScheduleMiniLeaderPosition();
+  return result;
+};
+
+
+function rd189InstallMiniLeaderStyles() {
+  if ($("rd189MiniLeaderStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd189MiniLeaderStyles";
+  style.textContent = `
+    .rd186-mini-leaders {
+      transition: bottom 120ms ease-out;
+    }
+
+    @media (max-width: 520px) {
+      .rd186-mini-leaders {
+        left: calc(14px + env(safe-area-inset-left)) !important;
+        bottom: calc(156px + env(safe-area-inset-bottom)) !important;
+        gap: 3px;
+        max-width: min(300px, calc(100vw - 28px));
+        font-size: 0.61rem;
+        line-height: 1.22;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rd186-mini-leaders {
+        transition: none;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd189ObserveLowerLeftLayout() {
+  const appShell = $("appShell");
+  const controls = [
+    appShell,
+    $("mapNorthIndicator"),
+    $("locateBtn")
+  ].filter(Boolean);
+
+  if (typeof ResizeObserver === "function") {
+    rd189MiniLeaderResizeObserver?.disconnect();
+    rd189MiniLeaderResizeObserver =
+      new ResizeObserver(
+        rd189ScheduleMiniLeaderPosition
+      );
+
+    controls.forEach((element) =>
+      rd189MiniLeaderResizeObserver.observe(element)
+    );
+  }
+
+  if (typeof MutationObserver === "function") {
+    rd189MiniLeaderMutationObserver?.disconnect();
+    rd189MiniLeaderMutationObserver =
+      new MutationObserver(() => {
+        rd189ScheduleMiniLeaderPosition();
+      });
+
+    if (document.body) {
+      rd189MiniLeaderMutationObserver.observe(
+        document.body,
+        {
+          attributes: true,
+          attributeFilter: ["class"]
+        }
+      );
+    }
+
+    if (appShell) {
+      rd189MiniLeaderMutationObserver.observe(
+        appShell,
+        {
+          childList: true,
+          subtree: true
+        }
+      );
+    }
+  }
+}
+
+
+function rd189InitMiniLeaderSpacing() {
+  rd189InstallMiniLeaderStyles();
+  rd189ObserveLowerLeftLayout();
+  rd189ScheduleMiniLeaderPosition();
+
+  window.addEventListener(
+    "resize",
+    rd189ScheduleMiniLeaderPosition,
+    { passive: true }
+  );
+
+  window.addEventListener(
+    "orientationchange",
+    rd189ScheduleMiniLeaderPosition,
+    { passive: true }
+  );
+
+  window.visualViewport?.addEventListener(
+    "resize",
+    rd189ScheduleMiniLeaderPosition,
+    { passive: true }
+  );
+
+  window.visualViewport?.addEventListener(
+    "scroll",
+    rd189ScheduleMiniLeaderPosition,
+    { passive: true }
+  );
+
+  [50, 350, 1000].forEach((delay) => {
+    window.setTimeout(
+      rd189ScheduleMiniLeaderPosition,
+      delay
+    );
+  });
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd189InitMiniLeaderSpacing,
+    { once: true }
+  );
+} else {
+  rd189InitMiniLeaderSpacing();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryMiniLeaderLayout =
+    "above-lower-left-controls-v189";
