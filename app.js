@@ -66140,3 +66140,298 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryPublicLeaderboardLayout =
     "period-arrows-independent-opt-ins-privacy-help-v190";
+
+
+/* ================================================== */
+/* Road Discovery AU v191 map leaders + panel repair */
+/* Clear leader label, saved display choice, My Stats */
+/* ================================================== */
+
+const RD191_PUBLIC_LEADERS_VISIBLE_KEY =
+  "roadDiscoveryAU.publicLeadersVisible.v1";
+
+const roadDiscoveryV191 = {
+  openPanel,
+  renderMiniLeaders: rd186RenderMiniLeaders,
+  updateMiniLeaderVisibility:
+    rd186UpdateMiniLeaderVisibility
+};
+
+state.publicLeadersVisible =
+  rd191LoadPublicLeadersVisible();
+
+
+/* -------------------------------------------------- */
+/* Dynamic panel support                              */
+/* -------------------------------------------------- */
+
+openPanel = function (panelId) {
+  const livePanel = $(panelId);
+
+  /*
+    Later-version panels are created after cacheEls().
+    Register the current DOM element before delegating
+    to the original panel lifecycle.
+  */
+  if (livePanel) {
+    els[panelId] = livePanel;
+  }
+
+  return roadDiscoveryV191.openPanel(panelId);
+};
+
+
+/* -------------------------------------------------- */
+/* Public-leader map preference                       */
+/* -------------------------------------------------- */
+
+function rd191LoadPublicLeadersVisible() {
+  try {
+    const stored = localStorage.getItem(
+      RD191_PUBLIC_LEADERS_VISIBLE_KEY
+    );
+
+    return stored === null
+      ? true
+      : stored !== "false";
+  } catch (error) {
+    console.error(error);
+    return true;
+  }
+}
+
+function rd191SavePublicLeadersVisible() {
+  try {
+    localStorage.setItem(
+      RD191_PUBLIC_LEADERS_VISIBLE_KEY,
+      String(Boolean(state.publicLeadersVisible))
+    );
+  } catch (error) {
+    console.error(error);
+    showToast("Could not save public-leader display setting");
+  }
+}
+
+function rd191InstallStyles() {
+  if ($("rd191Styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd191Styles";
+  style.textContent = `
+    .rd191-mini-leaders-heading {
+      margin-bottom: 2px;
+      color: #ffad58;
+      font-size: 0.55rem;
+      font-weight: 950;
+      line-height: 1.2;
+      letter-spacing: 0.095em;
+      text-transform: uppercase;
+    }
+
+    @media (max-width: 520px) {
+      .rd191-mini-leaders-heading {
+        font-size: 0.52rem;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function rd191AddPublicLeadersHeading() {
+  const element = $("rd186MiniLeaders");
+  if (!element) return;
+
+  if (!element.querySelector(".rd191-mini-leaders-heading")) {
+    element.insertAdjacentHTML(
+      "afterbegin",
+      '<strong class="rd191-mini-leaders-heading">Public Leaders</strong>'
+    );
+  }
+
+  element.setAttribute(
+    "aria-label",
+    "Current public road leaders"
+  );
+}
+
+rd186UpdateMiniLeaderVisibility = function () {
+  const result = roadDiscoveryV191
+    .updateMiniLeaderVisibility();
+  const element = $("rd186MiniLeaders");
+
+  if (
+    element &&
+    !Boolean(state.publicLeadersVisible)
+  ) {
+    element.classList.add("hidden");
+    element.setAttribute("aria-hidden", "true");
+  }
+
+  return result;
+};
+
+rd186RenderMiniLeaders = function () {
+  const result = roadDiscoveryV191
+    .renderMiniLeaders();
+
+  rd191AddPublicLeadersHeading();
+  rd186UpdateMiniLeaderVisibility();
+
+  if (
+    Boolean(state.publicLeadersVisible) &&
+    typeof rd189ScheduleMiniLeaderPosition === "function"
+  ) {
+    rd189ScheduleMiniLeaderPosition();
+  }
+
+  return result;
+};
+
+function rd191ApplyPublicLeadersVisibility() {
+  const toggle = $("rd191PublicLeadersToggle");
+
+  if (toggle) {
+    toggle.checked = Boolean(
+      state.publicLeadersVisible
+    );
+  }
+
+  rd186UpdateMiniLeaderVisibility();
+
+  if (
+    state.publicLeadersVisible &&
+    typeof rd189ScheduleMiniLeaderPosition === "function"
+  ) {
+    rd189ScheduleMiniLeaderPosition();
+  }
+}
+
+function rd191InsertPublicLeadersSetting() {
+  if ($("rd191PublicLeadersToggle")) {
+    rd191ApplyPublicLeadersVisibility();
+    return;
+  }
+
+  const mapSection = $("locationMarkerToggle")
+    ?.closest(".panel-section");
+
+  if (!mapSection) return;
+
+  const sectionHeading = Array.from(
+    mapSection.children
+  ).find((element) => element.tagName === "H3");
+
+  if (sectionHeading) {
+    sectionHeading.textContent = "Map display";
+  }
+
+  const setting = document.createElement("label");
+  setting.id = "rd191PublicLeadersSetting";
+  setting.className =
+    "toggle-row rd191-public-leaders-setting";
+  setting.htmlFor = "rd191PublicLeadersToggle";
+  setting.innerHTML = `
+    <div class="toggle-text">
+      <strong>Show public leaders on map</strong>
+      <span>
+        Show the current Weekly, Monthly and All-Time
+        leaders on the main map. This does not change
+        whether you appear publicly.
+      </span>
+    </div>
+
+    <input
+      id="rd191PublicLeadersToggle"
+      class="toggle-input"
+      type="checkbox"
+    />
+
+    <span class="toggle-switch" aria-hidden="true">
+      <span class="toggle-knob"></span>
+    </span>
+  `;
+
+  const mapLabelsSetting = $(
+    "rd135MapLabelsSetting"
+  );
+
+  if (
+    mapLabelsSetting?.parentElement === mapSection
+  ) {
+    mapLabelsSetting.insertAdjacentElement(
+      "afterend",
+      setting
+    );
+  } else {
+    const firstAppearanceSetting = [
+      $("rd128HighContrastMapSetting"),
+      $("rd83DaylightMapSetting"),
+      $("trailColourSetting")
+    ].find(
+      (element) =>
+        element?.parentElement === mapSection
+    );
+
+    if (firstAppearanceSetting) {
+      mapSection.insertBefore(
+        setting,
+        firstAppearanceSetting
+      );
+    } else {
+      mapSection.appendChild(setting);
+    }
+  }
+
+  $("rd191PublicLeadersToggle")
+    ?.addEventListener(
+      "change",
+      (event) => {
+        state.publicLeadersVisible = Boolean(
+          event.currentTarget.checked
+        );
+
+        rd191SavePublicLeadersVisible();
+        rd191ApplyPublicLeadersVisibility();
+
+        showToast(
+          state.publicLeadersVisible
+            ? "Public leaders shown on map"
+            : "Public leaders hidden from map"
+        );
+      }
+    );
+
+  rd191ApplyPublicLeadersVisibility();
+}
+
+
+/* -------------------------------------------------- */
+/* Lifecycle                                          */
+/* -------------------------------------------------- */
+
+function rd191InitPublicLeaderDisplayAndPanels() {
+  rd191InstallStyles();
+
+  const statsPanel = $("rd186MyStatsPanel");
+  if (statsPanel) {
+    els.rd186MyStatsPanel = statsPanel;
+  }
+
+  rd191InsertPublicLeadersSetting();
+  rd186RenderMiniLeaders();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd191InitPublicLeaderDisplayAndPanels,
+    { once: true }
+  );
+} else {
+  rd191InitPublicLeaderDisplayAndPanels();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryPublicLeaderDisplay =
+    "label-hide-toggle-and-dynamic-panel-fix-v191";
