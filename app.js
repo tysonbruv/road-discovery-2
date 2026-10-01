@@ -1,6 +1,151 @@
 "use strict";
 
-/* Road Discovery AU v174
+/*
+ * Road Discovery AU
+ * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
+ * Proprietary software. Copying, redistribution, hosting, modification or
+ * derivative use is not permitted without prior written permission.
+ * Build signature: QOTS-RDA-2026-V193-7E3C9A41
+ */
+
+const ROAD_DISCOVERY_BUILD_OWNERSHIP =
+  Object.freeze({
+    owner: "Quartz Outback Time Studios",
+    product: "Road Discovery AU",
+    version: "193",
+    signature: "QOTS-RDA-2026-V193-7E3C9A41"
+  });
+
+function rd193IsApprovedRuntime() {
+  const hostname = String(
+    window.location.hostname || ""
+  ).toLowerCase();
+  const pathname = String(
+    window.location.pathname || "/"
+  );
+  const protocol = String(
+    window.location.protocol || ""
+  ).toLowerCase();
+
+  const isOfficialGitHubPages =
+    hostname === "tysonbruv.github.io" &&
+    (
+      pathname === "/road-discovery-2" ||
+      pathname.startsWith(
+        "/road-discovery-2/"
+      )
+    );
+
+  const isLocalDevelopment =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]" ||
+    hostname === "::1";
+
+  const isNativeApp =
+    protocol === "capacitor:" ||
+    protocol === "ionic:" ||
+    Boolean(
+      window.Capacitor?.isNativePlatform?.()
+    );
+
+  return (
+    isOfficialGitHubPages ||
+    isLocalDevelopment ||
+    isNativeApp
+  );
+}
+
+function rd193ShowUnauthorizedBuild() {
+  document.title =
+    "Unauthorised Road Discovery build";
+
+  document.documentElement.innerHTML = `
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Unauthorised Road Discovery build</title>
+      <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        body {
+          min-height: 100vh;
+          margin: 0;
+          display: grid;
+          place-items: center;
+          padding: 24px;
+          background:
+            radial-gradient(circle at 50% 100%, rgba(255, 138, 24, 0.16), transparent 46%),
+            #05070a;
+          color: #f7f8fb;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        main {
+          width: min(560px, 100%);
+          padding: 30px;
+          border: 1px solid #38404c;
+          border-radius: 22px;
+          background: #0c1118;
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+        }
+        .eyebrow {
+          margin: 0 0 10px;
+          color: #ff941f;
+          font-size: 0.78rem;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+        }
+        h1 { margin: 0 0 14px; font-size: clamp(1.65rem, 5vw, 2.35rem); }
+        p { margin: 0 0 14px; color: #c1c8d2; line-height: 1.6; }
+        a {
+          display: inline-flex;
+          margin-top: 6px;
+          padding: 12px 16px;
+          border-radius: 999px;
+          background: #ff8614;
+          color: #080a0d;
+          font-weight: 800;
+          text-decoration: none;
+        }
+        small { display: block; margin-top: 20px; color: #76808e; }
+      </style>
+    </head>
+    <body>
+      <main>
+        <p class="eyebrow">Quartz Outback Time Studios</p>
+        <h1>Unauthorised Road Discovery build</h1>
+        <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
+        <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
+        <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
+        <small>Build signature: QOTS-RDA-2026-V193-7E3C9A41</small>
+      </main>
+    </body>
+  `;
+}
+
+Object.defineProperty(
+  window,
+  "__ROAD_DISCOVERY_BUILD_OWNER__",
+  {
+    value: ROAD_DISCOVERY_BUILD_OWNERSHIP,
+    writable: false,
+    configurable: false,
+    enumerable: false
+  }
+);
+
+document.documentElement.dataset.roadDiscoveryBuild =
+  ROAD_DISCOVERY_BUILD_OWNERSHIP.signature;
+
+if (!rd193IsApprovedRuntime()) {
+  rd193ShowUnauthorizedBuild();
+  throw new Error(
+    "Road Discovery AU refused to run on an unauthorised host."
+  );
+}
+
+/* Road Discovery AU v193
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
