@@ -1,0 +1,30 @@
+ROAD DISCOVERY AU – PROPRIETARY SOFTWARE LICENCE
+
+Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
+
+Road Discovery AU, including its source code, interface, original artwork,
+game systems, written content and associated build files, is proprietary
+software owned by Quartz Outback Time Studios except where a third-party
+component is identified under its own licence.
+
+You may use Road Discovery AU only through an official website, installed
+web application or native application published or approved by Quartz
+Outback Time Studios.
+
+Unless prior written permission is provided by Quartz Outback Time Studios,
+no permission is granted to copy, reproduce, modify, adapt, republish, host,
+distribute, sublicense, sell, commercially exploit or create derivative works
+from Road Discovery AU or its source code. You must not remove or alter its
+copyright notices, ownership markers or build signatures.
+
+Third-party libraries, map data and other open-source components included in
+or used by Road Discovery AU remain governed by their respective licences and
+copyright notices. This licence does not claim ownership of those components.
+
+The software is provided without warranties to the extent permitted by law.
+For permission to use or license Road Discovery AU, contact Quartz Outback
+Time Studios through an official Road Discovery AU contact channel.
+
+Product: Road Discovery AU
+Build: v193
+Build signature: QOTS-RDA-2026-V193-7E3C9A41
