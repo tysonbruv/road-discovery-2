@@ -66435,3 +66435,182 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryPublicLeaderDisplay =
     "label-hide-toggle-and-dynamic-panel-fix-v191";
+
+
+/* ================================================== */
+/* Road Discovery AU v192 main-map daylight button    */
+/* One-tap Dark map / Daylight map switching          */
+/* ================================================== */
+
+const roadDiscoveryV192 = {
+  applyDaylightMap: rd83ApplyDaylightMap
+};
+
+
+function rd192DaylightIconMarkup() {
+  return `
+    <svg
+      class="rd192-daylight-icon"
+      viewBox="0 0 32 32"
+      aria-hidden="true"
+    >
+      <circle cx="16" cy="16" r="5.25"></circle>
+      <path d="M16 3.5v4"></path>
+      <path d="M16 24.5v4"></path>
+      <path d="M3.5 16h4"></path>
+      <path d="M24.5 16h4"></path>
+      <path d="m7.15 7.15 2.85 2.85"></path>
+      <path d="m22 22 2.85 2.85"></path>
+      <path d="m24.85 7.15-2.85 2.85"></path>
+      <path d="m10 22-2.85 2.85"></path>
+    </svg>
+  `;
+}
+
+
+function rd192InstallStyles() {
+  if ($("rd192DaylightButtonStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd192DaylightButtonStyles";
+  style.textContent = `
+    .rd192-map-theme-btn {
+      color: rgba(255, 220, 154, 0.82);
+    }
+
+    .rd192-daylight-icon {
+      width: 26px;
+      height: 26px;
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2.15;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .rd192-map-theme-btn.active {
+      border-color: rgba(255, 190, 79, 0.72);
+      background: rgba(79, 48, 9, 0.9);
+      color: #ffd27b;
+      box-shadow:
+        var(--shadow-soft),
+        0 0 0 3px rgba(255, 190, 79, 0.1),
+        0 0 20px rgba(255, 190, 79, 0.22);
+    }
+
+    @media (max-width: 380px) {
+      .rd192-daylight-icon {
+        width: 24px;
+        height: 24px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd192UpdateDaylightButton() {
+  const button = $("rd192DaylightMapBtn");
+  if (!button) return;
+
+  const daylight = Boolean(state.daylightMap);
+
+  button.classList.toggle("active", daylight);
+  button.setAttribute("aria-pressed", String(daylight));
+  button.setAttribute(
+    "aria-label",
+    daylight
+      ? "Turn Daylight map off and use Dark map"
+      : "Turn Daylight map on"
+  );
+  button.title = daylight
+    ? "Daylight map • on"
+    : "Daylight map • off";
+}
+
+
+function rd192ToggleDaylightMap() {
+  state.daylightMap = !Boolean(state.daylightMap);
+  state.highContrastMap = !state.daylightMap;
+
+  rd83SaveDaylightMap();
+  rd128SaveHighContrastMap();
+  rd83ApplyDaylightMap();
+
+  showToast(
+    state.daylightMap
+      ? "Daylight map on"
+      : "Dark map on"
+  );
+}
+
+
+function rd192CreateDaylightButton() {
+  const toolStack = document.querySelector(".tool-stack");
+  if (!toolStack) return;
+
+  let button = $("rd192DaylightMapBtn");
+
+  if (!button) {
+    button = document.createElement("button");
+    button.id = "rd192DaylightMapBtn";
+    button.className = "tool-btn rd192-map-theme-btn";
+    button.type = "button";
+    button.innerHTML = rd192DaylightIconMarkup();
+
+    const settingsButton = $("settingsBtn");
+
+    if (
+      settingsButton?.parentElement === toolStack
+    ) {
+      settingsButton.insertAdjacentElement(
+        "afterend",
+        button
+      );
+    } else {
+      toolStack.prepend(button);
+    }
+
+    button.addEventListener(
+      "click",
+      rd192ToggleDaylightMap
+    );
+  }
+
+  els.rd192DaylightMapBtn = button;
+  rd192UpdateDaylightButton();
+}
+
+
+rd83ApplyDaylightMap = function () {
+  const result = roadDiscoveryV192
+    .applyDaylightMap();
+
+  rd192UpdateDaylightButton();
+  return result;
+};
+
+
+function rd192InitDaylightButton() {
+  rd192InstallStyles();
+  rd192CreateDaylightButton();
+  rd192UpdateDaylightButton();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd192InitDaylightButton,
+    { once: true }
+  );
+} else {
+  rd192InitDaylightButton();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryMainMapThemeButton =
+    "one-tap-daylight-toggle-v192";
