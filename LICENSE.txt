@@ -26,5 +26,5 @@ For permission to use or license Road Discovery AU, contact Quartz Outback
 Time Studios through an official Road Discovery AU contact channel.
 
 Product: Road Discovery AU
-Build: v194
-Build signature: QOTS-RDA-2026-V194-AU7A51C2
+Build: v195
+Build signature: QOTS-RDA-2026-V195-COG8D2F4
