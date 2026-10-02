@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V194-AU7A51C2
+ * Build signature: QOTS-RDA-2026-V195-COG8D2F4
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "194",
-    signature: "QOTS-RDA-2026-V194-AU7A51C2"
+    version: "195",
+    signature: "QOTS-RDA-2026-V195-COG8D2F4"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V194-AU7A51C2</small>
+        <small>Build signature: QOTS-RDA-2026-V195-COG8D2F4</small>
       </main>
     </body>
   `;
@@ -145,7 +145,7 @@ if (!rd193IsApprovedRuntime()) {
   );
 }
 
-/* Road Discovery AU v194
+/* Road Discovery AU v195
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -63750,6 +63750,22 @@ function rd187InstallStyles() {
       color: #ffbc70;
     }
 
+    .rd187-settings-button {
+      padding: 0;
+      line-height: 0;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    .rd187-settings-button .rd195-settings-icon {
+      display: block;
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      color: currentColor;
+      pointer-events: none;
+    }
+
     .rd187-all-time-bar .rd187-settings-button {
       position: absolute;
       right: 0;
@@ -64109,7 +64125,7 @@ rd186BuildLeaderboardPanel = function () {
           type="button"
           aria-label="Leaderboard settings"
           aria-expanded="false"
-        >⚙</button>
+        ><svg class="rd195-settings-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
 
       <div class="rd186-standing">
@@ -65260,7 +65276,7 @@ function rd190BuildLeaderboardPanel() {
           <h3 id="rd190PeriodTitle">All Time</h3>
           <button id="rd190NextPeriodBtn" class="rd190-period-arrow" type="button" aria-label="Next leaderboard period">›</button>
         </div>
-        <button id="rd187LeaderboardSettingsBtn" class="rd187-settings-button" type="button" aria-label="Leaderboard settings" aria-expanded="false">⚙</button>
+        <button id="rd187LeaderboardSettingsBtn" class="rd187-settings-button" type="button" aria-label="Leaderboard settings" aria-expanded="false"><svg class="rd195-settings-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
 
       <div class="rd186-standing">
