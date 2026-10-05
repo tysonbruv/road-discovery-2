@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V198-LABEL7C2E
+ * Build signature: QOTS-RDA-2026-V199-ADS8E41
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "198",
-    signature: "QOTS-RDA-2026-V198-LABEL7C2E"
+    version: "199",
+    signature: "QOTS-RDA-2026-V199-ADS8E41"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V198-LABEL7C2E</small>
+        <small>Build signature: QOTS-RDA-2026-V199-ADS8E41</small>
       </main>
     </body>
   `;
@@ -67909,3 +67909,122 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryNationalView =
     "australia-tasmania-ocean-mask-v194";
+
+
+/* ==================================================
+   Road Discovery AU v199
+   Sponsor on fresh app load and explicit sign-in
+   ================================================== */
+
+function rd199SpecialEntrySkipsOpenSponsor() {
+  const url = new URL(window.location.href);
+  const protectedParameters = [
+    "sponsor_admin_preview",
+    "sponsor_booking",
+    "session_id",
+    "sponsor_submit",
+    "sponsor_status",
+    "password_recovery",
+    "code",
+    "error",
+    "error_code",
+    "error_description"
+  ];
+
+  if (
+    typeof hasPasswordRecoveryRedirect ===
+      "function" &&
+    hasPasswordRecoveryRedirect()
+  ) {
+    return true;
+  }
+
+  if (
+    protectedParameters.some((parameter) =>
+      url.searchParams.has(parameter)
+    )
+  ) {
+    return true;
+  }
+
+  return /(?:^|[&#])(?:type=recovery|access_token=|refresh_token=|error=)/i
+    .test(url.hash);
+}
+
+
+const RD199_SKIP_OPEN_SPONSOR =
+  rd199SpecialEntrySkipsOpenSponsor();
+
+const RD199_PAGE_OPEN_SPONSOR_KEY = [
+  "app-open",
+  Date.now(),
+  Math.random().toString(36).slice(2, 10)
+].join(":");
+
+let rd199OpenSponsorQueued = false;
+
+
+function rd199QueueOpenSponsor() {
+  if (
+    RD199_SKIP_OPEN_SPONSOR ||
+    rd199OpenSponsorQueued
+  ) {
+    return;
+  }
+
+  rd199OpenSponsorQueued = true;
+
+  rd131QueueSponsor(
+    RD199_PAGE_OPEN_SPONSOR_KEY,
+    1100
+  );
+}
+
+
+const roadDiscoveryV199 = {
+  signInRoadProfile
+};
+
+
+signInRoadProfile = async function () {
+  const wasSignedIn = Boolean(
+    state.auth.user &&
+    state.auth.session
+  );
+
+  const result = await roadDiscoveryV199
+    .signInRoadProfile();
+
+  const userId = String(
+    state.auth.user?.id || ""
+  );
+
+  if (
+    !wasSignedIn &&
+    userId &&
+    state.auth.session
+  ) {
+    rd131QueueSponsor(
+      `sign-in:${userId}:${Date.now()}`,
+      500
+    );
+  }
+
+  return result;
+};
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd199QueueOpenSponsor,
+    { once: true }
+  );
+} else {
+  rd199QueueOpenSponsor();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoverySponsorEntryTriggers =
+    "fresh-open-and-explicit-sign-in-v199";
