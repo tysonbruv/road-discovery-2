@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V196-AUTH7C3E
+ * Build signature: QOTS-RDA-2026-V197-MAP4F91
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "196",
-    signature: "QOTS-RDA-2026-V196-AUTH7C3E"
+    version: "197",
+    signature: "QOTS-RDA-2026-V197-MAP4F91"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V196-AUTH7C3E</small>
+        <small>Build signature: QOTS-RDA-2026-V197-MAP4F91</small>
       </main>
     </body>
   `;
@@ -145,7 +145,7 @@ if (!rd193IsApprovedRuntime()) {
   );
 }
 
-/* Road Discovery AU v196
+/* Road Discovery AU v197
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -230,6 +230,22 @@ const RD134_LABEL_PANE =
   "roadDiscoveryLabelsPane";
 
 const RD134_LABEL_PANE_Z_INDEX = 450;
+
+/*
+  Keep the independently rendered PMTiles road and label canvases on the
+  same tile grid. Labels remain in their higher pane so orange trails pass
+  underneath them, while both layers fetch newly exposed tiles during a pan.
+*/
+const RD197_STABLE_TILE_OPTIONS =
+  Object.freeze({
+    maxZoom: 20,
+    maxDataZoom: 14,
+    noWrap: true,
+    updateWhenZooming: false,
+    updateWhenIdle: false,
+    updateInterval: 120,
+    keepBuffer: 3
+  });
 
 const ROAD_DISCOVERY_BASEMAP_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> ' +
@@ -880,12 +896,7 @@ function createRoadDiscoveryBaseLayer(
     renderer?.leafletLayer
       ? renderer.leafletLayer({
         url: ROAD_DISCOVERY_BASEMAP_URL,
-        maxZoom: 20,
-        maxDataZoom: 14,
-        noWrap: true,
-        updateWhenZooming: false,
-        updateWhenIdle: true,
-        keepBuffer: 2,
+        ...RD197_STABLE_TILE_OPTIONS,
         backgroundColor: palette.background,
         paintRules:
           roadDiscoveryBasePaintRules(
@@ -928,8 +939,169 @@ function rd134EnsureLabelPane(map) {
     RD134_LABEL_PANE_Z_INDEX
   );
   pane.style.pointerEvents = "none";
+  pane.style.willChange = "transform";
+  pane.style.transformOrigin = "0 0";
+  pane.style.backfaceVisibility = "hidden";
+  pane.style.webkitBackfaceVisibility =
+    "hidden";
 
   return pane;
+}
+
+function rd197CopyGridTransforms(
+  baseLayer,
+  labelLayer
+) {
+  const baseLevels =
+    baseLayer?._levels || {};
+  const labelLevels =
+    labelLayer?._levels || {};
+
+  Object.keys(labelLevels).forEach(
+    (zoom) => {
+      const baseElement =
+        baseLevels[zoom]?.el;
+      const labelElement =
+        labelLevels[zoom]?.el;
+
+      if (!baseElement || !labelElement) {
+        return;
+      }
+
+      const baseTransform =
+        baseElement.style.transform;
+      const baseTransformOrigin =
+        baseElement.style.transformOrigin;
+
+      if (
+        baseTransform &&
+        labelElement.style.transform !==
+          baseTransform
+      ) {
+        labelElement.style.transform =
+          baseTransform;
+      }
+
+      if (
+        baseTransformOrigin &&
+        labelElement.style.transformOrigin !==
+          baseTransformOrigin
+      ) {
+        labelElement.style.transformOrigin =
+          baseTransformOrigin;
+      }
+    }
+  );
+}
+
+function rd197BindStableLabelMotion(
+  map,
+  baseLayer,
+  labelLayer
+) {
+  if (
+    !map?.on ||
+    !baseLayer ||
+    !labelLayer ||
+    labelLayer._rd197StableMotionBound
+  ) {
+    return;
+  }
+
+  labelLayer._rd197StableMotionBound =
+    true;
+
+  let frame = null;
+
+  const synchronise = () => {
+    frame = null;
+
+    rd197CopyGridTransforms(
+      baseLayer,
+      labelLayer
+    );
+
+    const baseContainer =
+      baseLayer._container;
+    const labelContainer =
+      labelLayer._container;
+
+    [baseContainer, labelContainer]
+      .filter(Boolean)
+      .forEach((container) => {
+        container.style.willChange =
+          "transform";
+        container.style.backfaceVisibility =
+          "hidden";
+        container.style.webkitBackfaceVisibility =
+          "hidden";
+      });
+  };
+
+  const scheduleSynchronise = () => {
+    if (frame !== null) return;
+
+    frame = window.requestAnimationFrame(
+      synchronise
+    );
+  };
+
+  const settleSynchronise = () => {
+    scheduleSynchronise();
+
+    window.requestAnimationFrame(
+      scheduleSynchronise
+    );
+  };
+
+  map.on(
+    "move zoom zoomanim viewreset resize",
+    scheduleSynchronise
+  );
+  map.on(
+    "moveend zoomend",
+    settleSynchronise
+  );
+  baseLayer.on?.(
+    "tileload load",
+    scheduleSynchronise
+  );
+  labelLayer.on?.(
+    "tileload load",
+    scheduleSynchronise
+  );
+
+  labelLayer._rd197StableLabelCleanup =
+    () => {
+      map.off(
+        "move zoom zoomanim viewreset resize",
+        scheduleSynchronise
+      );
+      map.off(
+        "moveend zoomend",
+        settleSynchronise
+      );
+      baseLayer.off?.(
+        "tileload load",
+        scheduleSynchronise
+      );
+      labelLayer.off?.(
+        "tileload load",
+        scheduleSynchronise
+      );
+
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+        frame = null;
+      }
+
+      labelLayer._rd197StableMotionBound =
+        false;
+      labelLayer._rd197StableLabelCleanup =
+        null;
+    };
+
+  scheduleSynchronise();
 }
 
 function rd134CreateLabelLayer(
@@ -943,12 +1115,7 @@ function rd134CreateLabelLayer(
 
   const layer = renderer.leafletLayer({
     url: ROAD_DISCOVERY_BASEMAP_URL,
-    maxZoom: 20,
-    maxDataZoom: 14,
-    noWrap: true,
-    updateWhenZooming: false,
-    updateWhenIdle: true,
-    keepBuffer: 2,
+    ...RD197_STABLE_TILE_OPTIONS,
     paintRules: [],
     labelRules:
       roadDiscoveryBaseLabelRules(
@@ -989,6 +1156,9 @@ function rd134BindBaseLabelCleanup(map) {
 
     if (!labelLayer) return;
 
+    labelLayer
+      ._rd197StableLabelCleanup?.();
+
     baseLayer._roadDiscoveryLabelLayer = null;
     labelLayer._roadDiscoveryBaseLayer = null;
 
@@ -1026,6 +1196,12 @@ function rd134AttachLabelLayer(
   ) {
     labelLayer.addTo(map);
   }
+
+  rd197BindStableLabelMotion(
+    map,
+    baseLayer,
+    labelLayer
+  );
 
   return labelLayer;
 }
