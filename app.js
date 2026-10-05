@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V195-COG8D2F4
+ * Build signature: QOTS-RDA-2026-V196-AUTH7C3E
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "195",
-    signature: "QOTS-RDA-2026-V195-COG8D2F4"
+    version: "196",
+    signature: "QOTS-RDA-2026-V196-AUTH7C3E"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V195-COG8D2F4</small>
+        <small>Build signature: QOTS-RDA-2026-V196-AUTH7C3E</small>
       </main>
     </body>
   `;
@@ -145,7 +145,7 @@ if (!rd193IsApprovedRuntime()) {
   );
 }
 
-/* Road Discovery AU v195
+/* Road Discovery AU v196
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -158,6 +158,15 @@ const FRIEND_SETTINGS_KEY = "roadDiscoveryAU.friendSettings.v1";
 const TODAY_UNLOCKS_KEY = "roadDiscoveryAU.todayUnlocks.v1";
 const ROAD_PROFILE_CACHE_KEY = "roadDiscoveryAU.roadProfile.v1";
 const SHARED_ROAD_SYNC_STATE_KEY = "roadDiscoveryAU.sharedRoadSync.v1";
+
+const PASSWORD_RESET_REQUEST_POLICY = Object.freeze({
+  maximumRequests: 3,
+  windowMs: 60 * 60 * 1000,
+  minimumIntervalMs: 60 * 1000,
+  storageKey: "roadDiscoveryAU.passwordResetRequests.v1"
+});
+
+const passwordResetRequestMemory = new Map();
 
 const SHARED_ROAD_UPLOAD_BATCH_SIZE = 300;
 const SHARED_ROAD_DOWNLOAD_PAGE_SIZE = 500;
@@ -5457,6 +5466,188 @@ async function restartPasswordReset() {
   window.setTimeout(() => els.resetEmailInput?.focus(), 0);
 }
 
+function getPasswordResetEmailFingerprint(email) {
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+  let hash = 2166136261;
+
+  for (let index = 0; index < normalizedEmail.length; index++) {
+    hash ^= normalizedEmail.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(36);
+}
+
+function readPasswordResetRequestTimes(email) {
+  const fingerprint = getPasswordResetEmailFingerprint(email);
+  const now = Date.now();
+  const cutoff = now - PASSWORD_RESET_REQUEST_POLICY.windowMs;
+  let times = passwordResetRequestMemory.get(fingerprint) || [];
+
+  try {
+    const stored = JSON.parse(
+      localStorage.getItem(
+        PASSWORD_RESET_REQUEST_POLICY.storageKey
+      ) || "{}"
+    );
+
+    if (Array.isArray(stored?.[fingerprint])) {
+      times = stored[fingerprint];
+    }
+  } catch (error) {
+    console.warn(
+      "Could not read the password-reset request timer.",
+      error
+    );
+  }
+
+  times = times
+    .map(Number)
+    .filter(
+      (time) =>
+        Number.isFinite(time) &&
+        time >= cutoff &&
+        time <= now
+    )
+    .sort((a, b) => a - b);
+
+  passwordResetRequestMemory.set(fingerprint, times);
+
+  return {
+    fingerprint,
+    times,
+    now
+  };
+}
+
+function savePasswordResetRequestTimes(fingerprint, times) {
+  passwordResetRequestMemory.set(fingerprint, times);
+
+  try {
+    const now = Date.now();
+    const cutoff = now - PASSWORD_RESET_REQUEST_POLICY.windowMs;
+    const stored = JSON.parse(
+      localStorage.getItem(
+        PASSWORD_RESET_REQUEST_POLICY.storageKey
+      ) || "{}"
+    );
+
+    for (const [key, savedTimes] of Object.entries(stored)) {
+      if (!Array.isArray(savedTimes)) {
+        delete stored[key];
+        continue;
+      }
+
+      const currentTimes = savedTimes
+        .map(Number)
+        .filter(
+          (time) =>
+            Number.isFinite(time) &&
+            time >= cutoff &&
+            time <= now
+        );
+
+      if (currentTimes.length) {
+        stored[key] = currentTimes;
+      } else {
+        delete stored[key];
+      }
+    }
+
+    stored[fingerprint] = times;
+
+    localStorage.setItem(
+      PASSWORD_RESET_REQUEST_POLICY.storageKey,
+      JSON.stringify(stored)
+    );
+  } catch (error) {
+    console.warn(
+      "Could not save the password-reset request timer.",
+      error
+    );
+  }
+}
+
+function checkPasswordResetRequestLimit(email) {
+  const requestState = readPasswordResetRequestTimes(email);
+  const { times, now } = requestState;
+
+  if (
+    times.length >=
+    PASSWORD_RESET_REQUEST_POLICY.maximumRequests
+  ) {
+    return {
+      ...requestState,
+      allowed: false,
+      reason: "hourly",
+      waitMs: Math.max(
+        1000,
+        times[0] +
+          PASSWORD_RESET_REQUEST_POLICY.windowMs -
+          now
+      )
+    };
+  }
+
+  const latestRequest = times[times.length - 1] || 0;
+  const elapsed = now - latestRequest;
+
+  if (
+    latestRequest &&
+    elapsed <
+      PASSWORD_RESET_REQUEST_POLICY.minimumIntervalMs
+  ) {
+    return {
+      ...requestState,
+      allowed: false,
+      reason: "cooldown",
+      waitMs:
+        PASSWORD_RESET_REQUEST_POLICY.minimumIntervalMs -
+        elapsed
+    };
+  }
+
+  return {
+    ...requestState,
+    allowed: true,
+    reason: "",
+    waitMs: 0
+  };
+}
+
+function recordPasswordResetRequest(requestState) {
+  const updatedTimes = [
+    ...requestState.times,
+    Date.now()
+  ];
+
+  savePasswordResetRequestTimes(
+    requestState.fingerprint,
+    updatedTimes
+  );
+
+  return Math.max(
+    0,
+    PASSWORD_RESET_REQUEST_POLICY.maximumRequests -
+      updatedTimes.length
+  );
+}
+
+function isPasswordResetRateLimitError(error) {
+  const status = Number(error?.status || 0);
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+
+  return (
+    status === 429 ||
+    code.includes("rate_limit") ||
+    message.includes("rate limit") ||
+    message.includes("too many")
+  );
+}
+
 async function sendPasswordReset() {
   if (!state.auth.client) {
     setAuthMessage("Supabase is not connected.", "error");
@@ -5470,6 +5661,25 @@ async function sendPasswordReset() {
   if (!email || !els.resetEmailInput?.checkValidity()) {
     setAuthMessage("Enter a valid email address.", "error");
     els.resetEmailInput?.focus();
+    return;
+  }
+
+  const requestLimit = checkPasswordResetRequestLimit(email);
+
+  if (!requestLimit.allowed) {
+    if (requestLimit.reason === "cooldown") {
+      setAuthMessage(
+        "A reset email was just requested. Please wait one minute before trying again.",
+        "error"
+      );
+    } else {
+      setAuthMessage(
+        "Email rate limit reached. Please try again in one hour.",
+        "error"
+      );
+    }
+
+    renderAuthState();
     return;
   }
 
@@ -5490,13 +5700,34 @@ async function sendPasswordReset() {
 
   if (error) {
     console.error(error);
-    setAuthMessage(error.message || "Could not send reset email.", "error");
+
+    if (isPasswordResetRateLimitError(error)) {
+      setAuthMessage(
+        "Email rate limit reached. Please try again in one hour.",
+        "error"
+      );
+    } else {
+      setAuthMessage(
+        error.message || "Could not send reset email.",
+        "error"
+      );
+    }
+
     renderAuthState();
     return;
   }
 
+  const remainingRequests =
+    recordPasswordResetRequest(requestLimit);
+  const remainingText = remainingRequests
+    ? ` If needed, you can request ${remainingRequests} more ${
+        remainingRequests === 1 ? "link" : "links"
+      } from this device during the next hour.`
+    : " This device has reached its three-request hourly limit.";
+
   setAuthMessage(
-    "If a Road Profile exists for that email, a password-reset link has been sent. Check your inbox and spam folder.",
+    "If a Road Profile exists for that email, a password-reset link has been sent. Check your inbox and spam folder." +
+      remainingText,
     "success"
   );
   renderAuthState();
