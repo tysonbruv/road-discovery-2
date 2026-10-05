@@ -49,6 +49,221 @@
     .personal-active-note{margin-top:12px;padding:10px;border-left:3px solid var(--green);background:rgba(78,227,154,.06);color:#baf4d4}.personal-paused-note{margin-top:12px;padding:10px;border-left:3px solid #6e7b88;background:rgba(110,123,136,.07);color:#c3ccd5}
     @media(max-width:760px){.personal-create-grid{grid-template-columns:1fr}.personal-create-preview{width:min(100%,420px);margin:auto}}
   </style>
+
+  <!-- Road Discovery AU v200 · Riddle Locations admin map -->
+  <link id="rd-riddle-leaflet-css" rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <style id="rd-riddle-locations-styles">
+.workflow-folder[data-riddle-locations="true"] .workflow-icon {
+  color: #9ed1ff;
+}
+
+.workflow-folder[data-riddle-locations="true"] .workflow-count {
+  background: rgba(75, 179, 255, 0.14);
+  color: #bfe3ff;
+}
+
+#dashboard.rd-riddle-locations-open .tools,
+#dashboard.rd-riddle-locations-open #summary {
+  display: none;
+}
+
+.rd-riddle-locations-page {
+  min-height: calc(100dvh - 155px);
+  padding: 16px;
+  border: 2px solid rgba(75, 179, 255, 0.58);
+  overflow: hidden;
+}
+
+.rd-riddle-locations-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 13px;
+}
+
+.rd-riddle-locations-title {
+  display: grid;
+  gap: 5px;
+}
+
+.rd-riddle-locations-title h2 {
+  font-size: clamp(22px, 3vw, 30px);
+  letter-spacing: -0.035em;
+}
+
+.rd-riddle-locations-title p {
+  color: var(--muted);
+}
+
+.rd-riddle-locations-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 9px;
+  margin-bottom: 11px;
+}
+
+.rd-riddle-location-select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #3b4c5d;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: #090d12;
+  color: #fff;
+  font: inherit;
+  font-weight: 750;
+}
+
+.rd-riddle-map-frame {
+  position: relative;
+  min-height: 570px;
+  height: min(72dvh, 790px);
+  overflow: hidden;
+  border: 1px solid #34495d;
+  border-radius: 15px;
+  background: #05070a;
+}
+
+#rdRiddleLocationsMap {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: #05070a;
+}
+
+.rd-riddle-map-loading {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #cfe7ff;
+  text-align: center;
+  pointer-events: none;
+}
+
+.rd-riddle-map-loading[hidden] {
+  display: none;
+}
+
+.rd-riddle-map-legend {
+  position: absolute;
+  z-index: 500;
+  left: 12px;
+  bottom: 12px;
+  max-width: min(340px, calc(100% - 24px));
+  padding: 9px 11px;
+  border: 1px solid rgba(75, 179, 255, 0.46);
+  border-radius: 10px;
+  background: rgba(7, 12, 18, 0.9);
+  color: #d8eaff;
+  font-size: 11px;
+  line-height: 1.45;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.rd-riddle-map-legend strong {
+  color: #fff;
+}
+
+.rd-riddle-privacy {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.rd-riddle-cluster-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 3px solid #d7efff;
+  border-radius: 50%;
+  background: #087fc4;
+  color: #fff;
+  font: 900 15px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-shadow:
+    0 0 0 8px rgba(75, 179, 255, 0.2),
+    0 8px 24px rgba(0, 0, 0, 0.42);
+}
+
+.rd-riddle-map-frame .leaflet-container {
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.rd-riddle-map-frame .leaflet-control-zoom a {
+  background: #111820;
+  color: #fff;
+  border-color: #334352;
+}
+
+.rd-riddle-map-frame .leaflet-control-attribution {
+  background: rgba(5, 7, 10, 0.78);
+  color: #9aa8b8;
+}
+
+.rd-riddle-map-frame .leaflet-control-attribution a {
+  color: #a9d8ff;
+}
+
+.rd-riddle-map-frame .leaflet-popup-content-wrapper,
+.rd-riddle-map-frame .leaflet-popup-tip {
+  background: #111820;
+  color: #f7f9fb;
+}
+
+.rd-riddle-popup {
+  min-width: 190px;
+}
+
+.rd-riddle-popup strong,
+.rd-riddle-popup span {
+  display: block;
+}
+
+.rd-riddle-popup strong {
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.rd-riddle-popup span {
+  color: #b8c5d3;
+  font-size: 12px;
+}
+
+.rd-riddle-popup .rd-riddle-radius {
+  margin-top: 5px;
+  color: #8dd0ff;
+  font-weight: 800;
+}
+
+@media (max-width: 680px) {
+  .rd-riddle-locations-page {
+    min-height: calc(100dvh - 125px);
+    padding: 11px;
+  }
+
+  .rd-riddle-locations-head {
+    display: grid;
+  }
+
+  .rd-riddle-locations-head .btn {
+    width: 100%;
+  }
+
+  .rd-riddle-locations-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .rd-riddle-map-frame {
+    min-height: 470px;
+    height: 66dvh;
+  }
+}
+  </style>
 </head>
 <body>
 <main class="wrap">
@@ -599,6 +814,623 @@ $("signOut").onclick=async()=>{await sb.auth.signOut();showSession()};
 $("refresh").onclick=load;
 $("search").addEventListener("input",render);
 showSession();
+</script>
+
+<script id="rd-riddle-leaflet-js" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script id="rd-riddle-protomaps-js" src="https://unpkg.com/protomaps-leaflet@4.0.1/dist/protomaps-leaflet.js" crossorigin=""></script>
+<script id="rd-riddle-locations-addon">
+(function roadDiscoveryRiddleLocationsAdmin() {
+  "use strict";
+
+  const RIDDLE_LOCATIONS = Object.freeze([
+    {
+      id: "echo_point_three_sisters",
+      name: "Echo Point Lookout — Three Sisters",
+      region: "Blue Mountains",
+      state: "NSW",
+      radiusM: 140,
+      points: [[-33.73224, 150.31217]]
+    },
+    {
+      id: "lithgow_blast_furnace",
+      name: "Lithgow Blast Furnace",
+      region: "Lithgow",
+      state: "NSW",
+      radiusM: 140,
+      points: [[-33.475056, 150.17035]]
+    },
+    {
+      id: "mount_piper_power_station",
+      name: "Mount Piper Power Station",
+      region: "Central West",
+      state: "NSW",
+      radiusM: 450,
+      points: [[-33.355815, 150.03508]]
+    },
+    {
+      id: "bathurst_big_gold_panner",
+      name: "The Big Gold Panner",
+      region: "Bathurst",
+      state: "NSW",
+      radiusM: 120,
+      points: [[-33.420432, 149.626048]]
+    },
+    {
+      id: "mount_panorama_wahluu_circuit",
+      name: "Mount Panorama/Wahluu Circuit",
+      region: "Bathurst",
+      state: "NSW",
+      radiusM: 120,
+      points: [
+        [-33.439682, 149.558735],
+        [-33.455193, 149.551732],
+        [-33.44986, 149.55905]
+      ]
+    },
+    {
+      id: "hawkesbury_lookout",
+      name: "Hawkesbury Lookout",
+      region: "Blue Mountains",
+      state: "NSW",
+      radiusM: 120,
+      points: [[-33.66721, 150.65192]]
+    },
+    {
+      id: "galston_gorge_lookout",
+      name: "Galston Gorge Lookout",
+      region: "Northern Sydney",
+      state: "NSW",
+      radiusM: 150,
+      points: [[-33.6616298, 151.0873912]]
+    },
+    {
+      id: "north_head_scenic_drive_view_point",
+      name: "North Head Scenic Drive View Point",
+      region: "Sydney Harbour",
+      state: "NSW",
+      radiusM: 150,
+      points: [[-33.8232065, 151.2984181]]
+    },
+    {
+      id: "sublime_point_lookout",
+      name: "Sublime Point Lookout",
+      region: "Illawarra",
+      state: "NSW",
+      radiusM: 150,
+      points: [[-34.2961251, 150.9247813]]
+    },
+    {
+      id: "bald_hill_lookout",
+      name: "Bald Hill Lookout",
+      region: "Illawarra",
+      state: "NSW",
+      radiusM: 150,
+      points: [[-34.2231263, 150.9981465]]
+    },
+    {
+      id: "picton_mushroom_tunnel",
+      name: "Picton Mushroom Tunnel",
+      region: "Wollondilly region",
+      state: "NSW",
+      radiusM: 150,
+      points: [[-34.1720399, 150.6054248]]
+    },
+    {
+      id: "solomon_jane_wiseman_grave",
+      name: "Solomon and Jane Wiseman’s Grave",
+      region: "Hawkesbury River region",
+      state: "NSW",
+      radiusM: 120,
+      points: [[-33.4034051, 151.0077256]]
+    },
+    {
+      id: "miss_porters_house",
+      name: "Miss Porter’s House",
+      region: "Newcastle region",
+      state: "NSW",
+      radiusM: 100,
+      points: [[-32.9277541, 151.7648008]]
+    },
+    {
+      id: "sir_edmund_barton_monument",
+      name: "Sir Edmund Barton Monument",
+      region: "Mid North Coast",
+      state: "NSW",
+      radiusM: 100,
+      points: [[-31.4280237, 152.9081574]]
+    }
+  ]);
+
+  const AUSTRALIA_BOUNDS = Object.freeze([
+    [-44.7, 111.7],
+    [-9.4, 154.8]
+  ]);
+
+  const RIDDLE_MAP_MAX_BOUNDS = Object.freeze([
+    [-51, 104],
+    [-4, 165]
+  ]);
+
+  const BASEMAP_URL =
+    "https://pub-22b254326ffe4854bae9993e2a43a443.r2.dev/australia-road-discovery.pmtiles";
+
+  let riddleViewOpen = false;
+  let riddleMap = null;
+  let previousFolder = "";
+  let originalRender = null;
+  let originalSummary = null;
+  let individualMarkerLayer = null;
+  let nationalMarker = null;
+  let locationLayers = new Map();
+
+  const escapeHtml = (value) =>
+    String(value ?? "").replace(
+      /[&<>"']/g,
+      (character) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;"
+        })[character]
+    );
+
+  function centreFor(location) {
+    const totals = location.points.reduce(
+      (sum, point) => [sum[0] + point[0], sum[1] + point[1]],
+      [0, 0]
+    );
+
+    return [
+      totals[0] / location.points.length,
+      totals[1] / location.points.length
+    ];
+  }
+
+  function allRiddlePoints() {
+    return RIDDLE_LOCATIONS.flatMap((location) => location.points);
+  }
+
+  function totalVerificationRings() {
+    return allRiddlePoints().length;
+  }
+
+  function ensureRiddleTile() {
+    const summaryElement = document.getElementById("summary");
+
+    if (
+      !summaryElement ||
+      document.querySelector('[data-riddle-locations="true"]')
+    ) {
+      return;
+    }
+
+    const button = document.createElement("button");
+    button.className = "workflow-folder";
+    button.dataset.riddleLocations = "true";
+    button.type = "button";
+    button.innerHTML = `
+      <span class="workflow-icon" aria-hidden="true">⌖</span>
+      <span class="workflow-folder-copy">
+        <strong>Riddle Locations</strong>
+        <small>Mystery Riddle radius map</small>
+      </span>
+      <span class="workflow-count">${RIDDLE_LOCATIONS.length}</span>
+    `;
+    button.addEventListener("click", openRiddleLocations);
+    summaryElement.append(button);
+  }
+
+  function mapPageHtml() {
+    const options = RIDDLE_LOCATIONS.map(
+      (location) =>
+        `<option value="${escapeHtml(location.id)}">${escapeHtml(
+          location.name
+        )} · ${escapeHtml(location.state)}</option>`
+    ).join("");
+
+    return `
+      <section class="panel rd-riddle-locations-page" aria-labelledby="rdRiddleLocationsTitle">
+        <div class="rd-riddle-locations-head">
+          <div class="rd-riddle-locations-title">
+            <h2 id="rdRiddleLocationsTitle">Riddle Locations</h2>
+            <p>${RIDDLE_LOCATIONS.length} Mystery Riddles · ${totalVerificationRings()} exact verification rings</p>
+          </div>
+          <button id="rdCloseRiddleLocations" class="btn" type="button">← Back to admin home</button>
+        </div>
+        <div class="rd-riddle-locations-toolbar">
+          <select id="rdRiddleLocationSelect" class="rd-riddle-location-select" aria-label="Jump to a Mystery Riddle">
+            <option value="">Jump to a Mystery Riddle…</option>
+            ${options}
+          </select>
+          <button id="rdResetRiddleMap" class="btn" type="button">Show all Australia</button>
+        </div>
+        <div class="rd-riddle-map-frame">
+          <div id="rdRiddleLocationsMap" aria-label="Australia map showing Mystery Riddle verification areas"></div>
+          <p id="rdRiddleMapLoading" class="rd-riddle-map-loading" role="status">Loading the Australia riddle map…</p>
+          <div class="rd-riddle-map-legend"><strong>Blue dotted rings</strong> show the exact in-app location-check radius. At the Australia view, select the blue “${RIDDLE_LOCATIONS.length}” marker or use the list to zoom in.</div>
+        </div>
+        <p class="rd-riddle-privacy">Admin reference only · no player locations, live GPS or private routes are shown.</p>
+      </section>
+    `;
+  }
+
+  function showAustraliaView() {
+    if (!riddleMap) return;
+
+    riddleMap.fitBounds(AUSTRALIA_BOUNDS, {
+      padding: [18, 18],
+      animate: true
+    });
+  }
+
+  function popupHtml(location) {
+    const ringText =
+      location.points.length > 1
+        ? `${location.points.length} check rings · ${location.radiusM} m each`
+        : `Check radius · ${location.radiusM} m`;
+
+    return `
+      <div class="rd-riddle-popup">
+        <strong>${escapeHtml(location.name)}</strong>
+        <span>${escapeHtml(location.region)}, ${escapeHtml(location.state)}</span>
+        <span class="rd-riddle-radius">${escapeHtml(ringText)}</span>
+      </div>
+    `;
+  }
+
+  function createBasemap() {
+    const renderer = window.protomapsL;
+
+    if (renderer?.leafletLayer) {
+      return renderer.leafletLayer({
+        url: BASEMAP_URL,
+        maxZoom: 20,
+        maxDataZoom: 14,
+        noWrap: true,
+        updateWhenZooming: false,
+        updateWhenIdle: true,
+        keepBuffer: 2,
+        backgroundColor: "#05070a",
+        paintRules: [
+          {
+            dataLayer: "landcover",
+            symbolizer: new renderer.PolygonSymbolizer({
+              fill: "#17211c",
+              opacity: 0.88
+            })
+          },
+          {
+            dataLayer: "landuse",
+            symbolizer: new renderer.PolygonSymbolizer({
+              fill: "#171c22",
+              opacity: 0.72
+            })
+          },
+          {
+            dataLayer: "water",
+            symbolizer: new renderer.PolygonSymbolizer({
+              fill: "#071018"
+            })
+          },
+          {
+            dataLayer: "waterway",
+            minzoom: 6,
+            symbolizer: new renderer.LineSymbolizer({
+              color: "#17364b",
+              opacity: 0.85,
+              width: (zoom) => (zoom < 10 ? 0.65 : 1.4)
+            })
+          },
+          {
+            dataLayer: "boundary",
+            symbolizer: new renderer.LineSymbolizer({
+              color: "#42505d",
+              opacity: 0.55,
+              width: (zoom) => (zoom < 7 ? 0.7 : 1.2)
+            })
+          },
+          {
+            dataLayer: "transportation",
+            minzoom: 5,
+            symbolizer: new renderer.LineSymbolizer({
+              color: "#46505c",
+              opacity: 0.76,
+              width: (zoom) =>
+                zoom < 8 ? 0.55 : zoom < 12 ? 1.1 : 2.25
+            })
+          }
+        ],
+        labelRules: [],
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>'
+      });
+    }
+
+    return window.L.tileLayer(
+      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      {
+        maxZoom: 19,
+        noWrap: true,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>'
+      }
+    );
+  }
+
+  function syncMarkerVisibility() {
+    if (!riddleMap || !individualMarkerLayer || !nationalMarker) return;
+
+    const nationalView = riddleMap.getZoom() < 7;
+
+    if (nationalView) {
+      if (riddleMap.hasLayer(individualMarkerLayer)) {
+        riddleMap.removeLayer(individualMarkerLayer);
+      }
+
+      if (!riddleMap.hasLayer(nationalMarker)) {
+        nationalMarker.addTo(riddleMap);
+      }
+    } else {
+      if (riddleMap.hasLayer(nationalMarker)) {
+        riddleMap.removeLayer(nationalMarker);
+      }
+
+      if (!riddleMap.hasLayer(individualMarkerLayer)) {
+        individualMarkerLayer.addTo(riddleMap);
+      }
+    }
+  }
+
+  function focusLocation(locationId) {
+    const location = RIDDLE_LOCATIONS.find(
+      (item) => item.id === locationId
+    );
+
+    const layer = locationLayers.get(locationId);
+
+    if (!location || !layer || !riddleMap) return;
+
+    const centre = centreFor(location);
+
+    riddleMap.flyTo(centre, 15, {
+      animate: true,
+      duration: 0.65
+    });
+
+    window.setTimeout(() => layer.openPopup(), 700);
+  }
+
+  function initRiddleMap() {
+    const mapElement = document.getElementById("rdRiddleLocationsMap");
+    const loading = document.getElementById("rdRiddleMapLoading");
+
+    if (!mapElement) return;
+
+    if (!window.L) {
+      if (loading) {
+        loading.textContent =
+          "The map library did not load. Check the internet connection and refresh this page.";
+      }
+      return;
+    }
+
+    destroyRiddleMap();
+
+    riddleMap = window.L.map(mapElement, {
+      zoomControl: true,
+      attributionControl: true,
+      minZoom: 3,
+      maxZoom: 19,
+      maxBounds: RIDDLE_MAP_MAX_BOUNDS,
+      maxBoundsViscosity: 0.78,
+      worldCopyJump: false
+    });
+
+    createBasemap().addTo(riddleMap);
+
+    const exactRingLayer = window.L.layerGroup().addTo(riddleMap);
+    individualMarkerLayer = window.L.layerGroup();
+    locationLayers = new Map();
+
+    for (const location of RIDDLE_LOCATIONS) {
+      const centre = centreFor(location);
+      const popup = popupHtml(location);
+
+      for (const point of location.points) {
+        window.L.circle(point, {
+          radius: location.radiusM,
+          color: "#55b9ff",
+          weight: 2,
+          opacity: 0.95,
+          dashArray: "5 8",
+          fillColor: "#238ed1",
+          fillOpacity: 0.13,
+          interactive: true
+        })
+          .bindPopup(popup, { maxWidth: 280 })
+          .addTo(exactRingLayer);
+      }
+
+      const marker = window.L.circleMarker(centre, {
+        radius: 7,
+        color: "#d7efff",
+        weight: 2,
+        opacity: 1,
+        fillColor: "#168fd5",
+        fillOpacity: 0.96
+      })
+        .bindPopup(popup, { maxWidth: 280 })
+        .addTo(individualMarkerLayer);
+
+      marker.on("click", () => {
+        if (riddleMap.getZoom() < 13) {
+          focusLocation(location.id);
+        }
+      });
+
+      locationLayers.set(location.id, marker);
+    }
+
+    const allCentres = RIDDLE_LOCATIONS.map(centreFor);
+    const nationalCentre = [
+      allCentres.reduce((sum, point) => sum + point[0], 0) /
+        allCentres.length,
+      allCentres.reduce((sum, point) => sum + point[1], 0) /
+        allCentres.length
+    ];
+
+    nationalMarker = window.L.marker(nationalCentre, {
+      icon: window.L.divIcon({
+        className: "",
+        html: `<span class="rd-riddle-cluster-icon" aria-label="${RIDDLE_LOCATIONS.length} Mystery Riddle locations">${RIDDLE_LOCATIONS.length}</span>`,
+        iconSize: [48, 48],
+        iconAnchor: [24, 24]
+      }),
+      keyboard: true,
+      title: `${RIDDLE_LOCATIONS.length} Mystery Riddle locations`
+    });
+
+    nationalMarker.on("click", () => {
+      riddleMap.fitBounds(window.L.latLngBounds(allRiddlePoints()), {
+        padding: [45, 45],
+        maxZoom: 8,
+        animate: true
+      });
+    });
+
+    riddleMap.on("zoomend", syncMarkerVisibility);
+    showAustraliaView();
+    syncMarkerVisibility();
+
+    window.setTimeout(() => {
+      riddleMap?.invalidateSize(false);
+      if (loading) loading.hidden = true;
+    }, 80);
+  }
+
+  function destroyRiddleMap() {
+    if (riddleMap) {
+      riddleMap.off();
+      riddleMap.remove();
+    }
+
+    riddleMap = null;
+    individualMarkerLayer = null;
+    nationalMarker = null;
+    locationLayers = new Map();
+  }
+
+  function openRiddleLocations() {
+    const dashboard = document.getElementById("dashboard");
+    const bookingsElement = document.getElementById("bookings");
+
+    if (!dashboard || !bookingsElement) return;
+
+    riddleViewOpen = true;
+
+    try {
+      if (typeof activeFolder !== "undefined") {
+        previousFolder = activeFolder || previousFolder;
+      }
+
+      if (typeof selectedBookingId !== "undefined") {
+        selectedBookingId = "";
+      }
+    } catch (_) {
+      // The add-on also supports later admin builds with private module scope.
+    }
+
+    dashboard.classList.add("rd-riddle-locations-open");
+    bookingsElement.innerHTML = mapPageHtml();
+
+    document
+      .getElementById("rdCloseRiddleLocations")
+      ?.addEventListener("click", closeRiddleLocations);
+
+    document
+      .getElementById("rdResetRiddleMap")
+      ?.addEventListener("click", showAustraliaView);
+
+    document
+      .getElementById("rdRiddleLocationSelect")
+      ?.addEventListener("change", (event) => {
+        if (event.currentTarget.value) {
+          focusLocation(event.currentTarget.value);
+        }
+      });
+
+    window.requestAnimationFrame(initRiddleMap);
+  }
+
+  function closeRiddleLocations() {
+    riddleViewOpen = false;
+    destroyRiddleMap();
+    document
+      .getElementById("dashboard")
+      ?.classList.remove("rd-riddle-locations-open");
+
+    try {
+      if (typeof activeFolder !== "undefined" && previousFolder) {
+        activeFolder = previousFolder;
+      }
+
+      if (typeof render === "function") {
+        render();
+        return;
+      }
+    } catch (_) {
+      // Fall through to the non-invasive home restoration below.
+    }
+
+    ensureRiddleTile();
+  }
+
+  function installHooks() {
+    try {
+      if (typeof summary === "function") {
+        originalSummary = summary;
+        summary = function riddleAwareSummary() {
+          const result = originalSummary.apply(this, arguments);
+          ensureRiddleTile();
+          return result;
+        };
+      }
+
+      if (typeof render === "function") {
+        originalRender = render;
+        render = function riddleAwareRender() {
+          const result = originalRender.apply(this, arguments);
+
+          if (riddleViewOpen) {
+            openRiddleLocations();
+          } else {
+            ensureRiddleTile();
+          }
+
+          return result;
+        };
+      }
+    } catch (_) {
+      // Mutation observation below remains as a compatibility fallback.
+    }
+
+    const observer = new MutationObserver(() => {
+      if (!riddleViewOpen) ensureRiddleTile();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    ensureRiddleTile();
+    window.addEventListener("load", ensureRiddleTile, { once: true });
+  }
+
+  installHooks();
+})();
 </script>
 </body>
 </html>
