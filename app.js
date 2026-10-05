@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V199-ADS8E41
+ * Build signature: QOTS-RDA-2026-V202-RIDDLE-DIFFICULTY
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "199",
-    signature: "QOTS-RDA-2026-V199-ADS8E41"
+  version: "202",
+    signature: "QOTS-RDA-2026-V202-RIDDLE-DIFFICULTY"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V199-ADS8E41</small>
+        <small>Build signature: QOTS-RDA-2026-V202-RIDDLE-DIFFICULTY</small>
       </main>
     </body>
   `;
@@ -68028,3 +68028,998 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoverySponsorEntryTriggers =
     "fresh-open-and-explicit-sign-in-v199";
+
+/* ==================================================
+   Road Discovery AU v201
+   Supabase-managed Mystery Riddles and map geometry
+   ================================================== */
+
+const RD201_RIDDLE_CACHE_KEY =
+  "roadDiscoveryAU.publishedRiddles.v201";
+
+const roadDiscoveryV201 = {
+  rd79AllDiscoveries,
+  rd72DiscoveryById,
+  rd81FindDiscoveryAtPoint,
+  rd72LoadServerProgress,
+  rd72SyncPendingCompletions,
+  rd72OpenHiddenDiscoveryRoom,
+  rd72RenderHiddenDiscoveries,
+  rd73RenderGeneralMenuProgress
+};
+
+state.rd201Riddles = {
+  authoritative: false,
+  loading: false,
+  lastLoadedAt: 0,
+  riddles: [],
+  knownIds: new Set(
+    roadDiscoveryV201
+      .rd79AllDiscoveries()
+      .map((discovery) => discovery.id)
+  )
+};
+
+function rd201FinitePoint(value) {
+  if (!Array.isArray(value) || value.length < 2) {
+    return null;
+  }
+
+  const lat = Number(value[0]);
+  const lng = Number(value[1]);
+
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180
+  ) {
+    return null;
+  }
+
+  return [lat, lng];
+}
+
+function rd201NormaliseGeometry(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const type = String(value.type || "");
+
+  if (type === "circle") {
+    const center = rd201FinitePoint(value.center);
+    const radiusM = Number(value.radiusM);
+
+    if (
+      !center ||
+      !Number.isFinite(radiusM) ||
+      radiusM < 20 ||
+      radiusM > 5000
+    ) {
+      return null;
+    }
+
+    return {
+      type,
+      center,
+      radiusM
+    };
+  }
+
+  if (type === "corridor" || type === "polygon") {
+    const points = Array.isArray(value.points)
+      ? value.points
+          .map(rd201FinitePoint)
+          .filter(Boolean)
+      : [];
+
+    const minimum = type === "corridor" ? 2 : 3;
+    if (points.length < minimum) return null;
+
+    if (type === "polygon") {
+      return { type, points };
+    }
+
+    const radiusM = Number(value.radiusM);
+    if (
+      !Number.isFinite(radiusM) ||
+      radiusM < 20 ||
+      radiusM > 5000
+    ) {
+      return null;
+    }
+
+    return {
+      type,
+      points,
+      radiusM
+    };
+  }
+
+  return null;
+}
+
+function rd201NormaliseDifficulty(value) {
+  const difficulty = String(
+    value || "moderate"
+  ).toLowerCase();
+
+  return [
+    "easy",
+    "moderate",
+    "hard",
+    "very_hard",
+    "impossible"
+  ].includes(difficulty)
+    ? difficulty
+    : "moderate";
+}
+
+function rd201NormaliseRiddle(row) {
+  const geometry = rd201NormaliseGeometry(
+    row?.geometry
+  );
+
+  const id = String(row?.id || "").trim();
+  const answer = String(row?.answer || "").trim();
+  const riddle = String(row?.riddle || "").trim();
+
+  if (
+    !geometry ||
+    !/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(id) ||
+    !answer ||
+    !riddle
+  ) {
+    return null;
+  }
+
+  const discovery = {
+    id,
+    countryCode: String(
+      row?.country_code ||
+      row?.countryCode ||
+      "AU"
+    ).toUpperCase(),
+    regionCode: String(
+      row?.region_code ||
+      row?.regionCode ||
+      "NSW"
+    ).toUpperCase(),
+    region: String(row?.region || ""),
+    answer,
+    completionMessage: String(
+      row?.completion_message ||
+      row?.completionMessage ||
+      `${answer} riddle complete.`
+    ),
+    riddle,
+    note: String(row?.note || ""),
+    difficulty: rd201NormaliseDifficulty(
+      row?.difficulty
+    ),
+    sortOrder: Number(
+      row?.sort_order ??
+      row?.sortOrder ??
+      0
+    ),
+    rd201Geometry: geometry
+  };
+
+  if (geometry.type === "circle") {
+    discovery.zones = [
+      {
+        lat: geometry.center[0],
+        lng: geometry.center[1],
+        radiusM: geometry.radiusM
+      }
+    ];
+  }
+
+  return discovery;
+}
+
+function rd201SortRiddles(riddles) {
+  return riddles.sort(
+    (a, b) =>
+      Number(a.sortOrder || 0) -
+        Number(b.sortOrder || 0) ||
+      String(a.answer).localeCompare(
+        String(b.answer)
+      )
+  );
+}
+
+function rd201ApplyPublishedRows(
+  rows,
+  options = {}
+) {
+  if (!Array.isArray(rows)) return false;
+
+  const riddles = rd201SortRiddles(
+    rows
+      .map(rd201NormaliseRiddle)
+      .filter(Boolean)
+  );
+
+  state.rd201Riddles.riddles = riddles;
+  state.rd201Riddles.authoritative = true;
+  state.rd201Riddles.lastLoadedAt = Date.now();
+
+  for (const riddle of riddles) {
+    state.rd201Riddles.knownIds.add(
+      riddle.id
+    );
+  }
+
+  if (options.save !== false) {
+    try {
+      localStorage.setItem(
+        RD201_RIDDLE_CACHE_KEY,
+        JSON.stringify({
+          savedAt:
+            state.rd201Riddles.lastLoadedAt,
+          rows,
+          knownIds: Array.from(
+            state.rd201Riddles.knownIds
+          )
+        })
+      );
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  return true;
+}
+
+function rd201ReadRiddleCache() {
+  try {
+    const raw = localStorage.getItem(
+      RD201_RIDDLE_CACHE_KEY
+    );
+
+    if (!raw) return;
+
+    const cache = JSON.parse(raw);
+    if (!Array.isArray(cache?.rows)) return;
+
+    if (Array.isArray(cache.knownIds)) {
+      for (const id of cache.knownIds) {
+        if (
+          /^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(
+            String(id || "")
+          )
+        ) {
+          state.rd201Riddles.knownIds.add(
+            String(id)
+          );
+        }
+      }
+    }
+
+    rd201ApplyPublishedRows(
+      cache.rows,
+      { save: false }
+    );
+
+    state.rd201Riddles.lastLoadedAt =
+      Number(cache.savedAt) || 0;
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function rd201RenderRiddleProgress() {
+  const discoveries = rd79AllDiscoveries();
+  const completed = discoveries.filter(
+    (discovery) =>
+      Boolean(
+        state.hiddenDiscoveries.completed[
+          discovery.id
+        ]
+      )
+  ).length;
+
+  const progressText =
+    `${completed} of ` +
+    `${discoveries.length} discovered`;
+
+  const settingsProgress = $(
+    "rd72HiddenSettingsProgress"
+  );
+
+  const generalProgress = $(
+    "rd73HiddenDiscoveryProgress"
+  );
+
+  if (settingsProgress) {
+    settingsProgress.textContent =
+      state.auth.user
+        ? progressText
+        : `${progressText} • Sign in to save progress`;
+  }
+
+  if (generalProgress) {
+    generalProgress.textContent =
+      `${completed} / ` +
+      `${discoveries.length} discovered`;
+  }
+}
+
+function rd201RenderPublishedRiddles() {
+  rd201RenderRiddleProgress();
+
+  const overlay = $(
+    "rd72HiddenDiscoveryOverlay"
+  );
+
+  if (
+    overlay &&
+    !overlay.classList.contains("hidden")
+  ) {
+    rd79RenderCurrentView();
+  }
+}
+
+async function rd201RefreshPublishedRiddles(
+  options = {}
+) {
+  const current = state.rd201Riddles;
+  const client = state.auth.client;
+
+  if (!client || current.loading) {
+    return false;
+  }
+
+  const age =
+    Date.now() - current.lastLoadedAt;
+
+  if (
+    !options.force &&
+    current.authoritative &&
+    age < 5 * 60 * 1000
+  ) {
+    return true;
+  }
+
+  current.loading = true;
+
+  try {
+    const { data, error } = await client.rpc(
+      "get_published_hidden_discoveries"
+    );
+
+    if (error) throw error;
+
+    rd201ApplyPublishedRows(
+      Array.isArray(data) ? data : []
+    );
+
+    rd201RenderPublishedRiddles();
+    return true;
+  } catch (error) {
+    console.error(error);
+    return false;
+  } finally {
+    current.loading = false;
+  }
+}
+
+rd79AllDiscoveries = function () {
+  if (state.rd201Riddles.authoritative) {
+    return state.rd201Riddles.riddles;
+  }
+
+  return roadDiscoveryV201
+    .rd79AllDiscoveries();
+};
+
+rd72DiscoveryById = function (discoveryId) {
+  const id = String(discoveryId || "");
+
+  const live = state.rd201Riddles.riddles.find(
+    (discovery) => discovery.id === id
+  );
+
+  if (live) return live;
+
+  const builtIn = roadDiscoveryV201
+    .rd72DiscoveryById(id);
+
+  if (builtIn) return builtIn;
+
+  if (state.rd201Riddles.knownIds.has(id)) {
+    return {
+      id,
+      answer: "Archived Mystery Riddle",
+      completionMessage:
+        "Mystery Riddle complete.",
+      riddle: "",
+      region: "",
+      countryCode: "AU",
+      regionCode: "NSW"
+    };
+  }
+
+  return null;
+};
+
+function rd201PointToSegmentDistance(
+  point,
+  start,
+  end
+) {
+  const earthRadiusM = 6371000;
+  const radians = Math.PI / 180;
+  const latitude = Number(point.lat) * radians;
+
+  const toLocal = (coordinate) => ({
+    x:
+      (Number(coordinate[1]) -
+        Number(point.lng)) *
+      radians *
+      earthRadiusM *
+      Math.cos(latitude),
+    y:
+      (Number(coordinate[0]) -
+        Number(point.lat)) *
+      radians *
+      earthRadiusM
+  });
+
+  const a = toLocal(start);
+  const b = toLocal(end);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSquared = dx * dx + dy * dy;
+
+  if (lengthSquared <= 0.0001) {
+    return Math.hypot(a.x, a.y);
+  }
+
+  const ratio = Math.max(
+    0,
+    Math.min(
+      1,
+      -(a.x * dx + a.y * dy) /
+        lengthSquared
+    )
+  );
+
+  return Math.hypot(
+    a.x + ratio * dx,
+    a.y + ratio * dy
+  );
+}
+
+function rd201PointInPolygon(point, points) {
+  let inside = false;
+  const x = Number(point.lng);
+  const y = Number(point.lat);
+
+  for (
+    let current = 0, previous = points.length - 1;
+    current < points.length;
+    previous = current++
+  ) {
+    const currentX = Number(points[current][1]);
+    const currentY = Number(points[current][0]);
+    const previousX = Number(points[previous][1]);
+    const previousY = Number(points[previous][0]);
+
+    const crosses =
+      currentY > y !== previousY > y &&
+      x <
+        ((previousX - currentX) *
+          (y - currentY)) /
+          (previousY - currentY ||
+            Number.EPSILON) +
+        currentX;
+
+    if (crosses) inside = !inside;
+  }
+
+  return inside;
+}
+
+function rd201GeometryDistance(
+  point,
+  geometry
+) {
+  if (geometry.type === "circle") {
+    const distance = haversine(
+      point,
+      {
+        lat: geometry.center[0],
+        lng: geometry.center[1]
+      }
+    );
+
+    return distance <= geometry.radiusM
+      ? distance
+      : Infinity;
+  }
+
+  if (geometry.type === "polygon") {
+    return rd201PointInPolygon(
+      point,
+      geometry.points
+    )
+      ? 0
+      : Infinity;
+  }
+
+  let nearest = Infinity;
+
+  for (
+    let index = 1;
+    index < geometry.points.length;
+    index += 1
+  ) {
+    nearest = Math.min(
+      nearest,
+      rd201PointToSegmentDistance(
+        point,
+        geometry.points[index - 1],
+        geometry.points[index]
+      )
+    );
+  }
+
+  return nearest <= geometry.radiusM
+    ? nearest
+    : Infinity;
+}
+
+rd81FindDiscoveryAtPoint = function (
+  point,
+  discoveries
+) {
+  let nearestMatch = null;
+  let nearestDistance = Infinity;
+  const legacyDiscoveries = [];
+
+  for (const discovery of discoveries) {
+    if (
+      state.hiddenDiscoveries.completed[
+        discovery.id
+      ]
+    ) {
+      continue;
+    }
+
+    const geometry =
+      discovery.rd201Geometry;
+
+    if (!geometry) {
+      legacyDiscoveries.push(discovery);
+      continue;
+    }
+
+    const distance =
+      rd201GeometryDistance(
+        point,
+        geometry
+      );
+
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestMatch = discovery;
+    }
+  }
+
+  return (
+    nearestMatch ||
+    roadDiscoveryV201
+      .rd81FindDiscoveryAtPoint(
+        point,
+        legacyDiscoveries
+      )
+  );
+};
+
+function rd201RowsFromRpc(data) {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object") {
+    return [data];
+  }
+  return [];
+}
+
+rd72LoadServerProgress = async function (
+  expectedUserId
+) {
+  const client = state.auth.client;
+  const userId = String(
+    expectedUserId || ""
+  );
+
+  if (!client || !userId) return;
+
+  state.hiddenDiscoveries.loading = true;
+  rd72RenderHiddenDiscoveries();
+
+  const [legacyResult, dynamicResult] =
+    await Promise.all([
+      client.rpc(
+        "get_my_hidden_discoveries"
+      ),
+      client.rpc(
+        "rd201_get_my_hidden_discoveries"
+      )
+    ]);
+
+  if (
+    state.hiddenDiscoveries.activeUserId !==
+    userId
+  ) {
+    return;
+  }
+
+  state.hiddenDiscoveries.loading = false;
+
+  const successful = [
+    legacyResult,
+    dynamicResult
+  ].filter((result) => !result.error);
+
+  if (successful.length === 0) {
+    console.error(
+      legacyResult.error,
+      dynamicResult.error
+    );
+    state.hiddenDiscoveries.syncError = true;
+    rd72RenderHiddenDiscoveries();
+    return;
+  }
+
+  state.hiddenDiscoveries.syncError = false;
+
+  for (const result of successful) {
+    rd72MergeServerRows(
+      rd201RowsFromRpc(result.data)
+    );
+  }
+
+  rd72SaveLocalProgress();
+  rd72RenderHiddenDiscoveries();
+
+  if (
+    state.hiddenDiscoveries.unsynced.size > 0
+  ) {
+    void rd72SyncPendingCompletions();
+  }
+};
+
+rd72SyncPendingCompletions = async function () {
+  const hidden = state.hiddenDiscoveries;
+  const client = state.auth.client;
+  const userId = String(
+    hidden.activeUserId || ""
+  );
+
+  if (
+    hidden.syncing ||
+    !client ||
+    !userId ||
+    String(state.auth.user?.id || "") !==
+      userId ||
+    hidden.unsynced.size === 0
+  ) {
+    return;
+  }
+
+  const discoveryIds = Array.from(
+    hidden.unsynced
+  ).filter(rd72ValidDiscoveryId);
+
+  if (!discoveryIds.length) return;
+
+  hidden.syncing = true;
+  rd72RenderHiddenDiscoveries();
+
+  const { data, error } = await client.rpc(
+    "rd201_complete_my_hidden_discoveries",
+    {
+      p_discovery_ids: discoveryIds
+    }
+  );
+
+  if (hidden.activeUserId !== userId) {
+    return;
+  }
+
+  hidden.syncing = false;
+
+  if (error) {
+    console.error(error);
+
+    /*
+      A deployment that has not received the v201 SQL
+      yet can still use the previous completion RPC.
+    */
+    return roadDiscoveryV201
+      .rd72SyncPendingCompletions();
+  }
+
+  hidden.syncError = false;
+  rd72MergeServerRows(
+    rd201RowsFromRpc(data)
+  );
+
+  for (const discoveryId of discoveryIds) {
+    hidden.unsynced.delete(discoveryId);
+  }
+
+  rd72SaveLocalProgress();
+  rd72RenderHiddenDiscoveries();
+};
+
+rd72RenderHiddenDiscoveries = function () {
+  const result = roadDiscoveryV201
+    .rd72RenderHiddenDiscoveries();
+
+  rd201RenderRiddleProgress();
+  return result;
+};
+
+rd73RenderGeneralMenuProgress = function () {
+  const result = roadDiscoveryV201
+    .rd73RenderGeneralMenuProgress();
+
+  rd201RenderRiddleProgress();
+  return result;
+};
+
+rd72OpenHiddenDiscoveryRoom = function () {
+  const result = roadDiscoveryV201
+    .rd72OpenHiddenDiscoveryRoom();
+
+  void rd201RefreshPublishedRiddles({
+    force: true
+  });
+
+  return result;
+};
+
+function rd201WaitForSupabase(
+  attempt = 0
+) {
+  if (state.auth.client) {
+    void rd201RefreshPublishedRiddles({
+      force: true
+    });
+    return;
+  }
+
+  if (attempt < 30) {
+    window.setTimeout(
+      () =>
+        rd201WaitForSupabase(
+          attempt + 1
+        ),
+      250
+    );
+  }
+}
+
+function rd201InitPublishedRiddles() {
+  rd201ReadRiddleCache();
+  rd201RenderPublishedRiddles();
+  rd201WaitForSupabase();
+
+  window.addEventListener("online", () => {
+    void rd201RefreshPublishedRiddles({
+      force: true
+    });
+  });
+
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (!document.hidden) {
+        void rd201RefreshPublishedRiddles();
+      }
+    }
+  );
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd201InitPublishedRiddles,
+    { once: true }
+  );
+} else {
+  rd201InitPublishedRiddles();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryRiddleSource =
+    "supabase-published-geometry-v202";
+
+/* ==================================================
+   Road Discovery AU v202
+   Colour-coded Mystery Riddle difficulty levels
+   ================================================== */
+
+const RD202_DIFFICULTIES = Object.freeze({
+  easy: {
+    label: "Easy",
+    colour: "#55ed96"
+  },
+  moderate: {
+    label: "Moderate",
+    colour: "#ff9b32"
+  },
+  hard: {
+    label: "Hard",
+    colour: "#ff4f5f"
+  },
+  very_hard: {
+    label: "Very hard",
+    colour: "#9f2438"
+  },
+  impossible: {
+    label: "Impossible",
+    colour: "#ffffff"
+  }
+});
+
+const RD202_FALLBACK_DIFFICULTY =
+  Object.freeze({
+    echo_point_three_sisters: "easy",
+    lithgow_blast_furnace: "moderate",
+    mount_piper_power_station: "hard",
+    bathurst_big_gold_panner: "easy",
+    mount_panorama_wahluu_circuit:
+      "moderate",
+    hawkesbury_lookout: "hard",
+    galston_gorge_lookout: "moderate",
+    north_head_scenic_drive_view_point:
+      "easy",
+    sublime_point_lookout: "moderate",
+    bald_hill_lookout: "easy",
+    picton_mushroom_tunnel: "hard",
+    solomon_jane_wiseman_grave:
+      "very_hard",
+    miss_porters_house: "very_hard",
+    sir_edmund_barton_monument:
+      "impossible"
+  });
+
+const roadDiscoveryV202 = {
+  rd72DiscoveryCard
+};
+
+function rd202Difficulty(discovery) {
+  const requested = String(
+    discovery?.difficulty ||
+      RD202_FALLBACK_DIFFICULTY[
+        discovery?.id
+      ] ||
+      "moderate"
+  ).toLowerCase();
+
+  return RD202_DIFFICULTIES[requested]
+    ? requested
+    : "moderate";
+}
+
+rd72DiscoveryCard = function (
+  discovery,
+  index
+) {
+  const card = roadDiscoveryV202
+    .rd72DiscoveryCard(
+      discovery,
+      index
+    );
+
+  const difficulty =
+    rd202Difficulty(discovery);
+
+  const label =
+    RD202_DIFFICULTIES[difficulty].label;
+
+  const difficultyLine = `
+      <div
+        class="rd202-riddle-difficulty ${difficulty}"
+        aria-label="Difficulty: ${label}"
+      >
+        <span>Difficulty</span>
+        <strong>${label}</strong>
+      </div>
+  `;
+
+  return card.replace(
+    "</blockquote>",
+    `</blockquote>${difficultyLine}`
+  );
+};
+
+function rd202InstallDifficultyStyles() {
+  if ($("rd202RiddleDifficultyStyles")) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "rd202RiddleDifficultyStyles";
+
+  style.textContent = `
+    .rd202-riddle-difficulty {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .rd202-riddle-difficulty > span {
+      color: var(--faint);
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+
+    .rd202-riddle-difficulty > strong {
+      min-width: 78px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: rgba(0, 0, 0, .22);
+      font-size: 10px;
+      font-weight: 950;
+      line-height: 1;
+      text-align: center;
+    }
+
+    .rd202-riddle-difficulty.easy {
+      color: #55ed96;
+    }
+
+    .rd202-riddle-difficulty.moderate {
+      color: #ff9b32;
+    }
+
+    .rd202-riddle-difficulty.hard {
+      color: #ff4f5f;
+    }
+
+    .rd202-riddle-difficulty.very_hard {
+      color: #9f2438;
+    }
+
+    .rd202-riddle-difficulty.impossible {
+      color: #fff;
+    }
+  `;
+
+  document.head.append(style);
+}
+
+function rd202InitRiddleDifficulty() {
+  rd202InstallDifficultyStyles();
+  rd72RenderHiddenDiscoveries();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd202InitRiddleDifficulty,
+    { once: true }
+  );
+} else {
+  rd202InitRiddleDifficulty();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryRiddleDifficulty =
+    "five-level-colour-scale-v202";
