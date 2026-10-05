@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V197-MAP4F91
+ * Build signature: QOTS-RDA-2026-V198-LABEL7C2E
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "197",
-    signature: "QOTS-RDA-2026-V197-MAP4F91"
+    version: "198",
+    signature: "QOTS-RDA-2026-V198-LABEL7C2E"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V197-MAP4F91</small>
+        <small>Build signature: QOTS-RDA-2026-V198-LABEL7C2E</small>
       </main>
     </body>
   `;
@@ -1104,6 +1104,235 @@ function rd197BindStableLabelMotion(
   scheduleSynchronise();
 }
 
+/*
+  Protomaps recalculates label placement while Leaflet is being dragged or
+  pinched. Hiding only the label pane during those direct gestures avoids
+  displaying the temporary positions. GPS follow and programmatic panning
+  remain visible because they do not emit dragstart.
+*/
+function rd198SetLabelPaneHidden(
+  map,
+  hidden
+) {
+  const pane = map?.getPane?.(
+    RD134_LABEL_PANE
+  );
+
+  if (!pane) return;
+
+  pane.style.transition = "none";
+  pane.style.opacity = hidden ? "0" : "1";
+  pane.style.visibility = hidden
+    ? "hidden"
+    : "visible";
+}
+
+function rd198BindGestureLabelVisibility(
+  map,
+  labelLayer
+) {
+  if (
+    !map?.on ||
+    !labelLayer ||
+    labelLayer._rd198GestureLabelBound
+  ) {
+    return;
+  }
+
+  labelLayer._rd198GestureLabelBound = true;
+
+  const activeGestures = new Set();
+  let settleTimer = null;
+  let revealTimer = null;
+  let revealFrame = null;
+  let movementHandler = null;
+  let loadHandler = null;
+  let revealGeneration = 0;
+
+  const cancelReveal = () => {
+    revealGeneration += 1;
+
+    if (settleTimer !== null) {
+      window.clearTimeout(settleTimer);
+      settleTimer = null;
+    }
+
+    if (revealTimer !== null) {
+      window.clearTimeout(revealTimer);
+      revealTimer = null;
+    }
+
+    if (revealFrame !== null) {
+      window.cancelAnimationFrame(
+        revealFrame
+      );
+      revealFrame = null;
+    }
+
+    if (loadHandler) {
+      labelLayer.off?.(
+        "load",
+        loadHandler
+      );
+      loadHandler = null;
+    }
+
+    if (movementHandler) {
+      map.off("move", movementHandler);
+      movementHandler = null;
+    }
+  };
+
+  const hideForGesture = (gesture) => {
+    activeGestures.add(gesture);
+    cancelReveal();
+    rd198SetLabelPaneHidden(map, true);
+  };
+
+  const revealAfterGesture = (gesture) => {
+    activeGestures.delete(gesture);
+
+    if (activeGestures.size > 0) {
+      return;
+    }
+
+    cancelReveal();
+
+    if (!map.hasLayer?.(labelLayer)) {
+      rd198SetLabelPaneHidden(map, false);
+      return;
+    }
+
+    const generation = revealGeneration;
+
+    const revealWhenReady = () => {
+      if (
+        generation !== revealGeneration ||
+        activeGestures.size > 0
+      ) {
+        return;
+      }
+
+      if (revealTimer !== null) {
+        window.clearTimeout(revealTimer);
+        revealTimer = null;
+      }
+
+      if (loadHandler) {
+        labelLayer.off?.(
+          "load",
+          loadHandler
+        );
+        loadHandler = null;
+      }
+
+      revealFrame =
+        window.requestAnimationFrame(() => {
+          if (
+            generation !== revealGeneration ||
+            activeGestures.size > 0
+          ) {
+            return;
+          }
+
+          revealFrame =
+            window.requestAnimationFrame(() => {
+              revealFrame = null;
+
+              if (
+                generation !==
+                  revealGeneration ||
+                activeGestures.size > 0
+              ) {
+                return;
+              }
+
+              rd198SetLabelPaneHidden(
+                map,
+                false
+              );
+            });
+        });
+    };
+
+    const redrawAfterMapSettles = () => {
+      if (
+        generation !== revealGeneration ||
+        activeGestures.size > 0
+      ) {
+        return;
+      }
+
+      settleTimer = null;
+
+      if (movementHandler) {
+        map.off("move", movementHandler);
+        movementHandler = null;
+      }
+
+      loadHandler = revealWhenReady;
+      labelLayer.once?.(
+        "load",
+        loadHandler
+      );
+
+      /* Cached tiles may not emit another load event. */
+      revealTimer = window.setTimeout(
+        revealWhenReady,
+        500
+      );
+
+      labelLayer.redraw?.();
+    };
+
+    const waitForQuietMap = () => {
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer);
+      }
+
+      settleTimer = window.setTimeout(
+        redrawAfterMapSettles,
+        100
+      );
+    };
+
+    movementHandler = waitForQuietMap;
+    map.on("move", movementHandler);
+    waitForQuietMap();
+  };
+
+  const startDrag = () =>
+    hideForGesture("drag");
+  const endDrag = () =>
+    revealAfterGesture("drag");
+  const startZoom = () =>
+    hideForGesture("zoom");
+  const endZoom = () =>
+    revealAfterGesture("zoom");
+
+  map.on("dragstart", startDrag);
+  map.on("dragend", endDrag);
+  map.on("zoomstart", startZoom);
+  map.on("zoomend", endZoom);
+
+  labelLayer._rd198GestureLabelCleanup =
+    () => {
+      map.off("dragstart", startDrag);
+      map.off("dragend", endDrag);
+      map.off("zoomstart", startZoom);
+      map.off("zoomend", endZoom);
+
+      cancelReveal();
+      activeGestures.clear();
+      rd198SetLabelPaneHidden(map, false);
+
+      labelLayer._rd198GestureLabelBound =
+        false;
+      labelLayer._rd198GestureLabelCleanup =
+        null;
+    };
+}
+
 function rd134CreateLabelLayer(
   daylight = false
 ) {
@@ -1158,6 +1387,8 @@ function rd134BindBaseLabelCleanup(map) {
 
     labelLayer
       ._rd197StableLabelCleanup?.();
+    labelLayer
+      ._rd198GestureLabelCleanup?.();
 
     baseLayer._roadDiscoveryLabelLayer = null;
     labelLayer._roadDiscoveryBaseLayer = null;
@@ -1200,6 +1431,10 @@ function rd134AttachLabelLayer(
   rd197BindStableLabelMotion(
     map,
     baseLayer,
+    labelLayer
+  );
+  rd198BindGestureLabelVisibility(
+    map,
     labelLayer
   );
 
