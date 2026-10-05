@@ -50,8 +50,7 @@
     @media(max-width:760px){.personal-create-grid{grid-template-columns:1fr}.personal-create-preview{width:min(100%,420px);margin:auto}}
   </style>
 
-  <!-- Road Discovery AU v202 · Live Mystery Riddle editor -->
-  <link id="rd-riddle-leaflet-css" rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <!-- Road Discovery AU v203 · Live Mystery Riddle editor -->
   <style id="rd-riddle-locations-styles">
 .workflow-folder[data-riddle-locations="true"] .workflow-icon {
   color: #9ed1ff;
@@ -1094,8 +1093,6 @@ $("search").addEventListener("input",render);
 showSession();
 </script>
 
-<script id="rd-riddle-leaflet-js" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-<script id="rd-riddle-protomaps-js" src="https://unpkg.com/protomaps-leaflet@4.0.1/dist/protomaps-leaflet.js" crossorigin=""></script>
 <script id="rd-riddle-locations-addon">
 (function roadDiscoveryRiddleEditorAdmin() {
   "use strict";
@@ -1115,6 +1112,15 @@ showSession();
 
   const BASEMAP_URL =
     "https://pub-22b254326ffe4854bae9993e2a43a443.r2.dev/australia-road-discovery.pmtiles";
+
+  const LEAFLET_CSS_URL =
+    "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+  const LEAFLET_JS_URL =
+    "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+  const PROTOMAPS_JS_URL =
+    "https://unpkg.com/protomaps-leaflet@4.0.1/dist/protomaps-leaflet.js";
+
+  let mapLibraryPromise = null;
 
   const editor = {
     open: false,
@@ -1257,11 +1263,85 @@ showSession();
     }
 
     const count = button.querySelector("[data-riddle-count]");
-    if (count) {
-      count.textContent = editor.riddles.length
-        ? String(publishedCount())
-        : "…";
+    const nextCount = editor.riddles.length
+      ? String(publishedCount())
+      : "…";
+    if (count && count.textContent !== nextCount) {
+      count.textContent = nextCount;
     }
+  }
+
+  function ensureMapStylesheet() {
+    if (document.getElementById("rd-riddle-leaflet-css")) return;
+    const stylesheet = document.createElement("link");
+    stylesheet.id = "rd-riddle-leaflet-css";
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = LEAFLET_CSS_URL;
+    stylesheet.crossOrigin = "";
+    document.head.append(stylesheet);
+  }
+
+  function loadMapScript(id, source, ready) {
+    if (ready()) return Promise.resolve();
+
+    return new Promise((resolve, reject) => {
+      const existing = document.getElementById(id);
+      let settled = false;
+      let timeoutId = 0;
+
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        if (error) reject(error);
+        else resolve();
+      };
+
+      const script = existing || document.createElement("script");
+      if (!existing) {
+        script.id = id;
+        script.src = source;
+        script.async = true;
+        script.crossOrigin = "";
+      }
+
+      script.addEventListener("load", () => {
+        if (ready()) finish();
+        else finish(new Error("The downloaded map library was unavailable."));
+      }, { once: true });
+      script.addEventListener("error", () => {
+        finish(new Error("The map library could not be downloaded."));
+      }, { once: true });
+
+      if (!existing) document.head.append(script);
+
+      if (ready()) {
+        finish();
+        return;
+      }
+
+      timeoutId = window.setTimeout(() => {
+        finish(new Error("The map library took too long to load. Check the connection and try again."));
+      }, 12000);
+    });
+  }
+
+  async function ensureMapLibraries() {
+    ensureMapStylesheet();
+    if (!mapLibraryPromise) {
+      mapLibraryPromise = (async () => {
+        await loadMapScript("rd-riddle-leaflet-js", LEAFLET_JS_URL, () => Boolean(window.L));
+        try {
+          await loadMapScript("rd-riddle-protomaps-js", PROTOMAPS_JS_URL, () => Boolean(window.protomapsL));
+        } catch (_) {
+          // Leaflet's OpenStreetMap layer remains available as a safe fallback.
+        }
+      })().catch((error) => {
+        mapLibraryPromise = null;
+        throw error;
+      });
+    }
+    return mapLibraryPromise;
   }
 
   function pageHtml() {
@@ -2102,8 +2182,24 @@ showSession();
     document.getElementById("rdRefreshRiddles")?.addEventListener("click", () => loadRiddles({ focus: false }));
     document.getElementById("rdShowAllRiddles")?.addEventListener("click", showAustralia);
 
-    window.requestAnimationFrame(initMap);
-    await loadRiddles();
+    const loading = document.getElementById("rdRiddleMapLoading");
+    if (loading) {
+      loading.hidden = false;
+      loading.textContent = "Loading the riddle map…";
+    }
+
+    const mapTask = ensureMapLibraries()
+      .then(() => new Promise((resolve) => {
+        window.requestAnimationFrame(() => {
+          initMap();
+          resolve();
+        });
+      }))
+      .catch((error) => {
+        if (loading) loading.textContent = error.message;
+      });
+
+    await Promise.allSettled([mapTask, loadRiddles()]);
   }
 
   function closeRiddleEditor() {
@@ -2147,8 +2243,14 @@ showSession();
       // Mutation observation remains as a compatibility fallback.
     }
 
+    let tileCheckQueued = false;
     const observer = new MutationObserver(() => {
-      if (!editor.open) ensureRiddleTile();
+      if (editor.open || tileCheckQueued) return;
+      tileCheckQueued = true;
+      window.queueMicrotask(() => {
+        tileCheckQueued = false;
+        if (!editor.open) ensureRiddleTile();
+      });
     });
     observer.observe(document.body, { childList: true, subtree: true });
     ensureRiddleTile();
