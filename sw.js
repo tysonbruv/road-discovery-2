@@ -1,17 +1,17 @@
 "use strict";
 
 /*
-  Road Discovery AU v199 service worker
+  Road Discovery AU v202 service worker
   Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
-  Build signature: QOTS-RDA-2026-V199-ADS8E41
+  Build signature: QOTS-RDA-2026-V202-RIDDLE-DIFFICULTY
 
   Expected frontend versions:
-  - app.js?v=199
+  - app.js?v=202
   - style.css?v=68
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v199";
+  "road-discovery-au-v202";
 
 const CORE_APP_SHELL = [
   "./",
@@ -22,6 +22,8 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=68",
+  "./app.js?v=202",
+  "./app.js?v=201",
   "./app.js?v=199",
   "./app.js?v=198",
   "./app.js?v=197",
@@ -284,55 +286,65 @@ self.addEventListener(
             )
           ) {
             return (
-                  await caches.match(
-                    "./app.js?v=199"
-                  )
-                ) ||
-                (
-                  await caches.match(
-                    "./app.js?v=198"
-                  )
-                ) ||
-                (
-                  await caches.match(
-                    "./app.js?v=197"
-                  )
-                ) ||
-                (
-                  await caches.match(
-                    "./app.js?v=196"
-                  )
-                ) ||
-                (
-                  await caches.match(
-                    "./app.js?v=195"
-                  )
-                ) ||
-                (
-                  await caches.match(
-                    "./app.js?v=194"
-                  )
-                ) ||
-                (
               await caches.match(
-                    "./app.js?v=193"
-                  )
-                ) ||
-                (
-              await caches.match(
-                    "./app.js?v=192"
-                  )
-                ) ||
-                (
-              await caches.match(
-                    "./app.js?v=191"
-                  )
-                ) ||
-                (
-                  await caches.match(
-                    "./app.js?v=190"
-                  )
-                ) ||
+                "./app.js?v=202"
+              )
+            ) ||
+              (
+                await caches.match(
+                  "./app.js?v=201"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=199"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=198"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=197"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=196"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=195"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=194"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=193"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=192"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=191"
+                )
+              ) ||
+              (
+                await caches.match(
+                  "./app.js?v=190"
+                )
+              ) ||
             (
               await caches.match(
                 "./app.js?v=189"
