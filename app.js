@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V211-IOS-MAP-ANCHORS
+ * Build signature: QOTS-RDA-2026-V212-RIDDLE-ZOOM-RESET
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "211",
-    signature: "QOTS-RDA-2026-V211-IOS-MAP-ANCHORS"
+    version: "212",
+    signature: "QOTS-RDA-2026-V212-RIDDLE-ZOOM-RESET"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V211-IOS-MAP-ANCHORS</small>
+        <small>Build signature: QOTS-RDA-2026-V212-RIDDLE-ZOOM-RESET</small>
       </main>
     </body>
   `;
@@ -69224,8 +69224,14 @@ function rd207EnsureSearchLayer() {
   );
   pane.style.zIndex = "460";
   pane.style.pointerEvents = "none";
-  pane.style.opacity = "1";
-  pane.style.visibility = "visible";
+  pane.style.opacity =
+    state.rd212RiddleZoomSettling
+      ? "0"
+      : "1";
+  pane.style.visibility =
+    state.rd212RiddleZoomSettling
+      ? "hidden"
+      : "visible";
   pane.style.transition = "none";
 
   /*
@@ -70247,3 +70253,152 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryIOSMapAnchors =
     "svg-riddle-and-fresh-label-grid-v211";
+
+/* ==================================================
+   Road Discovery AU v212
+   Hide and rebuild the iPhone riddle area after zoom
+   ================================================== */
+
+Object.assign(state, {
+  rd212RiddleZoomBound: false,
+  rd212RiddleZoomSettling: false,
+  rd212RiddleZoomTimer: null,
+  rd212RiddleZoomGeneration: 0
+});
+
+function rd212SetRiddlePaneHidden(hidden) {
+  const pane = state.map?.getPane?.(
+    "riddleSearchPane"
+  );
+
+  if (!pane) return;
+
+  pane.style.transition = "none";
+  pane.style.opacity = hidden ? "0" : "1";
+  pane.style.visibility = hidden
+    ? "hidden"
+    : "visible";
+}
+
+function rd212RemoveRiddleZoomGraphics() {
+  state.rd207RiddleSearchLayer
+    ?.clearLayers?.();
+
+  const renderer =
+    state.rd211RiddleSearchRenderer;
+
+  if (
+    renderer &&
+    state.map?.hasLayer?.(renderer)
+  ) {
+    state.map.removeLayer(renderer);
+  }
+
+  state.rd211RiddleSearchRenderer = null;
+}
+
+function rd212BeginRiddleZoom() {
+  if (!rd211IsIOSMapDevice()) return;
+
+  state.rd212RiddleZoomGeneration += 1;
+  state.rd212RiddleZoomSettling = true;
+
+  if (state.rd212RiddleZoomTimer !== null) {
+    window.clearTimeout(
+      state.rd212RiddleZoomTimer
+    );
+    state.rd212RiddleZoomTimer = null;
+  }
+
+  rd212SetRiddlePaneHidden(true);
+  rd212RemoveRiddleZoomGraphics();
+}
+
+function rd212FinishRiddleZoom() {
+  if (!rd211IsIOSMapDevice()) return;
+
+  if (state.rd212RiddleZoomTimer !== null) {
+    window.clearTimeout(
+      state.rd212RiddleZoomTimer
+    );
+  }
+
+  state.rd212RiddleZoomSettling = true;
+  rd212SetRiddlePaneHidden(true);
+
+  const generation =
+    state.rd212RiddleZoomGeneration;
+
+  state.rd212RiddleZoomTimer =
+    window.setTimeout(() => {
+      state.rd212RiddleZoomTimer = null;
+
+      if (
+        generation !==
+          state.rd212RiddleZoomGeneration ||
+        !state.map
+      ) {
+        return;
+      }
+
+      /*
+       * Throw away every SVG element that participated in Safari's pinch
+       * transform. The replacement is projected again from the riddle's
+       * saved latitude/longitude at the map's settled centre and zoom.
+       */
+      rd212RemoveRiddleZoomGraphics();
+      rd207DrawTrackedSearchArea({
+        focus: false
+      });
+      rd212SetRiddlePaneHidden(true);
+
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (
+            generation !==
+              state.rd212RiddleZoomGeneration
+          ) {
+            return;
+          }
+
+          state.rd212RiddleZoomSettling =
+            false;
+          rd212SetRiddlePaneHidden(false);
+        });
+      });
+    }, 180);
+}
+
+function rd212BindRiddleZoomReset() {
+  if (
+    !state.map?.on ||
+    state.rd212RiddleZoomBound ||
+    !rd211IsIOSMapDevice()
+  ) {
+    return;
+  }
+
+  state.rd212RiddleZoomBound = true;
+  state.map.on(
+    "zoomstart",
+    rd212BeginRiddleZoom
+  );
+  state.map.on(
+    "zoomend",
+    rd212FinishRiddleZoom
+  );
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd212BindRiddleZoomReset,
+    { once: true }
+  );
+} else {
+  rd212BindRiddleZoomReset();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryRiddleZoomReset =
+    "hide-reproject-reveal-v212";
