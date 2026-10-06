@@ -50,7 +50,7 @@
     @media(max-width:760px){.personal-create-grid{grid-template-columns:1fr}.personal-create-preview{width:min(100%,420px);margin:auto}}
   </style>
 
-  <!-- Road Discovery AU v206 · Live Mystery Riddle editor -->
+  <!-- Road Discovery AU v207 · Live Mystery Riddle editor -->
   <style id="rd-riddle-locations-styles">
 .workflow-folder[data-riddle-locations="true"] .workflow-icon {
   color: #9ed1ff;
@@ -379,10 +379,52 @@ body.rd-riddle-editor-open .wrap {
   background: rgba(21, 54, 78, 0.11);
 }
 
+.rd-riddle-search-box {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: rgba(20, 184, 166, 0.075);
+}
+
+.rd-riddle-shape-box.active-editor {
+  border-width: 2px;
+  box-shadow: 0 0 0 2px rgba(85, 185, 255, 0.08);
+}
+
+.rd-riddle-search-box.active-editor {
+  border-color: #2dd4bf;
+  box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.1);
+}
+
+.rd-riddle-verification-box.active-editor {
+  border-color: #55b9ff;
+}
+
+.rd-riddle-edit-area {
+  width: 100%;
+  min-height: 36px;
+  justify-content: center;
+}
+
+.rd-riddle-edit-area.active {
+  border-color: #55b9ff;
+  background: rgba(50, 150, 218, 0.18);
+  color: #bfe6ff;
+}
+
+.rd-riddle-search-box .rd-riddle-edit-area.active,
+.rd-riddle-search-buttons button.active {
+  border-color: #2dd4bf;
+  background: rgba(20, 184, 166, 0.16);
+  color: #adfff5;
+}
+
 .rd-riddle-shape-buttons {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
+}
+
+.rd-riddle-search-buttons {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .rd-riddle-shape-buttons button {
@@ -429,6 +471,10 @@ body.rd-riddle-editor-open .wrap {
 .rd-riddle-radius-row input[type="range"] {
   width: 100%;
   accent-color: #55b9ff;
+}
+
+.rd-riddle-search-box .rd-riddle-radius-row input[type="range"] {
+  accent-color: #2dd4bf;
 }
 
 .rd-riddle-radius-number {
@@ -591,6 +637,14 @@ body.rd-riddle-editor-open .wrap {
   color: #fff;
 }
 
+.rd-riddle-map-legend strong.search {
+  color: #5eead4;
+}
+
+.rd-riddle-map-legend strong.verification {
+  color: #8ed2ff;
+}
+
 .rd-riddle-node-icon {
   display: block;
   width: 18px;
@@ -599,6 +653,14 @@ body.rd-riddle-editor-open .wrap {
   border-radius: 50%;
   background: #168fd5;
   box-shadow: 0 2px 9px rgba(0, 0, 0, 0.48);
+}
+
+.rd-riddle-node-icon.search {
+  background: #14b8a6;
+}
+
+.rd-riddle-node-icon.verification {
+  background: #168fd5;
 }
 
 .rd-riddle-map-frame .leaflet-container {
@@ -1277,8 +1339,10 @@ showSession();
     idManuallyEdited: false,
     map: null,
     overviewLayer: null,
+    searchLayer: null,
     shapeLayer: null,
     handleLayer: null,
+    activeArea: "search",
     suppressNextMapClick: false,
     previousFolder: "",
     originalRender: null,
@@ -1349,6 +1413,34 @@ showSession();
     return DIFFICULTIES.find((option) => option.value === difficulty)?.label || "Moderate";
   }
 
+  function defaultSearchRadius(difficultyValue) {
+    return ({
+      easy: 1500,
+      moderate: 3500,
+      hard: 7000,
+      very_hard: 15000,
+      impossible: 25000
+    })[normaliseDifficulty(difficultyValue)] || 3500;
+  }
+
+  function firstGeometryPoint(geometry) {
+    if (geometry?.type === "circle" && Array.isArray(geometry.center)) {
+      return geometry.center;
+    }
+    if (Array.isArray(geometry?.points) && geometry.points.length) {
+      return geometry.points[0];
+    }
+    return [-33.8688, 151.2093];
+  }
+
+  function derivedSearchGeometry(geometry, difficultyValue) {
+    return {
+      type: "circle",
+      center: clone(firstGeometryPoint(geometry)),
+      radiusM: defaultSearchRadius(difficultyValue)
+    };
+  }
+
   function slug(value) {
     return String(value || "")
       .toLowerCase()
@@ -1380,6 +1472,12 @@ showSession();
   }
 
   function normaliseRow(row) {
+    const difficultyValue = normaliseDifficulty(row?.difficulty);
+    const verificationGeometry = clone(row?.geometry || {
+      type: "circle",
+      center: [-33.8688, 151.2093],
+      radiusM: 150
+    });
     return {
       id: String(row?.id || ""),
       countryCode: String(row?.country_code || "AU"),
@@ -1389,12 +1487,13 @@ showSession();
       riddle: String(row?.riddle || ""),
       completionMessage: String(row?.completion_message || ""),
       note: String(row?.note || ""),
-      difficulty: normaliseDifficulty(row?.difficulty),
-      geometry: clone(row?.geometry || {
-        type: "circle",
-        center: [-33.8688, 151.2093],
-        radiusM: 150
-      }),
+      difficulty: difficultyValue,
+      searchGeometry: clone(
+        row?.search_geometry ||
+        row?.searchGeometry ||
+        derivedSearchGeometry(verificationGeometry, difficultyValue)
+      ),
+      geometry: verificationGeometry,
       status: String(row?.status || "draft"),
       sortOrder: Number(row?.sort_order || 0),
       hasUnpublishedChanges: Boolean(row?.has_unpublished_changes),
@@ -1522,7 +1621,7 @@ showSession();
         <div class="rd-riddle-editor-head">
           <div class="rd-riddle-editor-title">
             <h2 id="rdRiddleEditorTitle">Riddle Locations</h2>
-            <p>Add riddles, reshape their verification areas, save drafts and publish them to Road Discovery.</p>
+            <p>Add riddles, shape the player search area, protect the hidden answer area and publish them to Road Discovery.</p>
           </div>
           <div class="rd-riddle-editor-actions">
             <button id="rdNewRiddle" class="btn primary" type="button">＋ Add new riddle</button>
@@ -1541,15 +1640,15 @@ showSession();
           <section class="rd-riddle-map-panel">
             <div class="rd-riddle-map-toolbar">
               <div>
-                <strong>Verification-area editor</strong>
+                <strong>Riddle map-area editor</strong>
                 <span> · roads, suburbs and towns are labelled</span>
               </div>
               <button id="rdShowAllRiddles" class="btn mini" type="button">Show Australia</button>
             </div>
             <div class="rd-riddle-map-frame">
-              <div id="rdRiddleEditorMap" aria-label="Editable Mystery Riddle verification map"></div>
+              <div id="rdRiddleEditorMap" aria-label="Editable Mystery Riddle search and verification map"></div>
               <p id="rdRiddleMapLoading" class="rd-riddle-map-loading" role="status">Loading the riddle map…</p>
-              <div class="rd-riddle-map-legend"><strong>Blue area:</strong> where the app accepts the riddle. Drag the blue handles to reshape it. A route corridor follows a road or circuit; a polygon covers a custom area.</div>
+              <div class="rd-riddle-map-legend"><strong class="search">Teal:</strong> broad search area players see while tracking. <strong class="verification">Blue:</strong> hidden area where the app accepts the answer. Choose which area to edit in the left controls.</div>
             </div>
             <p class="rd-riddle-privacy">Admin only · publishing changes the live app’s riddle list and GPS verification areas. Player routes and live locations are never shown here.</p>
           </section>
@@ -1641,8 +1740,10 @@ showSession();
     const riddle = editor.draft;
     if (!riddle) return '<p class="muted">Choose a riddle or add a new one.</p>';
 
-    const type = String(riddle.geometry?.type || "circle");
-    const radiusValue = Number(riddle.geometry?.radiusM || 150);
+    const searchType = String(riddle.searchGeometry?.type || "circle");
+    const searchRadiusValue = Number(riddle.searchGeometry?.radiusM || 3500);
+    const verificationType = String(riddle.geometry?.type || "circle");
+    const verificationRadiusValue = Number(riddle.geometry?.radiusM || 150);
     const statusText = editor.isNew
       ? "New draft · it is not in the app until you publish it."
       : riddle.status === "archived"
@@ -1727,36 +1828,64 @@ showSession();
         </label>
       </section>
 
-      <section class="rd-riddle-control-section rd-riddle-shape-box">
+      <section class="rd-riddle-control-section rd-riddle-shape-box rd-riddle-search-box ${editor.activeArea === "search" ? "active-editor" : ""}">
         <div class="rd-riddle-section-heading">
           <span class="rd-riddle-step">2</span>
-          <div><strong>Choose the accepted area</strong><small>Then click or drag points on the map</small></div>
+          <div><strong>Player search area</strong><small>Translucent teal area shown only while this riddle is tracked</small></div>
         </div>
-        <div class="rd-riddle-shape-buttons">
-          <button data-shape-type="circle" class="${type === "circle" ? "active" : ""}" type="button"><strong>Circle</strong><small>One location</small></button>
-          <button data-shape-type="corridor" class="${type === "corridor" ? "active" : ""}" type="button"><strong>Route</strong><small>Road or circuit</small></button>
-          <button data-shape-type="polygon" class="${type === "polygon" ? "active" : ""}" type="button"><strong>Polygon</strong><small>Custom outline</small></button>
+        <button id="rdEditSearchArea" class="btn rd-riddle-edit-area ${editor.activeArea === "search" ? "active" : ""}" type="button">${editor.activeArea === "search" ? "Editing teal search area" : "Edit teal search area"}</button>
+        <div class="rd-riddle-shape-buttons rd-riddle-search-buttons">
+          <button data-search-shape-type="circle" class="${searchType === "circle" ? "active" : ""}" type="button"><strong>Circle</strong><small>Broad radius</small></button>
+          <button data-search-shape-type="polygon" class="${searchType === "polygon" ? "active" : ""}" type="button"><strong>Polygon</strong><small>Custom region</small></button>
         </div>
-        ${type !== "polygon" ? `
+        ${searchType === "circle" ? `
           <label class="rd-riddle-field">
-            <span>${type === "corridor" ? "Distance accepted on each side" : "Accepted radius"}</span>
+            <span>Visible search radius</span>
             <div class="rd-riddle-radius-row">
-              <input id="rdRiddleRadiusRange" type="range" min="20" max="1000" step="10" value="${escapeHtml(Math.min(1000, radiusValue))}">
-              <div class="rd-riddle-radius-number"><input id="rdRiddleRadiusNumber" type="number" min="20" max="5000" step="10" value="${escapeHtml(radiusValue)}"><span>m</span></div>
+              <input id="rdSearchRadiusRange" type="range" min="100" max="50000" step="100" value="${escapeHtml(Math.min(50000, searchRadiusValue))}">
+              <div class="rd-riddle-radius-number"><input id="rdSearchRadiusNumber" type="number" min="100" max="100000" step="100" value="${escapeHtml(searchRadiusValue)}"><span>m</span></div>
             </div>
           </label>
         ` : ""}
-        <p class="rd-riddle-shape-help">${escapeHtml(shapeHelp(type))}</p>
+        <p class="rd-riddle-shape-help">${searchType === "polygon" ? "Click around the broad region players should search. The exact answer area remains separately hidden." : "Click the map to move the teal centre. Drag the teal handle or change the radius. Make this broad enough to guide without revealing the answer."}</p>
         <div class="rd-riddle-shape-actions">
-          <button id="rdFocusRiddle" class="btn" type="button">⌖ Find area on map</button>
-          ${type !== "circle" ? '<button id="rdUndoRiddlePoint" class="btn" type="button">↶ Undo point</button>' : ""}
-          <button id="rdClearRiddleShape" class="btn" type="button">Clear shape</button>
+          <button id="rdFocusSearchArea" class="btn" type="button">⌖ Find teal area</button>
+          ${searchType !== "circle" ? '<button id="rdUndoSearchPoint" class="btn" type="button">↶ Undo point</button>' : ""}
+          <button id="rdClearSearchArea" class="btn" type="button">Clear teal area</button>
+        </div>
+      </section>
+
+      <section class="rd-riddle-control-section rd-riddle-shape-box rd-riddle-verification-box ${editor.activeArea === "verification" ? "active-editor" : ""}">
+        <div class="rd-riddle-section-heading">
+          <span class="rd-riddle-step">3</span>
+          <div><strong>Hidden answer area</strong><small>Players never see this blue verification shape</small></div>
+        </div>
+        <button id="rdEditVerificationArea" class="btn rd-riddle-edit-area ${editor.activeArea === "verification" ? "active" : ""}" type="button">${editor.activeArea === "verification" ? "Editing blue answer area" : "Edit blue answer area"}</button>
+        <div class="rd-riddle-shape-buttons">
+          <button data-verification-shape-type="circle" class="${verificationType === "circle" ? "active" : ""}" type="button"><strong>Circle</strong><small>One location</small></button>
+          <button data-verification-shape-type="corridor" class="${verificationType === "corridor" ? "active" : ""}" type="button"><strong>Route</strong><small>Road or circuit</small></button>
+          <button data-verification-shape-type="polygon" class="${verificationType === "polygon" ? "active" : ""}" type="button"><strong>Polygon</strong><small>Custom outline</small></button>
+        </div>
+        ${verificationType !== "polygon" ? `
+          <label class="rd-riddle-field">
+            <span>${verificationType === "corridor" ? "Distance accepted on each side" : "Accepted radius"}</span>
+            <div class="rd-riddle-radius-row">
+              <input id="rdVerificationRadiusRange" type="range" min="20" max="1000" step="10" value="${escapeHtml(Math.min(1000, verificationRadiusValue))}">
+              <div class="rd-riddle-radius-number"><input id="rdVerificationRadiusNumber" type="number" min="20" max="5000" step="10" value="${escapeHtml(verificationRadiusValue)}"><span>m</span></div>
+            </div>
+          </label>
+        ` : ""}
+        <p class="rd-riddle-shape-help">${escapeHtml(shapeHelp(verificationType))}</p>
+        <div class="rd-riddle-shape-actions">
+          <button id="rdFocusVerificationArea" class="btn" type="button">⌖ Find blue area</button>
+          ${verificationType !== "circle" ? '<button id="rdUndoVerificationPoint" class="btn" type="button">↶ Undo point</button>' : ""}
+          <button id="rdClearVerificationArea" class="btn" type="button">Clear blue area</button>
         </div>
       </section>
 
       <section class="rd-riddle-control-section rd-riddle-publish-section">
         <div class="rd-riddle-section-heading">
-          <span class="rd-riddle-step">3</span>
+          <span class="rd-riddle-step">4</span>
           <div><strong>Save or publish</strong><small>${escapeHtml(statusText)}</small></div>
         </div>
         <div class="rd-riddle-save-actions">
@@ -1814,27 +1943,48 @@ showSession();
       }
     });
 
-    document.querySelectorAll("[data-shape-type]").forEach((button) => {
-      button.addEventListener("click", () => changeShapeType(button.dataset.shapeType));
+    document.querySelectorAll("[data-search-shape-type]").forEach((button) => {
+      button.addEventListener("click", () => changeShapeType(button.dataset.searchShapeType, "search"));
     });
 
-    const range = document.getElementById("rdRiddleRadiusRange");
-    const number = document.getElementById("rdRiddleRadiusNumber");
+    document.querySelectorAll("[data-verification-shape-type]").forEach((button) => {
+      button.addEventListener("click", () => changeShapeType(button.dataset.verificationShapeType, "verification"));
+    });
 
-    const setRadius = (value) => {
-      const radiusM = Math.max(20, Math.min(5000, Math.round(Number(value) || 20)));
-      editor.draft.geometry.radiusM = radiusM;
-      if (range) range.value = String(Math.min(1000, radiusM));
-      if (number) number.value = String(radiusM);
+    const searchRange = document.getElementById("rdSearchRadiusRange");
+    const searchNumber = document.getElementById("rdSearchRadiusNumber");
+    const verificationRange = document.getElementById("rdVerificationRadiusRange");
+    const verificationNumber = document.getElementById("rdVerificationRadiusNumber");
+
+    const setSearchRadius = (value) => {
+      const radiusM = Math.max(100, Math.min(100000, Math.round(Number(value) || 100)));
+      editor.draft.searchGeometry.radiusM = radiusM;
+      if (searchRange) searchRange.value = String(Math.min(50000, radiusM));
+      if (searchNumber) searchNumber.value = String(radiusM);
       drawSelectedGeometry();
     };
 
-    range?.addEventListener("input", () => setRadius(range.value));
-    number?.addEventListener("input", () => setRadius(number.value));
+    const setVerificationRadius = (value) => {
+      const radiusM = Math.max(20, Math.min(5000, Math.round(Number(value) || 20)));
+      editor.draft.geometry.radiusM = radiusM;
+      if (verificationRange) verificationRange.value = String(Math.min(1000, radiusM));
+      if (verificationNumber) verificationNumber.value = String(radiusM);
+      drawSelectedGeometry();
+    };
 
-    document.getElementById("rdFocusRiddle")?.addEventListener("click", focusSelectedGeometry);
-    document.getElementById("rdUndoRiddlePoint")?.addEventListener("click", undoLastPoint);
-    document.getElementById("rdClearRiddleShape")?.addEventListener("click", clearShape);
+    searchRange?.addEventListener("input", () => setSearchRadius(searchRange.value));
+    searchNumber?.addEventListener("input", () => setSearchRadius(searchNumber.value));
+    verificationRange?.addEventListener("input", () => setVerificationRadius(verificationRange.value));
+    verificationNumber?.addEventListener("input", () => setVerificationRadius(verificationNumber.value));
+
+    document.getElementById("rdEditSearchArea")?.addEventListener("click", () => setActiveArea("search"));
+    document.getElementById("rdEditVerificationArea")?.addEventListener("click", () => setActiveArea("verification"));
+    document.getElementById("rdFocusSearchArea")?.addEventListener("click", () => focusArea("search"));
+    document.getElementById("rdFocusVerificationArea")?.addEventListener("click", () => focusArea("verification"));
+    document.getElementById("rdUndoSearchPoint")?.addEventListener("click", () => undoLastPoint("search"));
+    document.getElementById("rdUndoVerificationPoint")?.addEventListener("click", () => undoLastPoint("verification"));
+    document.getElementById("rdClearSearchArea")?.addEventListener("click", () => clearShape("search"));
+    document.getElementById("rdClearVerificationArea")?.addEventListener("click", () => clearShape("verification"));
     document.getElementById("rdSaveRiddleDraft")?.addEventListener("click", () => saveRiddle("save_draft"));
     document.getElementById("rdPublishRiddle")?.addEventListener("click", () => saveRiddle("publish"));
     document.getElementById("rdArchiveRiddle")?.addEventListener("click", archiveRiddle);
@@ -1858,6 +2008,8 @@ showSession();
     editor.isNew = true;
     editor.idManuallyEdited = false;
     editor.selectedId = "";
+    editor.activeArea = "search";
+    const centre = defaultCentre();
     editor.draft = {
       id: "",
       countryCode: "AU",
@@ -1868,9 +2020,14 @@ showSession();
       difficulty: "moderate",
       completionMessage: "",
       note: "",
+      searchGeometry: {
+        type: "circle",
+        center: clone(centre),
+        radiusM: 3500
+      },
       geometry: {
         type: "circle",
-        center: defaultCentre(),
+        center: clone(centre),
         radiusM: 150
       },
       status: "draft",
@@ -1892,6 +2049,7 @@ showSession();
     editor.isNew = false;
     editor.idManuallyEdited = true;
     editor.selectedId = id;
+    editor.activeArea = "search";
     editor.draft = clone(riddle);
     renderRiddleList();
     renderRiddleForm();
@@ -1905,43 +2063,89 @@ showSession();
     return Array.isArray(geometry?.points) && geometry.points.length > 0;
   }
 
-  function changeShapeType(type) {
-    if (!editor.draft || !["circle", "corridor", "polygon"].includes(type)) return;
-    if (editor.draft.geometry?.type === type) return;
+  function areaKey(area = editor.activeArea) {
+    return area === "verification" ? "geometry" : "searchGeometry";
+  }
+
+  function areaGeometry(area = editor.activeArea) {
+    return editor.draft?.[areaKey(area)] || null;
+  }
+
+  function areaName(area = editor.activeArea) {
+    return area === "verification" ? "hidden answer area" : "player search area";
+  }
+
+  function setActiveArea(area, options = {}) {
+    if (!editor.draft || !["search", "verification"].includes(area)) return;
+    updateDraftFromFields();
+    editor.activeArea = area;
+    renderRiddleForm();
+    drawSelectedGeometry();
+    if (options.focus !== false) focusSelectedGeometry();
+    setMessage(
+      area === "search"
+        ? "Editing the teal area that players see while tracking this riddle."
+        : "Editing the hidden blue area where Road Discovery accepts the answer."
+    );
+  }
+
+  function changeShapeType(type, area = editor.activeArea) {
+    const allowed = area === "search"
+      ? ["circle", "polygon"]
+      : ["circle", "corridor", "polygon"];
+    if (!editor.draft || !allowed.includes(type)) return;
+    updateDraftFromFields();
+    const key = areaKey(area);
+    if (editor.draft[key]?.type === type) {
+      setActiveArea(area, { focus: false });
+      return;
+    }
 
     if (
-      geometryHasWork(editor.draft.geometry) &&
-      !window.confirm("Change the verification shape? The current shape points will be cleared.")
+      geometryHasWork(editor.draft[key]) &&
+      !window.confirm(`Change the ${areaName(area)} shape? Its current points will be cleared.`)
     ) {
       return;
     }
 
-    editor.draft.geometry = type === "circle"
-      ? { type, center: defaultCentre(), radiusM: 150 }
+    editor.activeArea = area;
+    editor.draft[key] = type === "circle"
+      ? {
+          type,
+          center: defaultCentre(),
+          radiusM: area === "search" ? defaultSearchRadius(editor.draft.difficulty) : 150
+        }
       : { type, points: [], ...(type === "corridor" ? { radiusM: 120 } : {}) };
 
     renderRiddleForm();
     drawSelectedGeometry();
-    setMessage(shapeHelp(type));
+    setMessage(
+      area === "search"
+        ? "Click the map to draw the teal player search area."
+        : shapeHelp(type)
+    );
   }
 
-  function undoLastPoint() {
-    const points = editor.draft?.geometry?.points;
+  function undoLastPoint(area = editor.activeArea) {
+    editor.activeArea = area;
+    const points = areaGeometry(area)?.points;
     if (!Array.isArray(points) || !points.length) return;
     points.pop();
     drawSelectedGeometry();
-    setMessage("Last map point removed.");
+    setMessage(`Last ${areaName(area)} point removed.`);
   }
 
-  function clearShape() {
-    if (!editor.draft || !window.confirm("Clear the selected verification shape?")) return;
-    if (editor.draft.geometry.type === "circle") {
-      editor.draft.geometry.center = null;
+  function clearShape(area = editor.activeArea) {
+    if (!editor.draft || !window.confirm(`Clear the ${areaName(area)}?`)) return;
+    editor.activeArea = area;
+    const geometry = areaGeometry(area);
+    if (geometry.type === "circle") {
+      geometry.center = null;
     } else {
-      editor.draft.geometry.points = [];
+      geometry.points = [];
     }
     drawSelectedGeometry();
-    setMessage("Shape cleared. Click the map to draw it again.");
+    setMessage(`${areaName(area)} cleared. Click the map to draw it again.`);
   }
 
   function definitionForApi() {
@@ -2246,6 +2450,7 @@ showSession();
     });
     createBasemap().addTo(editor.map);
     editor.overviewLayer = window.L.layerGroup().addTo(editor.map);
+    editor.searchLayer = window.L.layerGroup().addTo(editor.map);
     editor.shapeLayer = window.L.layerGroup().addTo(editor.map);
     editor.handleLayer = window.L.layerGroup().addTo(editor.map);
     editor.map.fitBounds(AUSTRALIA_BOUNDS, { padding: [16, 16], animate: false });
@@ -2266,6 +2471,7 @@ showSession();
     }
     editor.map = null;
     editor.overviewLayer = null;
+    editor.searchLayer = null;
     editor.shapeLayer = null;
     editor.handleLayer = null;
   }
@@ -2278,7 +2484,7 @@ showSession();
   }
 
   function allRiddlePoints() {
-    return editor.riddles.flatMap((riddle) => geometryPoints(riddle.geometry));
+    return editor.riddles.flatMap((riddle) => geometryPoints(riddle.searchGeometry || riddle.geometry));
   }
 
   function drawOverview() {
@@ -2287,15 +2493,15 @@ showSession();
 
     for (const riddle of editor.riddles) {
       if (riddle.status === "archived" || riddle.id === editor.selectedId) continue;
-      const geometry = riddle.geometry;
+      const geometry = riddle.searchGeometry || riddle.geometry;
       const points = geometryPoints(geometry);
       if (!points.length) continue;
       const style = {
-        color: riddle.status === "published" ? "#3b82ad" : "#8e672e",
+        color: riddle.status === "published" ? "#2dd4bf" : "#8e672e",
         weight: 1.5,
         opacity: 0.58,
         dashArray: "4 7",
-        fillColor: "#238ed1",
+        fillColor: "#14b8a6",
         fillOpacity: 0.035,
         interactive: false
       };
@@ -2310,15 +2516,17 @@ showSession();
     }
   }
 
-  function addHandle(point, index, isCentre = false) {
+  function addHandle(point, index, isCentre = false, area = editor.activeArea) {
     if (!editor.map || !editor.handleLayer) return;
+    const geometry = areaGeometry(area);
+    if (!geometry) return;
     const marker = window.L.marker(point, {
       draggable: true,
       keyboard: true,
-      title: isCentre ? "Drag circle centre" : `Drag shape point ${index + 1}`,
+      title: isCentre ? `Drag ${areaName(area)} centre` : `Drag ${areaName(area)} point ${index + 1}`,
       icon: window.L.divIcon({
         className: "",
-        html: '<span class="rd-riddle-node-icon"></span>',
+        html: `<span class="rd-riddle-node-icon ${area === "search" ? "search" : "verification"}"></span>`,
         iconSize: [18, 18],
         iconAnchor: [9, 9]
       })
@@ -2330,8 +2538,8 @@ showSession();
     marker.on("drag", (event) => {
       const latLng = event.target.getLatLng();
       const updated = [Number(latLng.lat.toFixed(7)), Number(latLng.lng.toFixed(7))];
-      if (isCentre) editor.draft.geometry.center = updated;
-      else editor.draft.geometry.points[index] = updated;
+      if (isCentre) geometry.center = updated;
+      else geometry.points[index] = updated;
       drawSelectedGeometry(false);
     });
     marker.on("dragend", () => {
@@ -2362,39 +2570,44 @@ showSession();
     return result.slice(0, 1200);
   }
 
-  function drawSelectedGeometry(addHandles = true) {
-    if (!editor.map || !editor.shapeLayer || !editor.handleLayer) return;
-    editor.shapeLayer.clearLayers();
-    if (addHandles) editor.handleLayer.clearLayers();
-    const geometry = editor.draft?.geometry;
-    if (!geometry) return;
-
-    const style = {
-      color: "#55b9ff",
-      weight: 2.5,
-      opacity: 0.98,
-      dashArray: "6 8",
-      fillColor: "#238ed1",
-      fillOpacity: 0.15,
-      interactive: false
-    };
+  function drawGeometry(geometry, layer, area) {
+    if (!geometry || !layer) return;
+    const search = area === "search";
+    const style = search
+      ? {
+          color: "#2dd4bf",
+          weight: 2.5,
+          opacity: 0.96,
+          dashArray: "9 9",
+          fillColor: "#14b8a6",
+          fillOpacity: 0.17,
+          interactive: false
+        }
+      : {
+          color: "#55b9ff",
+          weight: 2.5,
+          opacity: 0.98,
+          dashArray: "5 7",
+          fillColor: "#238ed1",
+          fillOpacity: 0.12,
+          interactive: false
+        };
 
     if (geometry.type === "circle" && Array.isArray(geometry.center)) {
       window.L.circle(geometry.center, {
         ...style,
-        radius: Number(geometry.radiusM || 150)
-      }).addTo(editor.shapeLayer);
-      if (addHandles) addHandle(geometry.center, 0, true);
+        radius: Number(geometry.radiusM || (search ? 3500 : 150))
+      }).addTo(layer);
       return;
     }
 
     const points = Array.isArray(geometry.points) ? geometry.points : [];
     if (geometry.type === "polygon" && points.length >= 2) {
-      if (points.length >= 3) window.L.polygon(points, style).addTo(editor.shapeLayer);
-      else window.L.polyline(points, style).addTo(editor.shapeLayer);
+      if (points.length >= 3) window.L.polygon(points, style).addTo(layer);
+      else window.L.polyline(points, style).addTo(layer);
     }
 
-    if (geometry.type === "corridor" && points.length >= 2) {
+    if (!search && geometry.type === "corridor" && points.length >= 2) {
       const radiusM = Number(geometry.radiusM || 120);
       for (const sample of corridorSamples(points, radiusM)) {
         window.L.circle(sample, {
@@ -2403,12 +2616,31 @@ showSession();
           fillColor: "#238ed1",
           fillOpacity: 0.055,
           interactive: false
-        }).addTo(editor.shapeLayer);
+        }).addTo(layer);
       }
-      window.L.polyline(points, style).addTo(editor.shapeLayer);
+      window.L.polyline(points, style).addTo(layer);
     }
+  }
 
-    if (addHandles) points.forEach((point, index) => addHandle(point, index));
+  function drawSelectedGeometry(addHandles = true) {
+    if (!editor.map || !editor.searchLayer || !editor.shapeLayer || !editor.handleLayer) return;
+    editor.searchLayer.clearLayers();
+    editor.shapeLayer.clearLayers();
+    if (addHandles) editor.handleLayer.clearLayers();
+    if (!editor.draft) return;
+
+    drawGeometry(editor.draft.searchGeometry, editor.searchLayer, "search");
+    drawGeometry(editor.draft.geometry, editor.shapeLayer, "verification");
+
+    if (!addHandles) return;
+    const geometry = areaGeometry();
+    if (!geometry) return;
+    if (geometry.type === "circle" && Array.isArray(geometry.center)) {
+      addHandle(geometry.center, 0, true, editor.activeArea);
+      return;
+    }
+    const points = Array.isArray(geometry.points) ? geometry.points : [];
+    points.forEach((point, index) => addHandle(point, index, false, editor.activeArea));
   }
 
   function handleMapClick(event) {
@@ -2417,29 +2649,32 @@ showSession();
       Number(event.latlng.lat.toFixed(7)),
       Number(event.latlng.lng.toFixed(7))
     ];
-    if (editor.draft.geometry.type === "circle") {
-      editor.draft.geometry.center = point;
+    const geometry = areaGeometry();
+    if (!geometry) return;
+    if (geometry.type === "circle") {
+      geometry.center = point;
     } else {
-      if (!Array.isArray(editor.draft.geometry.points)) editor.draft.geometry.points = [];
-      editor.draft.geometry.points.push(point);
+      if (!Array.isArray(geometry.points)) geometry.points = [];
+      geometry.points.push(point);
     }
     drawSelectedGeometry();
-    setMessage("Verification shape updated on the map.");
+    setMessage(`${areaName()} updated on the map.`);
   }
 
   function focusSelectedGeometry() {
     if (!editor.map || !editor.draft) return;
-    const points = geometryPoints(editor.draft.geometry);
+    const geometry = areaGeometry();
+    const points = geometryPoints(geometry);
     if (!points.length) return;
 
     const map = editor.map;
     map.stop();
     map.invalidateSize(false);
 
-    if (editor.draft.geometry.type === "circle") {
-      const radiusM = Number(editor.draft.geometry.radiusM || 150);
+    if (geometry.type === "circle") {
+      const radiusM = Number(geometry.radiusM || (editor.activeArea === "search" ? 3500 : 150));
       const bounds = window.L.circle(points[0], { radius: radiusM }).getBounds();
-      map.fitBounds(bounds, { padding: [45, 45], maxZoom: 17, animate: false });
+      map.fitBounds(bounds, { padding: [45, 45], maxZoom: editor.activeArea === "search" ? 14 : 17, animate: false });
       return;
     }
 
@@ -2448,6 +2683,15 @@ showSession();
       maxZoom: 17,
       animate: false
     });
+  }
+
+  function focusArea(area) {
+    if (!editor.draft) return;
+    updateDraftFromFields();
+    editor.activeArea = area;
+    renderRiddleForm();
+    drawSelectedGeometry();
+    focusSelectedGeometry();
   }
 
   function showAustralia() {
