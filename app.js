@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V209-COMPACT-RIDDLE-TRACKER
+ * Build signature: QOTS-RDA-2026-V210-STABLE-RIDDLE-MAP
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "209",
-    signature: "QOTS-RDA-2026-V209-COMPACT-RIDDLE-TRACKER"
+    version: "210",
+    signature: "QOTS-RDA-2026-V210-STABLE-RIDDLE-MAP"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V209-COMPACT-RIDDLE-TRACKER</small>
+        <small>Build signature: QOTS-RDA-2026-V210-STABLE-RIDDLE-MAP</small>
       </main>
     </body>
   `;
@@ -35566,6 +35566,10 @@ function rd102ApplyTrailCoreStyle() {
     ...rd102TrailCoreStyle()
   };
 
+  if (state.rd210TrailZoomSettling) {
+    style.opacity = 0;
+  }
+
   state.rd102TrailCoreBase.setStyle(style);
   state.rd102TrailCoreLive.setStyle(style);
 }
@@ -50678,6 +50682,10 @@ function rd138VisibleSavedSegments() {
 
 function rd138ApplySavedTrailStyle() {
   const style = rd138SavedTrailOptions();
+
+  if (state.rd210TrailZoomSettling) {
+    style.opacity = 0;
+  }
 
   state.rd138SavedTrailBase?.setStyle?.(style);
   state.rd138SavedTrailLive?.setStyle?.(style);
@@ -69046,8 +69054,7 @@ Object.assign(state, {
   rd207TrackedRiddleId: "",
   rd207RiddleSearchLayer: null,
   rd207EnteredSearchArea: false,
-  rd209RiddleTrackerExpanded: false,
-  rd209RiddleZoomListenerBound: false
+  rd209RiddleTrackerExpanded: false
 });
 
 function rd207NormalisePoint(value) {
@@ -69231,60 +69238,6 @@ function rd207SearchBounds(geometry) {
   return null;
 }
 
-function rd209SearchAreaUsesMarker(geometry) {
-  const bounds = rd207SearchBounds(geometry);
-  if (
-    !bounds?.isValid?.() ||
-    !state.map?.latLngToContainerPoint
-  ) {
-    return false;
-  }
-
-  const northWest = state.map.latLngToContainerPoint(
-    bounds.getNorthWest()
-  );
-  const southEast = state.map.latLngToContainerPoint(
-    bounds.getSouthEast()
-  );
-  const width = Math.abs(
-    southEast.x - northWest.x
-  );
-  const height = Math.abs(
-    southEast.y - northWest.y
-  );
-
-  return Math.max(width, height) < 56;
-}
-
-function rd209DrawDistantRiddleMarker(layer, geometry) {
-  const bounds = rd207SearchBounds(geometry);
-  if (!bounds?.isValid?.()) return;
-
-  const center = bounds.getCenter();
-
-  L.circleMarker(center, {
-    pane: "riddleSearchPane",
-    radius: 13,
-    color: "#36dfcf",
-    weight: 2,
-    opacity: 0.38,
-    dashArray: "3 4",
-    fill: false,
-    interactive: false
-  }).addTo(layer);
-
-  L.circleMarker(center, {
-    pane: "riddleSearchPane",
-    radius: 5.5,
-    color: "#79fff1",
-    weight: 2.5,
-    opacity: 1,
-    fillColor: "#16b8ac",
-    fillOpacity: 0.95,
-    interactive: false
-  }).addTo(layer);
-}
-
 function rd207DrawTrackedSearchArea(options = {}) {
   const layer = rd207EnsureSearchLayer();
   if (!layer) return;
@@ -69305,9 +69258,7 @@ function rd207DrawTrackedSearchArea(options = {}) {
     interactive: false
   };
 
-  if (rd209SearchAreaUsesMarker(geometry)) {
-    rd209DrawDistantRiddleMarker(layer, geometry);
-  } else if (geometry.type === "circle") {
+  if (geometry.type === "circle") {
     L.circle(geometry.center, {
       ...style,
       radius: geometry.radiusM
@@ -69322,14 +69273,8 @@ function rd207DrawTrackedSearchArea(options = {}) {
     if (bounds?.isValid?.()) {
       state.followUser = false;
       state.map.stop?.();
-      const compact = window.innerWidth <= 640;
       state.map.fitBounds(bounds, {
-        paddingTopLeft: compact
-          ? [24, 210]
-          : [70, 125],
-        paddingBottomRight: compact
-          ? [88, 180]
-          : [100, 125],
+        padding: [44, 44],
         maxZoom: 13,
         animate: false
       });
@@ -69871,20 +69816,6 @@ function rd207InitTrackedRiddles() {
     );
 
   if (
-    state.map &&
-    !state.rd209RiddleZoomListenerBound
-  ) {
-    state.rd209RiddleZoomListenerBound = true;
-    state.map.on("zoomend", () => {
-      if (state.rd207TrackedRiddleId) {
-        rd207DrawTrackedSearchArea({
-          focus: false
-        });
-      }
-    });
-  }
-
-  if (
     state.rd207TrackedRiddleId &&
     state.hiddenDiscoveries.completed[
       state.rd207TrackedRiddleId
@@ -69916,4 +69847,106 @@ if (document.readyState === "loading") {
 
 document.documentElement.dataset
   .roadDiscoveryRiddleTracking =
-    "compact-teal-search-area-v209";
+    "compact-stable-teal-search-area-v210";
+
+/* ==================================================
+   Road Discovery AU v210
+   Stable discovered-road rendering during map zoom
+   ================================================== */
+
+Object.assign(state, {
+  rd210TrailZoomSettling: false,
+  rd210TrailZoomRevealTimer: null,
+  rd210TrailZoomBound: false
+});
+
+function rd210SetTransientTrailHidden(hidden) {
+  state.savedLayer?.eachLayer?.((layer) => {
+    layer?.setStyle?.({ opacity: hidden ? 0 : rd53SavedRoadStyle().opacity });
+  });
+
+  state.rd102TrailCoreGroup?.eachLayer?.((layer) => {
+    if (hidden) {
+      layer?.setStyle?.({ opacity: 0 });
+    }
+  });
+
+  state.tripLayer?.eachLayer?.((layer) => {
+    layer?.setStyle?.({ opacity: hidden ? 0 : 0.35 });
+  });
+
+  for (const segment of state.roadSegments || []) {
+    if (!segment?.layer) continue;
+
+    if (
+      hidden &&
+      (segment.visited || segment.currentTrip)
+    ) {
+      segment.layer.setStyle?.({ opacity: 0 });
+    } else if (!hidden) {
+      styleSegment(segment);
+    }
+  }
+
+  if (!hidden) {
+    rd138ApplySavedTrailStyle();
+    rd102ApplyTrailCoreStyle();
+    rd102KeepCorrectLayerOrder();
+  }
+}
+
+function rd210HideTrailForZoom() {
+  if (state.rd210TrailZoomRevealTimer !== null) {
+    window.clearTimeout(
+      state.rd210TrailZoomRevealTimer
+    );
+    state.rd210TrailZoomRevealTimer = null;
+  }
+
+  state.rd210TrailZoomSettling = true;
+  rd210SetTransientTrailHidden(true);
+}
+
+function rd210RevealTrailAfterZoom() {
+  rd210HideTrailForZoom();
+
+  state.rd210TrailZoomRevealTimer =
+    window.setTimeout(() => {
+      state.rd210TrailZoomRevealTimer = null;
+      state.rd210TrailZoomSettling = false;
+      rd210SetTransientTrailHidden(false);
+    }, 180);
+}
+
+function rd210BindStableTrailZoom() {
+  if (
+    !state.map?.on ||
+    state.rd210TrailZoomBound
+  ) {
+    return;
+  }
+
+  state.rd210TrailZoomBound = true;
+  state.map.on(
+    "zoomstart",
+    rd210HideTrailForZoom
+  );
+  state.map.on(
+    "zoomend",
+    rd210RevealTrailAfterZoom
+  );
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd210BindStableTrailZoom,
+    { once: true }
+  );
+} else {
+  rd210BindStableTrailZoom();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryStableTrailZoom =
+    "hide-until-map-settles-v210";
