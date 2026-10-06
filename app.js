@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V210-STABLE-RIDDLE-MAP
+ * Build signature: QOTS-RDA-2026-V211-IOS-MAP-ANCHORS
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "210",
-    signature: "QOTS-RDA-2026-V210-STABLE-RIDDLE-MAP"
+    version: "211",
+    signature: "QOTS-RDA-2026-V211-IOS-MAP-ANCHORS"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V210-STABLE-RIDDLE-MAP</small>
+        <small>Build signature: QOTS-RDA-2026-V211-IOS-MAP-ANCHORS</small>
       </main>
     </body>
   `;
@@ -1012,14 +1012,24 @@ function rd197BindStableLabelMotion(
     true;
 
   let frame = null;
+  const copyBaseTransforms =
+    !rd211IsIOSMapDevice();
 
   const synchronise = () => {
     frame = null;
 
-    rd197CopyGridTransforms(
-      baseLayer,
-      labelLayer
-    );
+    /*
+     * Desktop browsers keep the two Protomaps grids in lockstep when their
+     * level transforms are copied. WebKit already owns those transforms
+     * during a pinch; overwriting them with a sibling grid's temporary
+     * transform can leave labels anchored to the wrong screen position.
+     */
+    if (copyBaseTransforms) {
+      rd197CopyGridTransforms(
+        baseLayer,
+        labelLayer
+      );
+    }
 
     const baseContainer =
       baseLayer._container;
@@ -69053,6 +69063,7 @@ const roadDiscoveryV207 = {
 Object.assign(state, {
   rd207TrackedRiddleId: "",
   rd207RiddleSearchLayer: null,
+  rd211RiddleSearchRenderer: null,
   rd207EnteredSearchArea: false,
   rd209RiddleTrackerExpanded: false
 });
@@ -69217,6 +69228,29 @@ function rd207EnsureSearchLayer() {
   pane.style.visibility = "visible";
   pane.style.transition = "none";
 
+  /*
+   * The app normally prefers Leaflet's canvas renderer. On iPhone Safari a
+   * canvas that lives in its own pane can retain the temporary pinch scale,
+   * making a geographically correct circle appear over another city. A
+   * dedicated SVG renderer keeps every point projected from its LatLng at
+   * the final map zoom instead of carrying that temporary bitmap transform.
+   */
+  if (
+    !state.rd211RiddleSearchRenderer &&
+    typeof L.svg === "function"
+  ) {
+    const renderer = L.svg({
+      pane: "riddleSearchPane",
+      padding: 1
+    });
+
+    if (renderer) {
+      state.rd211RiddleSearchRenderer =
+        renderer;
+      renderer.addTo(state.map);
+    }
+  }
+
   if (!state.rd207RiddleSearchLayer) {
     state.rd207RiddleSearchLayer =
       L.layerGroup().addTo(state.map);
@@ -69249,6 +69283,9 @@ function rd207DrawTrackedSearchArea(options = {}) {
 
   const style = {
     pane: "riddleSearchPane",
+    renderer:
+      state.rd211RiddleSearchRenderer ||
+      undefined,
     color: "#36dfcf",
     weight: 2.5,
     opacity: 0.9,
@@ -69847,7 +69884,7 @@ if (document.readyState === "loading") {
 
 document.documentElement.dataset
   .roadDiscoveryRiddleTracking =
-    "compact-stable-teal-search-area-v210";
+    "compact-ios-anchored-teal-search-area-v211";
 
 /* ==================================================
    Road Discovery AU v210
@@ -69950,3 +69987,263 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryStableTrailZoom =
     "hide-until-map-settles-v210";
+
+/* ==================================================
+   Road Discovery AU v211
+   iPhone map-overlay coordinate anchoring
+   ================================================== */
+
+Object.assign(state, {
+  rd211IOSLabelRefreshBound: false,
+  rd211IOSLabelRefreshTimer: null,
+  rd211IOSLabelRevealTimer: null,
+  rd211IOSLabelRefreshGeneration: 0
+});
+
+function rd211IsIOSMapDevice() {
+  const navigatorValue =
+    window.navigator || {};
+  const userAgent = String(
+    navigatorValue.userAgent || ""
+  );
+
+  return (
+    /iPad|iPhone|iPod/i.test(userAgent) ||
+    (
+      navigatorValue.platform ===
+        "MacIntel" &&
+      Number(
+        navigatorValue.maxTouchPoints || 0
+      ) > 1
+    )
+  );
+}
+
+function rd211CancelIOSLabelTimers() {
+  if (
+    state.rd211IOSLabelRefreshTimer !==
+      null
+  ) {
+    window.clearTimeout(
+      state.rd211IOSLabelRefreshTimer
+    );
+    state.rd211IOSLabelRefreshTimer = null;
+  }
+
+  if (
+    state.rd211IOSLabelRevealTimer !==
+      null
+  ) {
+    window.clearTimeout(
+      state.rd211IOSLabelRevealTimer
+    );
+    state.rd211IOSLabelRevealTimer = null;
+  }
+}
+
+function rd211RevealFreshIOSLabels(
+  labelLayer,
+  generation
+) {
+  if (
+    generation !==
+      state.rd211IOSLabelRefreshGeneration ||
+    !state.map ||
+    state.mapLabelsVisible === false ||
+    !state.map.hasLayer?.(labelLayer)
+  ) {
+    return;
+  }
+
+  if (
+    state.rd211IOSLabelRevealTimer !==
+      null
+  ) {
+    window.clearTimeout(
+      state.rd211IOSLabelRevealTimer
+    );
+    state.rd211IOSLabelRevealTimer = null;
+  }
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      if (
+        generation !==
+          state.rd211IOSLabelRefreshGeneration ||
+        state.mapLabelsVisible === false ||
+        !state.map?.hasLayer?.(labelLayer)
+      ) {
+        return;
+      }
+
+      rd198SetLabelPaneHidden(
+        state.map,
+        false
+      );
+    });
+  });
+}
+
+function rd211RebuildIOSLabelLayer(
+  generation
+) {
+  state.rd211IOSLabelRefreshTimer = null;
+
+  if (
+    generation !==
+      state.rd211IOSLabelRefreshGeneration ||
+    !state.map ||
+    state.mapLabelsVisible === false
+  ) {
+    rd198SetLabelPaneHidden(
+      state.map,
+      false
+    );
+    return;
+  }
+
+  const baseLayer =
+    rd135MainBaseLayer();
+
+  if (!baseLayer) {
+    rd198SetLabelPaneHidden(
+      state.map,
+      false
+    );
+    return;
+  }
+
+  const previousLabelLayer =
+    baseLayer._roadDiscoveryLabelLayer;
+
+  if (previousLabelLayer) {
+    previousLabelLayer
+      ._rd197StableLabelCleanup?.();
+    previousLabelLayer
+      ._rd198GestureLabelCleanup?.();
+
+    if (
+      state.map.hasLayer?.(
+        previousLabelLayer
+      )
+    ) {
+      state.map.removeLayer(
+        previousLabelLayer
+      );
+    }
+
+    previousLabelLayer
+      ._roadDiscoveryBaseLayer = null;
+    baseLayer._roadDiscoveryLabelLayer =
+      null;
+  }
+
+  const daylight =
+    baseLayer._roadDiscoveryBaseTheme ===
+      "light";
+  const freshLabelLayer =
+    rd134AttachLabelLayer(
+      state.map,
+      baseLayer,
+      daylight
+    );
+
+  if (!freshLabelLayer) {
+    rd198SetLabelPaneHidden(
+      state.map,
+      false
+    );
+    return;
+  }
+
+  rd198SetLabelPaneHidden(
+    state.map,
+    true
+  );
+
+  const reveal = () =>
+    rd211RevealFreshIOSLabels(
+      freshLabelLayer,
+      generation
+    );
+
+  freshLabelLayer.once?.(
+    "load",
+    reveal
+  );
+  freshLabelLayer.redraw?.();
+
+  /* Cached PMTiles may complete without another public load event. */
+  state.rd211IOSLabelRevealTimer =
+    window.setTimeout(reveal, 650);
+}
+
+function rd211BeginIOSLabelZoom() {
+  if (!rd211IsIOSMapDevice()) return;
+
+  state.rd211IOSLabelRefreshGeneration += 1;
+  rd211CancelIOSLabelTimers();
+  rd198SetLabelPaneHidden(
+    state.map,
+    true
+  );
+}
+
+function rd211FinishIOSLabelZoom() {
+  if (!rd211IsIOSMapDevice()) return;
+
+  rd211CancelIOSLabelTimers();
+  rd198SetLabelPaneHidden(
+    state.map,
+    true
+  );
+
+  const generation =
+    state.rd211IOSLabelRefreshGeneration;
+
+  /*
+   * Run before the older gesture-reveal fallback. Replacing the labels-only
+   * tile grid discards every transient WebKit pinch transform and creates it
+   * at the map's final centre and zoom.
+   */
+  state.rd211IOSLabelRefreshTimer =
+    window.setTimeout(() => {
+      rd211RebuildIOSLabelLayer(
+        generation
+      );
+    }, 40);
+}
+
+function rd211BindIOSMapAnchors() {
+  if (
+    !state.map?.on ||
+    state.rd211IOSLabelRefreshBound ||
+    !rd211IsIOSMapDevice()
+  ) {
+    return;
+  }
+
+  state.rd211IOSLabelRefreshBound = true;
+  state.map.on(
+    "zoomstart",
+    rd211BeginIOSLabelZoom
+  );
+  state.map.on(
+    "zoomend",
+    rd211FinishIOSLabelZoom
+  );
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd211BindIOSMapAnchors,
+    { once: true }
+  );
+} else {
+  rd211BindIOSMapAnchors();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryIOSMapAnchors =
+    "svg-riddle-and-fresh-label-grid-v211";
