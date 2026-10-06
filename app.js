@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V202-RIDDLE-DIFFICULTY
+ * Build signature: QOTS-RDA-2026-V207-TRACKED-RIDDLE-SEARCH
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-  version: "202",
-    signature: "QOTS-RDA-2026-V202-RIDDLE-DIFFICULTY"
+    version: "207",
+    signature: "QOTS-RDA-2026-V207-TRACKED-RIDDLE-SEARCH"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V202-RIDDLE-DIFFICULTY</small>
+        <small>Build signature: QOTS-RDA-2026-V207-TRACKED-RIDDLE-SEARCH</small>
       </main>
     </body>
   `;
@@ -69023,3 +69023,674 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryRiddleDifficulty =
     "five-level-colour-scale-v202";
+
+
+/* ==================================================
+   Road Discovery AU v207
+   Tracked Mystery Riddle search areas
+   ================================================== */
+
+const RD207_TRACKED_RIDDLE_KEY =
+  "roadDiscoveryAU.trackedRiddle.v207";
+
+const roadDiscoveryV207 = {
+  rd201NormaliseRiddle,
+  rd201RenderPublishedRiddles,
+  rd72DiscoveryCard,
+  rd72RenderHiddenDiscoveries,
+  rd72CompleteDriveDiscoveries,
+  onGpsPosition
+};
+
+Object.assign(state, {
+  rd207TrackedRiddleId: "",
+  rd207RiddleSearchLayer: null,
+  rd207EnteredSearchArea: false
+});
+
+function rd207NormalisePoint(value) {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const lat = Number(value[0]);
+  const lng = Number(value[1]);
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 || lat > 90 ||
+    lng < -180 || lng > 180
+  ) {
+    return null;
+  }
+  return [lat, lng];
+}
+
+function rd207NormaliseSearchGeometry(value) {
+  if (!value || typeof value !== "object") return null;
+  const type = String(value.type || "").toLowerCase();
+
+  if (type === "circle") {
+    const center = rd207NormalisePoint(value.center);
+    const radiusM = Number(value.radiusM);
+    if (
+      !center ||
+      !Number.isFinite(radiusM) ||
+      radiusM < 100 ||
+      radiusM > 100000
+    ) {
+      return null;
+    }
+    return { type, center, radiusM };
+  }
+
+  if (type === "polygon") {
+    const points = Array.isArray(value.points)
+      ? value.points.map(rd207NormalisePoint).filter(Boolean)
+      : [];
+    if (points.length < 3 || points.length > 600) return null;
+    return { type, points };
+  }
+
+  return null;
+}
+
+function rd207DefaultSearchRadius(discovery) {
+  return ({
+    easy: 1500,
+    moderate: 3500,
+    hard: 7000,
+    very_hard: 15000,
+    impossible: 25000
+  })[rd202Difficulty(discovery)] || 3500;
+}
+
+function rd207DerivedSearchGeometry(discovery) {
+  const exact = discovery?.rd201Geometry;
+  let center = null;
+
+  if (exact?.type === "circle") {
+    center = exact.center;
+  } else if (Array.isArray(exact?.points) && exact.points.length) {
+    center = exact.points[0];
+  } else if (Array.isArray(discovery?.zones) && discovery.zones.length) {
+    center = [
+      Number(discovery.zones[0].lat),
+      Number(discovery.zones[0].lng)
+    ];
+  } else if (
+    Array.isArray(discovery?.checkpoints) &&
+    discovery.checkpoints.length
+  ) {
+    center = [
+      Number(discovery.checkpoints[0].lat),
+      Number(discovery.checkpoints[0].lng)
+    ];
+  }
+
+  const validCenter = rd207NormalisePoint(center);
+  return validCenter
+    ? {
+        type: "circle",
+        center: validCenter,
+        radiusM: rd207DefaultSearchRadius(discovery)
+      }
+    : null;
+}
+
+function rd207SearchGeometryFor(discovery) {
+  return (
+    rd207NormaliseSearchGeometry(
+      discovery?.rd207SearchGeometry
+    ) ||
+    rd207DerivedSearchGeometry(discovery)
+  );
+}
+
+rd201NormaliseRiddle = function (row) {
+  const discovery = roadDiscoveryV207
+    .rd201NormaliseRiddle(row);
+  if (!discovery) return null;
+
+  discovery.rd207SearchGeometry =
+    rd207NormaliseSearchGeometry(
+      row?.search_geometry ||
+      row?.searchGeometry
+    ) ||
+    rd207DerivedSearchGeometry(discovery);
+
+  return discovery;
+};
+
+function rd207TrackedDiscovery() {
+  if (!state.rd207TrackedRiddleId) return null;
+  return rd79AllDiscoveries().find(
+    (discovery) =>
+      discovery.id === state.rd207TrackedRiddleId
+  ) || null;
+}
+
+function rd207SaveTrackedRiddle() {
+  try {
+    if (state.rd207TrackedRiddleId) {
+      localStorage.setItem(
+        RD207_TRACKED_RIDDLE_KEY,
+        state.rd207TrackedRiddleId
+      );
+    } else {
+      localStorage.removeItem(
+        RD207_TRACKED_RIDDLE_KEY
+      );
+    }
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function rd207EnsureSearchLayer() {
+  if (!state.map || !window.L) return null;
+
+  if (!state.map.getPane("riddleSearchPane")) {
+    const pane = state.map.createPane(
+      "riddleSearchPane"
+    );
+    pane.style.zIndex = "350";
+    pane.style.pointerEvents = "none";
+  }
+
+  if (!state.rd207RiddleSearchLayer) {
+    state.rd207RiddleSearchLayer =
+      L.layerGroup().addTo(state.map);
+  }
+
+  return state.rd207RiddleSearchLayer;
+}
+
+function rd207SearchBounds(geometry) {
+  if (!window.L || !geometry) return null;
+  if (geometry.type === "circle") {
+    return L.circle(geometry.center, {
+      radius: geometry.radiusM
+    }).getBounds();
+  }
+  if (geometry.type === "polygon") {
+    return L.latLngBounds(geometry.points);
+  }
+  return null;
+}
+
+function rd207DrawTrackedSearchArea(options = {}) {
+  const layer = rd207EnsureSearchLayer();
+  if (!layer) return;
+  layer.clearLayers();
+
+  const discovery = rd207TrackedDiscovery();
+  const geometry = rd207SearchGeometryFor(discovery);
+  if (!discovery || !geometry) return;
+
+  const style = {
+    pane: "riddleSearchPane",
+    color: "#36dfcf",
+    weight: 2.5,
+    opacity: 0.9,
+    dashArray: "9 10",
+    fillColor: "#16b8ac",
+    fillOpacity: 0.13,
+    interactive: false
+  };
+
+  if (geometry.type === "circle") {
+    L.circle(geometry.center, {
+      ...style,
+      radius: geometry.radiusM
+    }).addTo(layer);
+  } else {
+    L.polygon(geometry.points, style)
+      .addTo(layer);
+  }
+
+  if (options.focus !== false) {
+    const bounds = rd207SearchBounds(geometry);
+    if (bounds?.isValid?.()) {
+      state.followUser = false;
+      state.map.stop?.();
+      state.map.fitBounds(bounds, {
+        padding: [44, 44],
+        maxZoom: 13,
+        animate: false
+      });
+    }
+  }
+}
+
+function rd207ClearTrackedRiddle(options = {}) {
+  state.rd207TrackedRiddleId = "";
+  state.rd207EnteredSearchArea = false;
+  state.rd207RiddleSearchLayer?.clearLayers?.();
+  rd207SaveTrackedRiddle();
+  rd207RenderTrackingHud();
+  if (options.render !== false) {
+    rd72RenderHiddenDiscoveries();
+  }
+  if (options.toast !== false) {
+    showToast("Mystery Riddle tracking stopped");
+  }
+}
+
+function rd207TrackRiddle(discoveryId) {
+  const discovery = rd72DiscoveryById(discoveryId);
+  if (
+    !discovery ||
+    state.hiddenDiscoveries.completed[discovery.id]
+  ) {
+    return;
+  }
+
+  const geometry = rd207SearchGeometryFor(discovery);
+  if (!geometry) {
+    showToast("This riddle does not have a player search area yet");
+    return;
+  }
+
+  const replacing =
+    state.rd207TrackedRiddleId &&
+    state.rd207TrackedRiddleId !== discovery.id;
+
+  if (
+    replacing &&
+    !window.confirm(
+      "Track this Mystery Riddle instead? Only one search area can be active at a time."
+    )
+  ) {
+    return;
+  }
+
+  state.rd207TrackedRiddleId = discovery.id;
+  state.rd207EnteredSearchArea = false;
+  rd207SaveTrackedRiddle();
+  rd207RenderTrackingHud();
+  rd72CloseHiddenDiscoveryRoom();
+  rd207DrawTrackedSearchArea({ focus: true });
+  rd72RenderHiddenDiscoveries();
+  showToast("Mystery Riddle search area added to the map");
+}
+
+function rd207OpenTrackedClue() {
+  const discovery = rd207TrackedDiscovery();
+  if (!discovery) return;
+
+  rd72OpenHiddenDiscoveryRoom();
+
+  if (state.rd79HiddenDiscoveryBrowser) {
+    state.rd79HiddenDiscoveryBrowser.view =
+      "discoveries";
+    state.rd79HiddenDiscoveryBrowser.countryCode =
+      discovery.countryCode || "AU";
+    state.rd79HiddenDiscoveryBrowser.regionCode =
+      discovery.regionCode || "NSW";
+    rd79RenderCurrentView();
+  }
+}
+
+function rd207CreateTrackingHud() {
+  if ($("rd207TrackedRiddleHud")) return;
+  const hud = document.createElement("section");
+  hud.id = "rd207TrackedRiddleHud";
+  hud.className = "rd207-riddle-tracker hidden";
+  hud.setAttribute("aria-live", "polite");
+  hud.innerHTML = `
+    <button id="rd207ViewRiddleClue" class="rd207-riddle-clue" type="button">
+      <span aria-hidden="true">◇</span>
+      <span><small>Tracking Mystery Riddle</small><strong id="rd207TrackedRiddleName">Search area</strong></span>
+    </button>
+    <button id="rd207StopRiddleTracking" class="rd207-riddle-stop" type="button">Stop</button>
+  `;
+
+  const bottomControls = $("bottomControls");
+  if (bottomControls?.parentNode) {
+    bottomControls.parentNode.insertBefore(
+      hud,
+      bottomControls
+    );
+  } else {
+    document.body.append(hud);
+  }
+
+  $("rd207ViewRiddleClue")?.addEventListener(
+    "click",
+    rd207OpenTrackedClue
+  );
+  $("rd207StopRiddleTracking")?.addEventListener(
+    "click",
+    () => rd207ClearTrackedRiddle()
+  );
+}
+
+function rd207RenderTrackingHud() {
+  rd207CreateTrackingHud();
+  const hud = $("rd207TrackedRiddleHud");
+  const name = $("rd207TrackedRiddleName");
+  const discovery = rd207TrackedDiscovery();
+
+  if (
+    !hud ||
+    !discovery ||
+    state.hiddenDiscoveries.completed[discovery.id]
+  ) {
+    hud?.classList.add("hidden");
+    return;
+  }
+
+  if (name) {
+    name.textContent =
+      discovery.region ||
+      `${discovery.regionCode || "AU"} search area`;
+  }
+  hud.classList.remove("hidden");
+}
+
+function rd207TrackingButton(discovery) {
+  if (state.hiddenDiscoveries.completed[discovery.id]) {
+    return "";
+  }
+  const active =
+    discovery.id === state.rd207TrackedRiddleId;
+  return `
+    <button
+      class="rd207-track-riddle-btn ${active ? "active" : ""}"
+      type="button"
+      data-rd207-track-riddle="${escapeHtml(discovery.id)}"
+    >
+      ${active ? "✓ Tracking · stop" : "Track this riddle"}
+    </button>
+  `;
+}
+
+rd72DiscoveryCard = function (discovery, index) {
+  const card = roadDiscoveryV207
+    .rd72DiscoveryCard(discovery, index);
+  return card.replace(
+    "</article>",
+    `${rd207TrackingButton(discovery)}</article>`
+  );
+};
+
+rd72RenderHiddenDiscoveries = function () {
+  const result = roadDiscoveryV207
+    .rd72RenderHiddenDiscoveries();
+
+  if (
+    state.rd207TrackedRiddleId &&
+    state.hiddenDiscoveries.completed[
+      state.rd207TrackedRiddleId
+    ]
+  ) {
+    state.rd207TrackedRiddleId = "";
+    state.rd207EnteredSearchArea = false;
+    state.rd207RiddleSearchLayer
+      ?.clearLayers?.();
+    rd207SaveTrackedRiddle();
+  }
+
+  rd207RenderTrackingHud();
+  return result;
+};
+
+function rd207HandleTrackButton(event) {
+  const button = event.target.closest(
+    "[data-rd207-track-riddle]"
+  );
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+
+  const discoveryId =
+    button.dataset.rd207TrackRiddle;
+  if (discoveryId === state.rd207TrackedRiddleId) {
+    rd207ClearTrackedRiddle();
+  } else {
+    rd207TrackRiddle(discoveryId);
+  }
+}
+
+function rd207PointInsideSearchArea(point) {
+  const discovery = rd207TrackedDiscovery();
+  const geometry = rd207SearchGeometryFor(discovery);
+  if (!geometry || !point) return false;
+  return Number.isFinite(
+    rd201GeometryDistance(point, geometry)
+  );
+}
+
+function rd207CheckSearchAreaEntry(point) {
+  if (
+    state.rd207EnteredSearchArea ||
+    !state.rd207TrackedRiddleId ||
+    !rd207PointInsideSearchArea(point)
+  ) {
+    return;
+  }
+  state.rd207EnteredSearchArea = true;
+  showToast("You’ve entered the Mystery Riddle search area");
+}
+
+onGpsPosition = function (position) {
+  const result = roadDiscoveryV207
+    .onGpsPosition(position);
+  rd207CheckSearchAreaEntry(
+    positionToPoint(position)
+  );
+  return result;
+};
+
+rd72CompleteDriveDiscoveries = function (
+  discoveryIds
+) {
+  const result = roadDiscoveryV207
+    .rd72CompleteDriveDiscoveries(
+      discoveryIds
+    );
+
+  if (
+    Array.isArray(discoveryIds) &&
+    discoveryIds.includes(
+      state.rd207TrackedRiddleId
+    )
+  ) {
+    rd207ClearTrackedRiddle({
+      toast: false,
+      render: false
+    });
+  }
+
+  return result;
+};
+
+rd201RenderPublishedRiddles = function () {
+  const result = roadDiscoveryV207
+    .rd201RenderPublishedRiddles();
+
+  const discovery = rd207TrackedDiscovery();
+  if (
+    state.rd207TrackedRiddleId &&
+    (!discovery ||
+      state.hiddenDiscoveries.completed[
+        state.rd207TrackedRiddleId
+      ])
+  ) {
+    rd207ClearTrackedRiddle({
+      toast: false,
+      render: false
+    });
+  } else {
+    rd207DrawTrackedSearchArea({
+      focus: false
+    });
+    rd207RenderTrackingHud();
+  }
+
+  return result;
+};
+
+function rd207InstallTrackingStyles() {
+  if ($("rd207RiddleTrackingStyles")) return;
+  const style = document.createElement("style");
+  style.id = "rd207RiddleTrackingStyles";
+  style.textContent = `
+    .rd207-riddle-tracker {
+      position: fixed;
+      z-index: 720;
+      left: 50%;
+      bottom: calc(94px + env(safe-area-inset-bottom));
+      display: flex;
+      align-items: stretch;
+      width: min(440px, calc(100vw - 34px));
+      min-height: 54px;
+      overflow: hidden;
+      border: 1px solid rgba(54, 223, 207, .68);
+      border-radius: 17px;
+      background: rgba(5, 16, 19, .92);
+      box-shadow: 0 12px 34px rgba(0, 0, 0, .42), 0 0 28px rgba(20, 184, 166, .12);
+      transform: translateX(-50%);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .rd207-riddle-tracker.hidden,
+    body.rd170-gameplay-active .rd207-riddle-tracker {
+      display: none !important;
+    }
+
+    .rd207-riddle-clue,
+    .rd207-riddle-stop,
+    .rd207-track-riddle-btn {
+      appearance: none;
+      border: 0;
+      color: #f8fbff;
+      font: inherit;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd207-riddle-clue {
+      display: flex;
+      flex: 1;
+      min-width: 0;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 13px;
+      background: transparent;
+      text-align: left;
+    }
+
+    .rd207-riddle-clue > span:first-child {
+      color: #54eadb;
+      font-size: 25px;
+      line-height: 1;
+    }
+
+    .rd207-riddle-clue > span:last-child {
+      display: grid;
+      min-width: 0;
+    }
+
+    .rd207-riddle-clue small {
+      color: #63dfd3;
+      font-size: 8px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .rd207-riddle-clue strong {
+      overflow: hidden;
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rd207-riddle-stop {
+      min-width: 64px;
+      border-left: 1px solid rgba(54, 223, 207, .28);
+      background: rgba(255, 255, 255, .035);
+      color: #adfff7;
+      font-size: 10px;
+    }
+
+    .rd207-track-riddle-btn {
+      width: 100%;
+      min-height: 42px;
+      margin-top: 13px;
+      border: 1px solid rgba(54, 223, 207, .55);
+      border-radius: 12px;
+      background: rgba(20, 184, 166, .12);
+      color: #9ef5ec;
+      font-size: 11px;
+    }
+
+    .rd207-track-riddle-btn.active {
+      border-color: #36dfcf;
+      background: rgba(20, 184, 166, .24);
+      color: #fff;
+    }
+
+    @media (max-width: 520px) {
+      .rd207-riddle-tracker {
+        bottom: calc(91px + env(safe-area-inset-bottom));
+        min-height: 50px;
+      }
+    }
+  `;
+  document.head.append(style);
+}
+
+function rd207InitTrackedRiddles() {
+  rd207InstallTrackingStyles();
+  rd207CreateTrackingHud();
+
+  try {
+    state.rd207TrackedRiddleId =
+      localStorage.getItem(
+        RD207_TRACKED_RIDDLE_KEY
+      ) || "";
+  } catch (error) {
+    console.error(error);
+  }
+
+  $("rd72HiddenDiscoveryList")
+    ?.addEventListener(
+      "click",
+      rd207HandleTrackButton,
+      true
+    );
+
+  if (
+    state.rd207TrackedRiddleId &&
+    state.hiddenDiscoveries.completed[
+      state.rd207TrackedRiddleId
+    ]
+  ) {
+    rd207ClearTrackedRiddle({
+      toast: false,
+      render: false
+    });
+  } else {
+    rd207DrawTrackedSearchArea({
+      focus: false
+    });
+    rd207RenderTrackingHud();
+  }
+
+  rd72RenderHiddenDiscoveries();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd207InitTrackedRiddles,
+    { once: true }
+  );
+} else {
+  rd207InitTrackedRiddles();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryRiddleTracking =
+    "single-teal-search-area-v207";
