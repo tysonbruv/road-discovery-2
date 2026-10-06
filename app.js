@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V208-RIDDLE-LAYER-VISIBILITY
+ * Build signature: QOTS-RDA-2026-V209-COMPACT-RIDDLE-TRACKER
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "208",
-    signature: "QOTS-RDA-2026-V208-RIDDLE-LAYER-VISIBILITY"
+    version: "209",
+    signature: "QOTS-RDA-2026-V209-COMPACT-RIDDLE-TRACKER"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V208-RIDDLE-LAYER-VISIBILITY</small>
+        <small>Build signature: QOTS-RDA-2026-V209-COMPACT-RIDDLE-TRACKER</small>
       </main>
     </body>
   `;
@@ -69045,7 +69045,9 @@ const roadDiscoveryV207 = {
 Object.assign(state, {
   rd207TrackedRiddleId: "",
   rd207RiddleSearchLayer: null,
-  rd207EnteredSearchArea: false
+  rd207EnteredSearchArea: false,
+  rd209RiddleTrackerExpanded: false,
+  rd209RiddleZoomListenerBound: false
 });
 
 function rd207NormalisePoint(value) {
@@ -69229,6 +69231,60 @@ function rd207SearchBounds(geometry) {
   return null;
 }
 
+function rd209SearchAreaUsesMarker(geometry) {
+  const bounds = rd207SearchBounds(geometry);
+  if (
+    !bounds?.isValid?.() ||
+    !state.map?.latLngToContainerPoint
+  ) {
+    return false;
+  }
+
+  const northWest = state.map.latLngToContainerPoint(
+    bounds.getNorthWest()
+  );
+  const southEast = state.map.latLngToContainerPoint(
+    bounds.getSouthEast()
+  );
+  const width = Math.abs(
+    southEast.x - northWest.x
+  );
+  const height = Math.abs(
+    southEast.y - northWest.y
+  );
+
+  return Math.max(width, height) < 56;
+}
+
+function rd209DrawDistantRiddleMarker(layer, geometry) {
+  const bounds = rd207SearchBounds(geometry);
+  if (!bounds?.isValid?.()) return;
+
+  const center = bounds.getCenter();
+
+  L.circleMarker(center, {
+    pane: "riddleSearchPane",
+    radius: 13,
+    color: "#36dfcf",
+    weight: 2,
+    opacity: 0.38,
+    dashArray: "3 4",
+    fill: false,
+    interactive: false
+  }).addTo(layer);
+
+  L.circleMarker(center, {
+    pane: "riddleSearchPane",
+    radius: 5.5,
+    color: "#79fff1",
+    weight: 2.5,
+    opacity: 1,
+    fillColor: "#16b8ac",
+    fillOpacity: 0.95,
+    interactive: false
+  }).addTo(layer);
+}
+
 function rd207DrawTrackedSearchArea(options = {}) {
   const layer = rd207EnsureSearchLayer();
   if (!layer) return;
@@ -69249,7 +69305,9 @@ function rd207DrawTrackedSearchArea(options = {}) {
     interactive: false
   };
 
-  if (geometry.type === "circle") {
+  if (rd209SearchAreaUsesMarker(geometry)) {
+    rd209DrawDistantRiddleMarker(layer, geometry);
+  } else if (geometry.type === "circle") {
     L.circle(geometry.center, {
       ...style,
       radius: geometry.radiusM
@@ -69264,8 +69322,14 @@ function rd207DrawTrackedSearchArea(options = {}) {
     if (bounds?.isValid?.()) {
       state.followUser = false;
       state.map.stop?.();
+      const compact = window.innerWidth <= 640;
       state.map.fitBounds(bounds, {
-        padding: [44, 44],
+        paddingTopLeft: compact
+          ? [24, 210]
+          : [70, 125],
+        paddingBottomRight: compact
+          ? [88, 180]
+          : [100, 125],
         maxZoom: 13,
         animate: false
       });
@@ -69276,6 +69340,7 @@ function rd207DrawTrackedSearchArea(options = {}) {
 function rd207ClearTrackedRiddle(options = {}) {
   state.rd207TrackedRiddleId = "";
   state.rd207EnteredSearchArea = false;
+  state.rd209RiddleTrackerExpanded = false;
   state.rd207RiddleSearchLayer?.clearLayers?.();
   rd207SaveTrackedRiddle();
   rd207RenderTrackingHud();
@@ -69329,6 +69394,8 @@ function rd207OpenTrackedClue() {
   const discovery = rd207TrackedDiscovery();
   if (!discovery) return;
 
+  rd209SetRiddleTrackerExpanded(false);
+
   rd72OpenHiddenDiscoveryRoom();
 
   if (state.rd79HiddenDiscoveryBrowser) {
@@ -69349,11 +69416,29 @@ function rd207CreateTrackingHud() {
   hud.className = "rd207-riddle-tracker hidden";
   hud.setAttribute("aria-live", "polite");
   hud.innerHTML = `
-    <button id="rd207ViewRiddleClue" class="rd207-riddle-clue" type="button">
-      <span aria-hidden="true">◇</span>
-      <span><small>Tracking Mystery Riddle</small><strong id="rd207TrackedRiddleName">Search area</strong></span>
+    <button
+      id="rd209RiddleTrackerToggle"
+      class="rd209-riddle-tracker-toggle"
+      type="button"
+      aria-expanded="false"
+      aria-controls="rd209RiddleTrackerDetails"
+    >
+      <span class="rd209-riddle-tracker-icon" aria-hidden="true">◇</span>
+      <span>Tracked riddle</span>
+      <span class="rd209-riddle-tracker-chevron" aria-hidden="true">⌃</span>
     </button>
-    <button id="rd207StopRiddleTracking" class="rd207-riddle-stop" type="button">Stop</button>
+    <div
+      id="rd209RiddleTrackerDetails"
+      class="rd209-riddle-tracker-details hidden"
+    >
+      <small>Tracking Mystery Riddle</small>
+      <strong id="rd207TrackedRiddleName">Search area</strong>
+      <p id="rd209TrackedRiddleText"></p>
+      <div class="rd209-riddle-tracker-actions">
+        <button id="rd207ViewRiddleClue" class="rd207-riddle-clue" type="button">Open riddle</button>
+        <button id="rd207StopRiddleTracking" class="rd207-riddle-stop" type="button">Stop tracking</button>
+      </div>
+    </div>
   `;
 
   const bottomControls = $("bottomControls");
@@ -69366,6 +69451,12 @@ function rd207CreateTrackingHud() {
     document.body.append(hud);
   }
 
+  $("rd209RiddleTrackerToggle")?.addEventListener(
+    "click",
+    () => rd209SetRiddleTrackerExpanded(
+      !state.rd209RiddleTrackerExpanded
+    )
+  );
   $("rd207ViewRiddleClue")?.addEventListener(
     "click",
     rd207OpenTrackedClue
@@ -69374,12 +69465,39 @@ function rd207CreateTrackingHud() {
     "click",
     () => rd207ClearTrackedRiddle()
   );
+
+  document.addEventListener("pointerdown", (event) => {
+    if (
+      state.rd209RiddleTrackerExpanded &&
+      !hud.contains(event.target)
+    ) {
+      rd209SetRiddleTrackerExpanded(false);
+    }
+  });
+}
+
+function rd209SetRiddleTrackerExpanded(expanded) {
+  const hud = $("rd207TrackedRiddleHud");
+  const toggle = $("rd209RiddleTrackerToggle");
+  const details = $("rd209RiddleTrackerDetails");
+  const next = Boolean(
+    expanded && rd207TrackedDiscovery()
+  );
+
+  state.rd209RiddleTrackerExpanded = next;
+  hud?.classList.toggle("expanded", next);
+  details?.classList.toggle("hidden", !next);
+  toggle?.setAttribute(
+    "aria-expanded",
+    next ? "true" : "false"
+  );
 }
 
 function rd207RenderTrackingHud() {
   rd207CreateTrackingHud();
   const hud = $("rd207TrackedRiddleHud");
   const name = $("rd207TrackedRiddleName");
+  const riddle = $("rd209TrackedRiddleText");
   const discovery = rd207TrackedDiscovery();
 
   if (
@@ -69387,6 +69505,7 @@ function rd207RenderTrackingHud() {
     !discovery ||
     state.hiddenDiscoveries.completed[discovery.id]
   ) {
+    rd209SetRiddleTrackerExpanded(false);
     hud?.classList.add("hidden");
     return;
   }
@@ -69395,6 +69514,11 @@ function rd207RenderTrackingHud() {
     name.textContent =
       discovery.region ||
       `${discovery.regionCode || "AU"} search area`;
+  }
+  if (riddle) {
+    riddle.textContent =
+      discovery.riddle ||
+      "Open the Mystery Riddle for its full clue.";
   }
   hud.classList.remove("hidden");
 }
@@ -69551,20 +69675,11 @@ function rd207InstallTrackingStyles() {
     .rd207-riddle-tracker {
       position: fixed;
       z-index: 720;
-      left: 50%;
+      right: calc(18px + env(safe-area-inset-right));
       bottom: calc(94px + env(safe-area-inset-bottom));
-      display: flex;
-      align-items: stretch;
-      width: min(440px, calc(100vw - 34px));
-      min-height: 54px;
-      overflow: hidden;
-      border: 1px solid rgba(54, 223, 207, .68);
-      border-radius: 17px;
-      background: rgba(5, 16, 19, .92);
-      box-shadow: 0 12px 34px rgba(0, 0, 0, .42), 0 0 28px rgba(20, 184, 166, .12);
-      transform: translateX(-50%);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      display: block;
+      width: auto;
+      overflow: visible;
     }
 
     .rd207-riddle-tracker.hidden,
@@ -69572,59 +69687,129 @@ function rd207InstallTrackingStyles() {
       display: none !important;
     }
 
+    .rd209-riddle-tracker-toggle,
     .rd207-riddle-clue,
     .rd207-riddle-stop,
     .rd207-track-riddle-btn {
       appearance: none;
-      border: 0;
       color: #f8fbff;
       font: inherit;
       font-weight: 900;
       cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
     }
 
-    .rd207-riddle-clue {
+    .rd209-riddle-tracker-toggle {
       display: flex;
-      flex: 1;
-      min-width: 0;
+      min-width: 148px;
+      min-height: 44px;
       align-items: center;
-      gap: 10px;
-      padding: 9px 13px;
-      background: transparent;
-      text-align: left;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid rgba(54, 223, 207, .72);
+      border-radius: 15px;
+      padding: 9px 12px;
+      background: rgba(5, 18, 21, .94);
+      box-shadow:
+        0 10px 28px rgba(0, 0, 0, .44),
+        0 0 24px rgba(20, 184, 166, .12);
+      color: #dffffb;
+      font-size: 11px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
     }
 
-    .rd207-riddle-clue > span:first-child {
+    .rd209-riddle-tracker-icon {
       color: #54eadb;
-      font-size: 25px;
+      font-size: 20px;
       line-height: 1;
     }
 
-    .rd207-riddle-clue > span:last-child {
-      display: grid;
-      min-width: 0;
+    .rd209-riddle-tracker-chevron {
+      color: #7edfd5;
+      font-size: 12px;
+      line-height: 1;
+      transition: transform 140ms ease;
     }
 
-    .rd207-riddle-clue small {
+    .rd207-riddle-tracker.expanded
+      .rd209-riddle-tracker-chevron {
+      transform: rotate(180deg);
+    }
+
+    .rd209-riddle-tracker-details {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 8px);
+      display: grid;
+      width: min(286px, calc(100vw - 32px));
+      gap: 7px;
+      border: 1px solid rgba(54, 223, 207, .68);
+      border-radius: 16px;
+      padding: 13px;
+      background: rgba(5, 16, 19, .96);
+      box-shadow:
+        0 14px 38px rgba(0, 0, 0, .5),
+        0 0 28px rgba(20, 184, 166, .12);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .rd209-riddle-tracker-details.hidden {
+      display: none !important;
+    }
+
+    .rd209-riddle-tracker-details > small {
       color: #63dfd3;
-      font-size: 8px;
+      font-size: 9px;
+      font-weight: 900;
       letter-spacing: .08em;
       text-transform: uppercase;
     }
 
-    .rd207-riddle-clue strong {
+    .rd209-riddle-tracker-details > strong {
       overflow: hidden;
-      font-size: 12px;
+      color: #fff;
+      font-size: 14px;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
+    .rd209-riddle-tracker-details > p {
+      max-height: 96px;
+      margin: 1px 0 2px;
+      overflow: auto;
+      color: #cbd7da;
+      font-size: 11px;
+      font-weight: 650;
+      line-height: 1.42;
+      overscroll-behavior: contain;
+    }
+
+    .rd209-riddle-tracker-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-top: 3px;
+    }
+
+    .rd207-riddle-clue,
     .rd207-riddle-stop {
-      min-width: 64px;
-      border-left: 1px solid rgba(54, 223, 207, .28);
-      background: rgba(255, 255, 255, .035);
-      color: #adfff7;
+      min-height: 38px;
+      border: 1px solid #344854;
+      border-radius: 10px;
+      background: #17222b;
       font-size: 10px;
+    }
+
+    .rd207-riddle-clue {
+      border-color: rgba(54, 223, 207, .55);
+      background: rgba(20, 184, 166, .16);
+      color: #dffffb;
+    }
+
+    .rd207-riddle-stop {
+      color: #adfff7;
     }
 
     .rd207-track-riddle-btn {
@@ -69646,8 +69831,19 @@ function rd207InstallTrackingStyles() {
 
     @media (max-width: 520px) {
       .rd207-riddle-tracker {
+        right: calc(16px + env(safe-area-inset-right));
         bottom: calc(91px + env(safe-area-inset-bottom));
-        min-height: 50px;
+      }
+
+      .rd209-riddle-tracker-toggle {
+        min-width: 142px;
+        min-height: 42px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rd209-riddle-tracker-chevron {
+        transition: none;
       }
     }
   `;
@@ -69673,6 +69869,20 @@ function rd207InitTrackedRiddles() {
       rd207HandleTrackButton,
       true
     );
+
+  if (
+    state.map &&
+    !state.rd209RiddleZoomListenerBound
+  ) {
+    state.rd209RiddleZoomListenerBound = true;
+    state.map.on("zoomend", () => {
+      if (state.rd207TrackedRiddleId) {
+        rd207DrawTrackedSearchArea({
+          focus: false
+        });
+      }
+    });
+  }
 
   if (
     state.rd207TrackedRiddleId &&
@@ -69706,4 +69916,4 @@ if (document.readyState === "loading") {
 
 document.documentElement.dataset
   .roadDiscoveryRiddleTracking =
-    "single-teal-search-area-v207";
+    "compact-teal-search-area-v209";
