@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V207-TRACKED-RIDDLE-SEARCH
+ * Build signature: QOTS-RDA-2026-V208-RIDDLE-LAYER-VISIBILITY
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "207",
-    signature: "QOTS-RDA-2026-V207-TRACKED-RIDDLE-SEARCH"
+    version: "208",
+    signature: "QOTS-RDA-2026-V208-RIDDLE-LAYER-VISIBILITY"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V207-TRACKED-RIDDLE-SEARCH</small>
+        <small>Build signature: QOTS-RDA-2026-V208-RIDDLE-LAYER-VISIBILITY</small>
       </main>
     </body>
   `;
@@ -69188,12 +69188,25 @@ function rd207EnsureSearchLayer() {
   if (!state.map || !window.L) return null;
 
   if (!state.map.getPane("riddleSearchPane")) {
-    const pane = state.map.createPane(
+    state.map.createPane(
       "riddleSearchPane"
     );
-    pane.style.zIndex = "350";
-    pane.style.pointerEvents = "none";
   }
+
+  /*
+   * The labels-only vector canvas sits at z-index 450. It is temporarily
+   * hidden while the map is moved or zoomed, which used to expose this
+   * search area for a moment and then cover it again when labels returned.
+   * Keep the clue area just above that canvas so tracking remains visible.
+   */
+  const pane = state.map.getPane(
+    "riddleSearchPane"
+  );
+  pane.style.zIndex = "460";
+  pane.style.pointerEvents = "none";
+  pane.style.opacity = "1";
+  pane.style.visibility = "visible";
+  pane.style.transition = "none";
 
   if (!state.rd207RiddleSearchLayer) {
     state.rd207RiddleSearchLayer =
