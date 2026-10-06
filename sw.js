@@ -1,17 +1,17 @@
 "use strict";
 
 /*
-  Road Discovery AU v209 service worker
+  Road Discovery AU v210 service worker
   Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
-  Build signature: QOTS-RDA-2026-V209-COMPACT-RIDDLE-TRACKER
+  Build signature: QOTS-RDA-2026-V210-STABLE-RIDDLE-MAP
 
   Expected frontend versions:
-  - app.js?v=209
+  - app.js?v=210
   - style.css?v=68
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v209";
+  "road-discovery-au-v210";
 
 const CORE_APP_SHELL = [
   "./",
@@ -22,6 +22,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=68",
+  "./app.js?v=210",
   "./app.js?v=209",
   "./app.js?v=208",
   "./app.js?v=207",
@@ -290,9 +291,14 @@ self.addEventListener(
           ) {
             return (
               await caches.match(
-                "./app.js?v=209"
+                "./app.js?v=210"
               )
             ) ||
+              (
+                await caches.match(
+                  "./app.js?v=209"
+                )
+              ) ||
               (
                 await caches.match(
                   "./app.js?v=208"
