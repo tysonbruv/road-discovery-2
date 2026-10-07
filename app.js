@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V212-RIDDLE-ZOOM-RESET
+ * Build signature: QOTS-RDA-2026-V213-ROTATING-OVERLAYS
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "212",
-    signature: "QOTS-RDA-2026-V212-RIDDLE-ZOOM-RESET"
+    version: "213",
+    signature: "QOTS-RDA-2026-V213-ROTATING-OVERLAYS"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V212-RIDDLE-ZOOM-RESET</small>
+        <small>Build signature: QOTS-RDA-2026-V213-ROTATING-OVERLAYS</small>
       </main>
     </body>
   `;
@@ -1128,13 +1128,38 @@ function rd198SetLabelPaneHidden(
     RD134_LABEL_PANE
   );
 
-  if (!pane) return;
+  if (pane) {
+    pane.style.transition = "none";
+    pane.style.opacity = hidden ? "0" : "1";
+    pane.style.visibility = hidden
+      ? "hidden"
+      : "visible";
+  }
 
-  pane.style.transition = "none";
-  pane.style.opacity = hidden ? "0" : "1";
-  pane.style.visibility = hidden
-    ? "hidden"
-    : "visible";
+  /*
+   * v213 keeps label tiles in Leaflet's standard rotating overlay pane.
+   * Hide only each labels-only grid container, never the overlay pane itself
+   * because that pane also owns the orange road canvas and riddle area.
+   */
+  map?.eachLayer?.((layer) => {
+    if (!layer?._roadDiscoveryLabelOverlay) {
+      return;
+    }
+
+    const container =
+      layer.getContainer?.() ||
+      layer._container;
+
+    if (!container) return;
+
+    container.style.transition = "none";
+    container.style.opacity = hidden
+      ? "0"
+      : "1";
+    container.style.visibility = hidden
+      ? "hidden"
+      : "visible";
+  });
 }
 
 function rd198BindGestureLabelVisibility(
@@ -1360,8 +1385,29 @@ function rd134CreateLabelLayer(
       roadDiscoveryBaseLabelRules(
         daylight
       ),
-    pane: RD134_LABEL_PANE,
+    /*
+     * Leaflet-Rotate does not reliably rotate custom panes. Keep this grid
+     * inside the standard rotating overlay pane and use its own z-index so
+     * labels remain above the orange road canvas.
+     */
+    pane: "overlayPane",
+    zIndex: RD134_LABEL_PANE_Z_INDEX,
     attribution: ""
+  });
+
+  layer.on?.("add", () => {
+    window.requestAnimationFrame(() => {
+      const container =
+        layer.getContainer?.() ||
+        layer._container;
+
+      if (!container) return;
+
+      container.style.zIndex = String(
+        RD134_LABEL_PANE_Z_INDEX
+      );
+      container.style.pointerEvents = "none";
+    });
   });
 
   Object.assign(layer, {
@@ -69207,56 +69253,6 @@ function rd207SaveTrackedRiddle() {
 function rd207EnsureSearchLayer() {
   if (!state.map || !window.L) return null;
 
-  if (!state.map.getPane("riddleSearchPane")) {
-    state.map.createPane(
-      "riddleSearchPane"
-    );
-  }
-
-  /*
-   * The labels-only vector canvas sits at z-index 450. It is temporarily
-   * hidden while the map is moved or zoomed, which used to expose this
-   * search area for a moment and then cover it again when labels returned.
-   * Keep the clue area just above that canvas so tracking remains visible.
-   */
-  const pane = state.map.getPane(
-    "riddleSearchPane"
-  );
-  pane.style.zIndex = "460";
-  pane.style.pointerEvents = "none";
-  pane.style.opacity =
-    state.rd212RiddleZoomSettling
-      ? "0"
-      : "1";
-  pane.style.visibility =
-    state.rd212RiddleZoomSettling
-      ? "hidden"
-      : "visible";
-  pane.style.transition = "none";
-
-  /*
-   * The app normally prefers Leaflet's canvas renderer. On iPhone Safari a
-   * canvas that lives in its own pane can retain the temporary pinch scale,
-   * making a geographically correct circle appear over another city. A
-   * dedicated SVG renderer keeps every point projected from its LatLng at
-   * the final map zoom instead of carrying that temporary bitmap transform.
-   */
-  if (
-    !state.rd211RiddleSearchRenderer &&
-    typeof L.svg === "function"
-  ) {
-    const renderer = L.svg({
-      pane: "riddleSearchPane",
-      padding: 1
-    });
-
-    if (renderer) {
-      state.rd211RiddleSearchRenderer =
-        renderer;
-      renderer.addTo(state.map);
-    }
-  }
-
   if (!state.rd207RiddleSearchLayer) {
     state.rd207RiddleSearchLayer =
       L.layerGroup().addTo(state.map);
@@ -69279,6 +69275,15 @@ function rd207SearchBounds(geometry) {
 }
 
 function rd207DrawTrackedSearchArea(options = {}) {
+  if (
+    state.rd213RiddleInteractionActive &&
+    options.force !== true
+  ) {
+    state.rd207RiddleSearchLayer
+      ?.clearLayers?.();
+    return;
+  }
+
   const layer = rd207EnsureSearchLayer();
   if (!layer) return;
   layer.clearLayers();
@@ -69288,10 +69293,6 @@ function rd207DrawTrackedSearchArea(options = {}) {
   if (!discovery || !geometry) return;
 
   const style = {
-    pane: "riddleSearchPane",
-    renderer:
-      state.rd211RiddleSearchRenderer ||
-      undefined,
     color: "#36dfcf",
     weight: 2.5,
     opacity: 0.9,
@@ -70255,150 +70256,208 @@ document.documentElement.dataset
     "svg-riddle-and-fresh-label-grid-v211";
 
 /* ==================================================
-   Road Discovery AU v212
-   Hide and rebuild the iPhone riddle area after zoom
+   Road Discovery AU v213
+   Rotation-safe labels and tracked-riddle geometry
    ================================================== */
 
 Object.assign(state, {
-  rd212RiddleZoomBound: false,
-  rd212RiddleZoomSettling: false,
-  rd212RiddleZoomTimer: null,
-  rd212RiddleZoomGeneration: 0
+  rd213RiddleMotionBound: false,
+  rd213RiddleInteractionActive: false,
+  rd213RiddleTouchActive: false,
+  rd213RiddleSettleTimer: null,
+  rd213RiddleGeneration: 0
 });
 
-function rd212SetRiddlePaneHidden(hidden) {
-  const pane = state.map?.getPane?.(
-    "riddleSearchPane"
-  );
-
-  if (!pane) return;
-
-  pane.style.transition = "none";
-  pane.style.opacity = hidden ? "0" : "1";
-  pane.style.visibility = hidden
-    ? "hidden"
-    : "visible";
-}
-
-function rd212RemoveRiddleZoomGraphics() {
+function rd213RemoveRiddleGraphics() {
   state.rd207RiddleSearchLayer
     ?.clearLayers?.();
 
-  const renderer =
+  /* Remove the v211 custom-pane renderer if an older session made one. */
+  const oldRenderer =
     state.rd211RiddleSearchRenderer;
 
   if (
-    renderer &&
-    state.map?.hasLayer?.(renderer)
+    oldRenderer &&
+    state.map?.hasLayer?.(oldRenderer)
   ) {
-    state.map.removeLayer(renderer);
+    state.map.removeLayer(oldRenderer);
   }
 
   state.rd211RiddleSearchRenderer = null;
 }
 
-function rd212BeginRiddleZoom() {
-  if (!rd211IsIOSMapDevice()) return;
-
-  state.rd212RiddleZoomGeneration += 1;
-  state.rd212RiddleZoomSettling = true;
-
-  if (state.rd212RiddleZoomTimer !== null) {
-    window.clearTimeout(
-      state.rd212RiddleZoomTimer
-    );
-    state.rd212RiddleZoomTimer = null;
+function rd213CancelRiddleRestore() {
+  if (
+    state.rd213RiddleSettleTimer === null
+  ) {
+    return;
   }
 
-  rd212SetRiddlePaneHidden(true);
-  rd212RemoveRiddleZoomGraphics();
+  window.clearTimeout(
+    state.rd213RiddleSettleTimer
+  );
+  state.rd213RiddleSettleTimer = null;
 }
 
-function rd212FinishRiddleZoom() {
+function rd213StartRiddleMotion() {
   if (!rd211IsIOSMapDevice()) return;
 
-  if (state.rd212RiddleZoomTimer !== null) {
-    window.clearTimeout(
-      state.rd212RiddleZoomTimer
-    );
+  if (!state.rd213RiddleInteractionActive) {
+    state.rd213RiddleInteractionActive =
+      true;
+    state.rd213RiddleGeneration += 1;
   }
 
-  state.rd212RiddleZoomSettling = true;
-  rd212SetRiddlePaneHidden(true);
+  rd213CancelRiddleRestore();
+  rd213RemoveRiddleGraphics();
+
+  /* Rotation has no reliable rotateend event; restore after it goes quiet. */
+  if (!state.rd213RiddleTouchActive) {
+    rd213ScheduleRiddleRestore();
+  }
+}
+
+function rd213KeepRiddleHidden() {
+  if (
+    !rd211IsIOSMapDevice() ||
+    !state.rd213RiddleInteractionActive
+  ) {
+    return;
+  }
+
+  rd213CancelRiddleRestore();
+  rd213RemoveRiddleGraphics();
+
+  /* Rotation has no reliable rotateend event; restore after it goes quiet. */
+  if (!state.rd213RiddleTouchActive) {
+    rd213ScheduleRiddleRestore();
+  }
+}
+
+function rd213ScheduleRiddleRestore() {
+  if (
+    !rd211IsIOSMapDevice() ||
+    !state.rd213RiddleInteractionActive ||
+    state.rd213RiddleTouchActive
+  ) {
+    return;
+  }
+
+  rd213CancelRiddleRestore();
 
   const generation =
-    state.rd212RiddleZoomGeneration;
+    state.rd213RiddleGeneration;
 
-  state.rd212RiddleZoomTimer =
+  state.rd213RiddleSettleTimer =
     window.setTimeout(() => {
-      state.rd212RiddleZoomTimer = null;
+      state.rd213RiddleSettleTimer = null;
 
       if (
         generation !==
-          state.rd212RiddleZoomGeneration ||
+          state.rd213RiddleGeneration ||
+        state.rd213RiddleTouchActive ||
         !state.map
       ) {
         return;
       }
 
       /*
-       * Throw away every SVG element that participated in Safari's pinch
-       * transform. The replacement is projected again from the riddle's
-       * saved latitude/longitude at the map's settled centre and zoom.
+       * Wait through two final layout frames. Then create a new Leaflet path
+       * in the same standard rotating renderer used by the orange roads.
        */
-      rd212RemoveRiddleZoomGraphics();
-      rd207DrawTrackedSearchArea({
-        focus: false
-      });
-      rd212SetRiddlePaneHidden(true);
-
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           if (
             generation !==
-              state.rd212RiddleZoomGeneration
+              state.rd213RiddleGeneration ||
+            state.rd213RiddleTouchActive ||
+            !state.map
           ) {
             return;
           }
 
-          state.rd212RiddleZoomSettling =
+          rd213RemoveRiddleGraphics();
+          state.rd213RiddleInteractionActive =
             false;
-          rd212SetRiddlePaneHidden(false);
+          rd207DrawTrackedSearchArea({
+            focus: false,
+            force: true
+          });
         });
       });
-    }, 180);
+    }, 260);
 }
 
-function rd212BindRiddleZoomReset() {
+function rd213HandleRiddleTouchStart(event) {
+  if (!event.touches?.length) return;
+
+  state.rd213RiddleTouchActive = true;
+  rd213StartRiddleMotion();
+}
+
+function rd213HandleRiddleTouchEnd(event) {
+  if (event.touches?.length) return;
+
+  state.rd213RiddleTouchActive = false;
+  rd213ScheduleRiddleRestore();
+}
+
+function rd213BindRiddleMapMotion() {
   if (
     !state.map?.on ||
-    state.rd212RiddleZoomBound ||
+    state.rd213RiddleMotionBound ||
     !rd211IsIOSMapDevice()
   ) {
     return;
   }
 
-  state.rd212RiddleZoomBound = true;
+  const container =
+    state.map.getContainer?.();
+
+  if (!container) return;
+
+  state.rd213RiddleMotionBound = true;
+
+  container.addEventListener(
+    "touchstart",
+    rd213HandleRiddleTouchStart,
+    { passive: true }
+  );
+  container.addEventListener(
+    "touchend",
+    rd213HandleRiddleTouchEnd,
+    { passive: true }
+  );
+  container.addEventListener(
+    "touchcancel",
+    rd213HandleRiddleTouchEnd,
+    { passive: true }
+  );
+
   state.map.on(
-    "zoomstart",
-    rd212BeginRiddleZoom
+    "dragstart zoomstart",
+    rd213StartRiddleMotion
   );
   state.map.on(
-    "zoomend",
-    rd212FinishRiddleZoom
+    "move zoom rotate",
+    rd213KeepRiddleHidden
+  );
+  state.map.on(
+    "dragend zoomend moveend",
+    rd213ScheduleRiddleRestore
   );
 }
 
 if (document.readyState === "loading") {
   document.addEventListener(
     "DOMContentLoaded",
-    rd212BindRiddleZoomReset,
+    rd213BindRiddleMapMotion,
     { once: true }
   );
 } else {
-  rd212BindRiddleZoomReset();
+  rd213BindRiddleMapMotion();
 }
 
 document.documentElement.dataset
-  .roadDiscoveryRiddleZoomReset =
-    "hide-reproject-reveal-v212";
+  .roadDiscoveryRotatingOverlays =
+    "standard-pane-labels-and-riddle-v213";
