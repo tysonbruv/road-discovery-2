@@ -26,5 +26,5 @@ For permission to use or license Road Discovery AU, contact Quartz Outback
 Time Studios through an official Road Discovery AU contact channel.
 
 Product: Road Discovery AU
-Build: v212
-Build signature: QOTS-RDA-2026-V212-RIDDLE-ZOOM-RESET
+Build: v213
+Build signature: QOTS-RDA-2026-V213-ROTATING-OVERLAYS
