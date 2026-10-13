@@ -2,7 +2,7 @@
 <!--
   Road Discovery AU
   Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
-  Proprietary build signature: QOTS-RDA-2026-V216-CLEAR-AUTH-SCREENS
+  Proprietary build signature: QOTS-RDA-2026-V217-PASSWORD-EYES-PROFILE-STATUS
 -->
 <html lang="en">
 <head>
@@ -27,7 +27,7 @@
 
   <meta
     name="road-discovery-build"
-    content="QOTS-RDA-2026-V216-CLEAR-AUTH-SCREENS"
+    content="QOTS-RDA-2026-V217-PASSWORD-EYES-PROFILE-STATUS"
   />
 
   <meta
@@ -1368,13 +1368,30 @@
                     Password
                   </label>
 
-                  <input
-                    id="signInPasswordInput"
-                    class="text-field"
-                    type="password"
-                    autocomplete="current-password"
-                    placeholder="Your password"
-                  />
+                  <div class="password-field-wrap">
+                    <input
+                      id="signInPasswordInput"
+                      class="text-field"
+                      type="password"
+                      autocomplete="current-password"
+                      placeholder="Your password"
+                    />
+
+                    <button
+                      id="toggleSignInPasswordBtn"
+                      class="password-visibility-btn"
+                      type="button"
+                      aria-label="Show sign-in password"
+                      aria-pressed="false"
+                      title="Show password"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+                        <circle cx="12" cy="12" r="2.75"></circle>
+                        <path class="password-eye-slash" d="m4 4 16 16"></path>
+                      </svg>
+                    </button>
+                  </div>
 
                   <button
                     id="signInBtn"
@@ -1459,13 +1476,30 @@
                     Password
                   </label>
 
-                  <input
-                    id="createPasswordInput"
-                    class="text-field"
-                    type="password"
-                    autocomplete="new-password"
-                    placeholder="At least 6 characters"
-                  />
+                  <div class="password-field-wrap">
+                    <input
+                      id="createPasswordInput"
+                      class="text-field"
+                      type="password"
+                      autocomplete="new-password"
+                      placeholder="At least 6 characters"
+                    />
+
+                    <button
+                      id="toggleCreatePasswordBtn"
+                      class="password-visibility-btn"
+                      type="button"
+                      aria-label="Show profile password"
+                      aria-pressed="false"
+                      title="Show password"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+                        <circle cx="12" cy="12" r="2.75"></circle>
+                        <path class="password-eye-slash" d="m4 4 16 16"></path>
+                      </svg>
+                    </button>
+                  </div>
 
                   <button
                     id="createProfileBtn"
@@ -1714,10 +1748,6 @@
               <div class="road-profile-topline">
                 <div>
                   <h3>Your Road Profile</h3>
-
-                  <p id="profileEmailValue">
-                    Signed in
-                  </p>
                 </div>
 
                 <span class="profile-status-pill">
@@ -1734,22 +1764,14 @@
                   </strong>
                 </div>
 
-                <div class="profile-detail-row friend-code-row">
-                  <span>Friend code</span>
+                <div class="profile-detail-row rd217-profile-status-row">
+                  <span>Status</span>
 
-                  <strong id="profileFriendCodeValue">
-                    RD-0000-0000
+                  <strong class="rd217-profile-signed-in">
+                    Signed in
                   </strong>
                 </div>
               </div>
-
-              <button
-                id="copyFriendCodeBtn"
-                class="wide-btn"
-                type="button"
-              >
-                Copy Friend Code
-              </button>
 
               <div class="privacy-note">
   Shared roads are historical map-completion progress only.
@@ -2221,7 +2243,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=216"></script>
+  <script src="app.js?v=217"></script>
 
   <script>
     const isCapacitorNative = Boolean(
