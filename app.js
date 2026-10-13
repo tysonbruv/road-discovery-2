@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V217-PASSWORD-EYES-PROFILE-STATUS
+ * Build signature: QOTS-RDA-2026-V218-PROFILE-EMAIL-RESTORED
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "217",
-    signature: "QOTS-RDA-2026-V217-PASSWORD-EYES-PROFILE-STATUS"
+    version: "218",
+    signature: "QOTS-RDA-2026-V218-PROFILE-EMAIL-RESTORED"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V217-PASSWORD-EYES-PROFILE-STATUS</small>
+        <small>Build signature: QOTS-RDA-2026-V218-PROFILE-EMAIL-RESTORED</small>
       </main>
     </body>
   `;
@@ -1876,6 +1876,7 @@ function cacheEls() {
     "updatePasswordBtn",
     "authMessage",
     "profileUsernameValue",
+    "profileEmailValue",
     "signOutBtn",
 
     "rd215FriendsIdentityCard",
@@ -7211,6 +7212,7 @@ function renderAuthState() {
 
   if (signedIn) {
     setText(els.profileUsernameValue, profile?.username || "Creating profile...");
+    setText(els.profileEmailValue, state.auth.user?.email || "Email unavailable");
   }
 
   setText(
@@ -71596,3 +71598,7 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryPasswordVisibility =
     "signin-create-eyes-profile-status-v217";
+
+document.documentElement.dataset
+  .roadDiscoveryProfileEmail =
+    "signed-in-email-restored-v218";
