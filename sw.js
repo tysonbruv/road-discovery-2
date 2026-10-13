@@ -1,17 +1,17 @@
 "use strict";
 
 /*
-  Road Discovery AU v219 service worker
+  Road Discovery AU v220 service worker
   Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
-  Build signature: QOTS-RDA-2026-V219-RALLY-OVERLAY-ACTIVE-MAP-SAVE
+  Build signature: QOTS-RDA-2026-V220-PUBLIC-TROPHIES-DISCOVERIES
 
   Expected frontend versions:
-  - app.js?v=219
+  - app.js?v=220
   - style.css?v=68
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v219";
+  "road-discovery-au-v220";
 
 const CORE_APP_SHELL = [
   "./",
@@ -22,6 +22,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=68",
+  "./app.js?v=220",
   "./app.js?v=219",
   "./app.js?v=218",
   "./app.js?v=217",
@@ -300,7 +301,7 @@ self.addEventListener(
           ) {
             return (
               await caches.match(
-                "./app.js?v=219"
+                "./app.js?v=220"
               )
             ) ||
               (
