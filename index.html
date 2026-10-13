@@ -2,7 +2,7 @@
 <!--
   Road Discovery AU
   Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
-  Proprietary build signature: QOTS-RDA-2026-V213-ROTATING-OVERLAYS
+  Proprietary build signature: QOTS-RDA-2026-V214-CONFIRMED-PROFILE
 -->
 <html lang="en">
 <head>
@@ -27,7 +27,7 @@
 
   <meta
     name="road-discovery-build"
-    content="QOTS-RDA-2026-V213-ROTATING-OVERLAYS"
+    content="QOTS-RDA-2026-V214-CONFIRMED-PROFILE"
   />
 
   <meta
@@ -482,7 +482,10 @@
 
       <div class="panel-content">
                 
-        <section class="panel-section">
+        <section
+          id="friendSharingSettingsSection"
+          class="panel-section"
+        >
           <h3>Friends</h3>
 
           <label
@@ -1460,6 +1463,75 @@
               </div>
 
               <div
+                id="pendingConfirmationView"
+                class="auth-flow-view hidden"
+                aria-live="polite"
+              >
+                <section class="rd214-confirmation-card">
+                  <div
+                    class="rd214-confirmation-icon"
+                    aria-hidden="true"
+                  >
+                    ✉
+                  </div>
+
+                  <span class="auth-flow-kicker">
+                    One last step
+                  </span>
+
+                  <h3 id="pendingConfirmationTitle">
+                    CHECK YOUR EMAIL
+                  </h3>
+
+                  <p id="pendingConfirmationLead">
+                    Open the confirmation email from Road Discovery AU to
+                    finish creating your Road Profile.
+                  </p>
+
+                  <p
+                    id="pendingConfirmationEmailRow"
+                    class="rd214-confirmation-email hidden"
+                  >
+                    Confirmation sent to
+                    <strong id="pendingConfirmationEmailValue"></strong>
+                  </p>
+
+                  <ol
+                    id="pendingConfirmationSteps"
+                    class="rd214-confirmation-steps"
+                  >
+                    <li>Open the email from Road Discovery AU.</li>
+                    <li>Press <strong>Confirm email address</strong>.</li>
+                    <li>
+                      Return to the app. Your username and friend code will
+                      be created automatically.
+                    </li>
+                  </ol>
+
+                  <p
+                    id="pendingConfirmationStatus"
+                    class="rd214-confirmation-status hidden"
+                  ></p>
+                </section>
+
+                <button
+                  id="pendingConfirmationSignInBtn"
+                  class="wide-btn auth-submit-btn"
+                  type="button"
+                >
+                  Already confirmed? Sign in
+                </button>
+
+                <button
+                  id="pendingConfirmationDifferentEmailBtn"
+                  class="ghost-btn wide-btn"
+                  type="button"
+                >
+                  Use a different email
+                </button>
+              </div>
+
+              <div
                 id="forgotPasswordView"
                 class="auth-flow-view hidden"
               >
@@ -1712,10 +1784,6 @@
               </div>
 
               <div class="privacy-note">
-  Check your email and click the confirmation link after creating
-  your Road Profile. Once confirmed, sign out, then sign back in.
-  This gives you your Road username and friend code.
-  <br /><br />
   Shared roads are historical map-completion progress only.
   Shared roads do not include your live location or active drive.
   Multiplayer live dots are temporary and are not saved.
@@ -2153,7 +2221,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=213"></script>
+  <script src="app.js?v=214"></script>
 
   <script>
     const isCapacitorNative = Boolean(
