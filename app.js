@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V216-CLEAR-AUTH-SCREENS
+ * Build signature: QOTS-RDA-2026-V217-PASSWORD-EYES-PROFILE-STATUS
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "216",
-    signature: "QOTS-RDA-2026-V216-CLEAR-AUTH-SCREENS"
+    version: "217",
+    signature: "QOTS-RDA-2026-V217-PASSWORD-EYES-PROFILE-STATUS"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V216-CLEAR-AUTH-SCREENS</small>
+        <small>Build signature: QOTS-RDA-2026-V217-PASSWORD-EYES-PROFILE-STATUS</small>
       </main>
     </body>
   `;
@@ -1856,9 +1856,11 @@ function cacheEls() {
     "signInAuthForm",
     "createEmailInput",
     "createPasswordInput",
+    "toggleCreatePasswordBtn",
     "createProfileBtn",
     "signInEmailInput",
     "signInPasswordInput",
+    "toggleSignInPasswordBtn",
     "signInBtn",
     "forgotPasswordBtn",
     "forgotPasswordView",
@@ -1873,10 +1875,7 @@ function cacheEls() {
     "toggleConfirmPasswordBtn",
     "updatePasswordBtn",
     "authMessage",
-    "profileEmailValue",
     "profileUsernameValue",
-    "profileFriendCodeValue",
-    "copyFriendCodeBtn",
     "signOutBtn",
 
     "rd215FriendsIdentityCard",
@@ -2264,6 +2263,18 @@ function bindEvents() {
   els.sendResetEmailBtn?.addEventListener("click", sendPasswordReset);
   els.requestAnotherResetBtn?.addEventListener("click", restartPasswordReset);
   els.updatePasswordBtn?.addEventListener("click", updateRecoveredPassword);
+  els.toggleCreatePasswordBtn?.addEventListener("click", () => {
+    togglePasswordVisibility(
+      els.createPasswordInput,
+      els.toggleCreatePasswordBtn
+    );
+  });
+  els.toggleSignInPasswordBtn?.addEventListener("click", () => {
+    togglePasswordVisibility(
+      els.signInPasswordInput,
+      els.toggleSignInPasswordBtn
+    );
+  });
   els.toggleNewPasswordBtn?.addEventListener("click", () => {
     togglePasswordVisibility(els.newPasswordInput, els.toggleNewPasswordBtn);
   });
@@ -2273,7 +2284,6 @@ function bindEvents() {
       els.toggleConfirmPasswordBtn
     );
   });
-  els.copyFriendCodeBtn?.addEventListener("click", copyFriendCode);
   els.rd215CopyFriendCodeBtn?.addEventListener("click", copyFriendCode);
   els.signOutBtn?.addEventListener("click", signOutRoadProfile);
 
@@ -5918,6 +5928,12 @@ async function restartRoadProfileSignup() {
     els.createPasswordInput.value = "";
   }
 
+  setPasswordVisibility(
+    els.createPasswordInput,
+    els.toggleCreatePasswordBtn,
+    false
+  );
+
   setAuthMessage("", "info");
   renderAuthState();
   window.setTimeout(
@@ -6210,6 +6226,15 @@ async function createRoadProfileAccount() {
     ? data?.session?.user || data?.user || null
     : null;
 
+  if (els.createPasswordInput) {
+    els.createPasswordInput.value = "";
+  }
+  setPasswordVisibility(
+    els.createPasswordInput,
+    els.toggleCreatePasswordBtn,
+    false
+  );
+
   if (state.auth.session && state.auth.user) {
     const profile = await ensureRoadProfile({ quiet: false });
     await maybeSyncProfileStats({ force: true, quiet: true });
@@ -6290,6 +6315,15 @@ async function signInRoadProfile() {
   state.auth.session = data?.session || null;
   state.auth.user = data?.user || data?.session?.user || null;
 
+  if (els.signInPasswordInput) {
+    els.signInPasswordInput.value = "";
+  }
+  setPasswordVisibility(
+    els.signInPasswordInput,
+    els.toggleSignInPasswordBtn,
+    false
+  );
+
   if (state.auth.user) {
     const profile = await ensureRoadProfile({ quiet: false });
     await maybeSyncProfileStats({ force: true, quiet: true });
@@ -6340,6 +6374,17 @@ async function signOutRoadProfile() {
   state.auth.profile = null;
   state.auth.loading = false;
   state.auth.view = "signin";
+
+  setPasswordVisibility(
+    els.createPasswordInput,
+    els.toggleCreatePasswordBtn,
+    false
+  );
+  setPasswordVisibility(
+    els.signInPasswordInput,
+    els.toggleSignInPasswordBtn,
+    false
+  );
 
   clearFriendData();
 
@@ -6968,6 +7013,17 @@ function showForgotPasswordPage() {
 function setAuthMode(mode) {
   const isCreate = mode === "create";
 
+  setPasswordVisibility(
+    els.createPasswordInput,
+    els.toggleCreatePasswordBtn,
+    false
+  );
+  setPasswordVisibility(
+    els.signInPasswordInput,
+    els.toggleSignInPasswordBtn,
+    false
+  );
+
   state.auth.view = isCreate ? "create" : "signin";
   renderAuthViews();
 
@@ -7154,9 +7210,7 @@ function renderAuthState() {
   renderAuthViews();
 
   if (signedIn) {
-    setText(els.profileEmailValue, state.auth.user?.email || "Signed in");
     setText(els.profileUsernameValue, profile?.username || "Creating profile...");
-    setText(els.profileFriendCodeValue, profile?.friend_code || "Creating code...");
   }
 
   setText(
@@ -7205,6 +7259,10 @@ function renderAuthState() {
   }
 
   [
+    els.createPasswordInput,
+    els.signInPasswordInput,
+    els.toggleCreatePasswordBtn,
+    els.toggleSignInPasswordBtn,
     els.newPasswordInput,
     els.confirmNewPasswordInput,
     els.toggleNewPasswordBtn,
@@ -7222,13 +7280,6 @@ function renderAuthState() {
       element.disabled = loading || submitting || sharingBusy;
     }
   });
-
-  if (els.copyFriendCodeBtn) {
-    els.copyFriendCodeBtn.disabled =
-      loading ||
-      submitting ||
-      !profile?.friend_code;
-  }
 
   if (els.rd215CopyFriendCodeBtn) {
     els.rd215CopyFriendCodeBtn.disabled =
@@ -71498,3 +71549,50 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryAuthScreens =
     "signin-default-separate-create-v216";
+
+/* ==================================================
+   Road Discovery AU v217
+   Password visibility and simplified profile status
+   ================================================== */
+
+function rd217InstallProfileStatusStyles() {
+  if ($("rd217ProfileStatusStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd217ProfileStatusStyles";
+  style.textContent = `
+    .rd217-profile-signed-in {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px;
+      color: #59e995 !important;
+      font-weight: 900;
+    }
+
+    .rd217-profile-signed-in::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: #59e995;
+      box-shadow: 0 0 10px rgba(89, 233, 149, 0.72);
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd217InstallProfileStatusStyles,
+    { once: true }
+  );
+} else {
+  rd217InstallProfileStatusStyles();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryPasswordVisibility =
+    "signin-create-eyes-profile-status-v217";
