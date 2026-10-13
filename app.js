@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V213-ROTATING-OVERLAYS
+ * Build signature: QOTS-RDA-2026-V214-CONFIRMED-PROFILE
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "213",
-    signature: "QOTS-RDA-2026-V213-ROTATING-OVERLAYS"
+    version: "214",
+    signature: "QOTS-RDA-2026-V214-CONFIRMED-PROFILE"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V213-ROTATING-OVERLAYS</small>
+        <small>Build signature: QOTS-RDA-2026-V214-CONFIRMED-PROFILE</small>
       </main>
     </body>
   `;
@@ -158,6 +158,8 @@ const FRIEND_SETTINGS_KEY = "roadDiscoveryAU.friendSettings.v1";
 const TODAY_UNLOCKS_KEY = "roadDiscoveryAU.todayUnlocks.v1";
 const ROAD_PROFILE_CACHE_KEY = "roadDiscoveryAU.roadProfile.v1";
 const SHARED_ROAD_SYNC_STATE_KEY = "roadDiscoveryAU.sharedRoadSync.v1";
+const ROAD_PROFILE_CONFIRMATION_KEY =
+  "roadDiscoveryAU.pendingEmailConfirmation.v1";
 
 const PASSWORD_RESET_REQUEST_POLICY = Object.freeze({
   maximumRequests: 3,
@@ -1599,7 +1601,12 @@ const state = {
     checkingSession: false,
     submitting: false,
     passwordRecovery: false,
-    passwordRecoveryReady: false
+    passwordRecoveryReady: false,
+    pendingConfirmationEmail: "",
+    confirmationRedirect: false,
+    confirmationError: "",
+    confirmationFallbackTimer: null,
+    confirmationPanelOpened: false
   },
 
   friends: {
@@ -1791,6 +1798,7 @@ function cacheEls() {
 
     "settingsPanel",
     "closeSettingsBtn",
+    "friendSharingSettingsSection",
     "friendProfileToggle",
     "friendMapToggle",
     "resetBtn",
@@ -1833,6 +1841,15 @@ function cacheEls() {
     "signedOutProfileCard",
     "signedInProfileCard",
     "authDefaultView",
+    "pendingConfirmationView",
+    "pendingConfirmationTitle",
+    "pendingConfirmationLead",
+    "pendingConfirmationEmailRow",
+    "pendingConfirmationEmailValue",
+    "pendingConfirmationSteps",
+    "pendingConfirmationStatus",
+    "pendingConfirmationSignInBtn",
+    "pendingConfirmationDifferentEmailBtn",
     "authCreateModeBtn",
     "authSignInModeBtn",
     "createAuthForm",
@@ -2217,6 +2234,14 @@ function bindEvents() {
 
   els.authCreateModeBtn?.addEventListener("click", () => setAuthMode("create"));
   els.authSignInModeBtn?.addEventListener("click", () => setAuthMode("signin"));
+  els.pendingConfirmationSignInBtn?.addEventListener(
+    "click",
+    continueRoadProfileConfirmation
+  );
+  els.pendingConfirmationDifferentEmailBtn?.addEventListener(
+    "click",
+    restartRoadProfileSignup
+  );
 
   els.createProfileBtn?.addEventListener("click", createRoadProfileAccount);
   els.signInBtn?.addEventListener("click", signInRoadProfile);
@@ -5559,10 +5584,362 @@ function maybeUpdateWaypointRoute(point) {
 
 /* ---------- Supabase Road Profile / Auth ---------- */
 
+function readPendingRoadProfileConfirmation() {
+  try {
+    const raw = sessionStorage.getItem(
+      ROAD_PROFILE_CONFIRMATION_KEY
+    );
+
+    if (!raw) return "";
+
+    const saved = JSON.parse(raw);
+    return String(saved?.email || "").trim();
+  } catch (error) {
+    return "";
+  }
+}
+
+function savePendingRoadProfileConfirmation(email) {
+  const normalizedEmail = String(email || "").trim();
+
+  state.auth.pendingConfirmationEmail = normalizedEmail;
+
+  try {
+    sessionStorage.setItem(
+      ROAD_PROFILE_CONFIRMATION_KEY,
+      JSON.stringify({
+        email: normalizedEmail,
+        createdAt: Date.now()
+      })
+    );
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function clearPendingRoadProfileConfirmation() {
+  state.auth.pendingConfirmationEmail = "";
+
+  try {
+    sessionStorage.removeItem(
+      ROAD_PROFILE_CONFIRMATION_KEY
+    );
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function getRoadProfileConfirmationRedirectInfo() {
+  const url = new URL(window.location.href);
+  const hash = new URLSearchParams(
+    url.hash.replace(/^#/, "")
+  );
+
+  if (hasPasswordRecoveryRedirect()) {
+    return {
+      active: false,
+      error: ""
+    };
+  }
+
+  const queryType = String(
+    url.searchParams.get("type") || ""
+  ).toLowerCase();
+  const hashType = String(
+    hash.get("type") || ""
+  ).toLowerCase();
+  const authType = queryType || hashType;
+  const rawError =
+    url.searchParams.get("error_description") ||
+    hash.get("error_description") ||
+    url.searchParams.get("error") ||
+    hash.get("error") ||
+    "";
+  const hasAuthCode = url.searchParams.has("code");
+  const hasAuthToken =
+    hash.has("access_token") ||
+    hash.has("refresh_token");
+  const isSignupType =
+    authType === "signup" ||
+    authType === "email" ||
+    authType === "magiclink";
+
+  return {
+    active: Boolean(
+      rawError ||
+      hasAuthCode ||
+      hasAuthToken ||
+      isSignupType
+    ),
+    error: String(rawError || "").replace(/\+/g, " ").trim()
+  };
+}
+
+function friendlyRoadProfileConfirmationError(message) {
+  const normalized = String(message || "").toLowerCase();
+
+  if (
+    normalized.includes("expired") ||
+    normalized.includes("invalid") ||
+    normalized.includes("otp_expired")
+  ) {
+    return "This confirmation link is invalid or has expired. Return to Create Road Profile and request a new confirmation email.";
+  }
+
+  if (message) {
+    return "The confirmation link could not be completed. You can sign in if the email was already confirmed, or create the profile again to request a new link.";
+  }
+
+  return "Your email is confirmed. Sign in with the email and password you created to finish opening your Road Profile.";
+}
+
+function prepareRoadProfileConfirmationState() {
+  const savedEmail =
+    readPendingRoadProfileConfirmation();
+  const redirect =
+    getRoadProfileConfirmationRedirectInfo();
+
+  if (savedEmail) {
+    state.auth.pendingConfirmationEmail = savedEmail;
+  }
+
+  if (redirect.active) {
+    state.auth.view = "confirmation";
+    state.auth.confirmationRedirect = !redirect.error;
+    state.auth.confirmationError = redirect.error
+      ? friendlyRoadProfileConfirmationError(redirect.error)
+      : "";
+    return true;
+  }
+
+  if (savedEmail) {
+    state.auth.view = "confirmation";
+  }
+
+  return false;
+}
+
+function getRoadProfileConfirmationRedirectUrl() {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  return url.href;
+}
+
+function clearRoadProfileConfirmationUrl() {
+  const url = new URL(window.location.href);
+
+  [
+    "code",
+    "error",
+    "error_code",
+    "error_description",
+    "type"
+  ].forEach((key) => url.searchParams.delete(key));
+
+  if (
+    /(?:^|[&#])(?:type=(?:signup|email|magiclink)|access_token=|refresh_token=|error=|error_description=)/i
+      .test(url.hash)
+  ) {
+    url.hash = "";
+  }
+
+  window.history.replaceState(
+    window.history.state,
+    document.title,
+    `${url.pathname}${url.search}${url.hash}`
+  );
+}
+
+function cancelRoadProfileConfirmationFallback() {
+  if (state.auth.confirmationFallbackTimer === null) {
+    return;
+  }
+
+  window.clearTimeout(
+    state.auth.confirmationFallbackTimer
+  );
+  state.auth.confirmationFallbackTimer = null;
+}
+
+function scheduleRoadProfileConfirmationFallback() {
+  if (
+    !state.auth.confirmationRedirect ||
+    state.auth.confirmationError
+  ) {
+    return;
+  }
+
+  cancelRoadProfileConfirmationFallback();
+
+  state.auth.confirmationFallbackTimer =
+    window.setTimeout(() => {
+      state.auth.confirmationFallbackTimer = null;
+
+      if (state.auth.session && state.auth.user) {
+        return;
+      }
+
+      state.auth.confirmationRedirect = false;
+      state.auth.confirmationError =
+        friendlyRoadProfileConfirmationError("");
+      clearRoadProfileConfirmationUrl();
+      renderAuthState();
+    }, 6500);
+}
+
+function openRoadProfileConfirmationPanel() {
+  if (state.auth.confirmationPanelOpened) return;
+
+  state.auth.confirmationPanelOpened = true;
+  showFriendsListView();
+  openPanel("friendsPanel");
+
+  if (typeof rd149SetFriendsPanelMode === "function") {
+    rd149SetFriendsPanelMode("account");
+  }
+
+  if (typeof rd148SetFriendsPanelHeading === "function") {
+    rd148SetFriendsPanelHeading(
+      "Road Profile",
+      "Confirm your email to finish creating your profile."
+    );
+  }
+}
+
+function completeRoadProfileConfirmation() {
+  cancelRoadProfileConfirmationFallback();
+  clearPendingRoadProfileConfirmation();
+  clearRoadProfileConfirmationUrl();
+  state.auth.confirmationRedirect = false;
+  state.auth.confirmationError = "";
+  state.auth.view = "signin";
+}
+
+function failRoadProfileConfirmation() {
+  cancelRoadProfileConfirmationFallback();
+  state.auth.confirmationRedirect = false;
+  state.auth.confirmationError =
+    "Your email is confirmed, but the Road Profile could not finish loading. Check your connection and try again.";
+  state.auth.view = "confirmation";
+}
+
+async function continueRoadProfileConfirmation() {
+  if (
+    state.auth.client &&
+    state.auth.session &&
+    state.auth.user
+  ) {
+    state.auth.confirmationRedirect = true;
+    state.auth.confirmationError = "";
+    state.auth.loading = true;
+    renderAuthState();
+
+    const profile = await ensureRoadProfile({
+      quiet: true
+    });
+
+    if (profile) {
+      await maybeSyncProfileStats({
+        force: true,
+        quiet: true
+      });
+      await reconcileMySharedRoads({ quiet: true });
+      await refreshFriendData({ quiet: true });
+      completeRoadProfileConfirmation();
+      state.auth.loading = false;
+      setAuthMessage("Road Profile ready.", "success");
+      renderAuthState();
+      showToast("Road Profile ready");
+      return;
+    }
+
+    state.auth.loading = false;
+    failRoadProfileConfirmation();
+    renderAuthState();
+    return;
+  }
+
+  const linkExpired = /invalid|expired/i.test(
+    state.auth.confirmationError
+  );
+
+  cancelRoadProfileConfirmationFallback();
+  clearRoadProfileConfirmationUrl();
+  state.auth.confirmationRedirect = false;
+  state.auth.confirmationError = "";
+  state.auth.view = "signin";
+
+  if (
+    els.signInEmailInput &&
+    !els.signInEmailInput.value
+  ) {
+    els.signInEmailInput.value =
+      state.auth.pendingConfirmationEmail;
+  }
+
+  setAuthMessage(
+    linkExpired
+      ? "Sign in if this email was already confirmed, or create the Road Profile again to request a new link."
+      : "Email confirmed — sign in with the password you created.",
+    linkExpired ? "info" : "success"
+  );
+  renderAuthState();
+  window.setTimeout(
+    () => els.signInPasswordInput?.focus(),
+    0
+  );
+}
+
+async function restartRoadProfileSignup() {
+  cancelRoadProfileConfirmationFallback();
+
+  if (state.auth.client && state.auth.session) {
+    const { error } =
+      await state.auth.client.auth.signOut();
+    if (error) console.error(error);
+  }
+
+  clearPendingRoadProfileConfirmation();
+  clearRoadProfileConfirmationUrl();
+  state.auth.session = null;
+  state.auth.user = null;
+  state.auth.profile = null;
+  state.auth.confirmationRedirect = false;
+  state.auth.confirmationError = "";
+  state.auth.view = "create";
+
+  if (els.createEmailInput) {
+    els.createEmailInput.value = "";
+  }
+
+  if (els.createPasswordInput) {
+    els.createPasswordInput.value = "";
+  }
+
+  setAuthMessage("", "info");
+  renderAuthState();
+  window.setTimeout(
+    () => els.createEmailInput?.focus(),
+    0
+  );
+}
+
 function initSupabase() {
+  const hasConfirmationRedirect =
+    prepareRoadProfileConfirmationState();
+
   renderAuthState();
 
   if (!window.supabase || typeof window.supabase.createClient !== "function") {
+    if (hasConfirmationRedirect) {
+      state.auth.confirmationRedirect = false;
+      state.auth.confirmationError =
+        "Road Discovery could not connect to confirm the profile. Check your connection, then reload the app.";
+      renderAuthState();
+      openRoadProfileConfirmationPanel();
+    }
+
     setAuthMessage(
       "Supabase did not load. Map still works locally, but Road Profile is unavailable.",
       "error"
@@ -5606,10 +5983,23 @@ function initSupabase() {
     }
 
     if (state.auth.user) {
-      await ensureRoadProfile({ quiet: true });
+      const profile = await ensureRoadProfile({ quiet: true });
       await maybeSyncProfileStats({ force: true, quiet: true });
       await reconcileMySharedRoads({ quiet: true });
       await refreshFriendData({ quiet: true });
+
+      if (
+        profile &&
+        !state.auth.passwordRecovery
+      ) {
+        completeRoadProfileConfirmation();
+      } else if (
+        !profile &&
+        state.auth.confirmationRedirect &&
+        !state.auth.passwordRecovery
+      ) {
+        failRoadProfileConfirmation();
+      }
         } else {
       stopMultiplayerMode({
         clearRoom: true
@@ -5624,6 +6014,11 @@ function initSupabase() {
   });
 
   loadInitialAuthSession();
+
+  if (hasConfirmationRedirect) {
+    openRoadProfileConfirmationPanel();
+    scheduleRoadProfileConfirmationFallback();
+  }
 }
 
 async function loadInitialAuthSession() {
@@ -5663,10 +6058,23 @@ async function loadInitialAuthSession() {
   }
 
   if (state.auth.user) {
-    await ensureRoadProfile({ quiet: true });
+    const profile = await ensureRoadProfile({ quiet: true });
     await maybeSyncProfileStats({ force: true, quiet: true });
     await reconcileMySharedRoads({ quiet: true });
     await refreshFriendData({ quiet: true });
+
+    if (
+      profile &&
+      !state.auth.passwordRecovery
+    ) {
+      completeRoadProfileConfirmation();
+    } else if (
+      !profile &&
+      state.auth.confirmationRedirect &&
+      !state.auth.passwordRecovery
+    ) {
+      failRoadProfileConfirmation();
+    }
     } else {
     stopMultiplayerMode({
       clearRoom: true
@@ -5768,7 +6176,11 @@ async function createRoadProfileAccount() {
 
   const { data, error } = await state.auth.client.auth.signUp({
     email,
-    password
+    password,
+    options: {
+      emailRedirectTo:
+        getRoadProfileConfirmationRedirectUrl()
+    }
   });
 
   if (error) {
@@ -5781,7 +6193,7 @@ async function createRoadProfileAccount() {
 
   if (message.includes("email rate limit")) {
     setAuthMessage(
-      "Too many confirmation emails were requested. Wait a while, then try again. If you already created the account, check your email or spam folder for the confirmation link.",
+      "Email rate limit exceeded. Try again in one hour. If you already created the account, check your email or spam folder for the confirmation link.",
       "error"
     );
   } else {
@@ -5793,26 +6205,49 @@ async function createRoadProfileAccount() {
 }
 
   state.auth.session = data?.session || null;
-  state.auth.user = data?.user || data?.session?.user || null;
+  state.auth.user = state.auth.session
+    ? data?.session?.user || data?.user || null
+    : null;
 
   if (state.auth.session && state.auth.user) {
-    await ensureRoadProfile({ quiet: false });
+    const profile = await ensureRoadProfile({ quiet: false });
     await maybeSyncProfileStats({ force: true, quiet: true });
     await reconcileMySharedRoads({ quiet: true });
+
+    if (profile) {
+      completeRoadProfileConfirmation();
+    }
+
     state.auth.loading = false;
     state.auth.submitting = false;
-    setAuthMessage("Road Profile created.", "success");
+    setAuthMessage(
+      profile
+        ? "Road Profile created."
+        : "Signed in, but the Road Profile could not finish loading. Try again shortly.",
+      profile ? "success" : "error"
+    );
     renderAuthState();
-    showToast("Road Profile created");
+
+    if (profile) {
+      showToast("Road Profile created");
+    }
+
     return;
   }
 
   state.auth.loading = false;
   state.auth.submitting = false;
-  setAuthMessage(
-    "Account created. Check your email to confirm it, then sign in.",
-    "success"
-  );
+  state.auth.profile = null;
+  savePendingRoadProfileConfirmation(email);
+  state.auth.confirmationRedirect = false;
+  state.auth.confirmationError = "";
+  state.auth.view = "confirmation";
+
+  if (els.createPasswordInput) {
+    els.createPasswordInput.value = "";
+  }
+
+  setAuthMessage("", "info");
   renderAuthState();
 }
 
@@ -5855,10 +6290,15 @@ async function signInRoadProfile() {
   state.auth.user = data?.user || data?.session?.user || null;
 
   if (state.auth.user) {
-    await ensureRoadProfile({ quiet: false });
+    const profile = await ensureRoadProfile({ quiet: false });
     await maybeSyncProfileStats({ force: true, quiet: true });
     await reconcileMySharedRoads({ quiet: true });
     await refreshFriendData({ quiet: true });
+
+    if (profile) {
+      completeRoadProfileConfirmation();
+    }
+
     state.auth.loading = false;
     state.auth.submitting = false;
     setAuthMessage("Signed in.", "success");
@@ -6532,6 +6972,106 @@ function setAuthMode(mode) {
   setAuthMessage("", "info");
 }
 
+function renderRoadProfileConfirmationView() {
+  if (!els.pendingConfirmationView) return;
+
+  const isConfirming =
+    Boolean(state.auth.confirmationRedirect) &&
+    !state.auth.confirmationError;
+  const hasError = Boolean(
+    state.auth.confirmationError
+  );
+  const hasConfirmedSession = Boolean(
+    state.auth.session && state.auth.user
+  );
+  const linkExpired = /invalid|expired/i.test(
+    state.auth.confirmationError
+  );
+  const email = String(
+    state.auth.pendingConfirmationEmail || ""
+  ).trim();
+
+  if (isConfirming) {
+    setText(
+      els.pendingConfirmationTitle,
+      "CONFIRMING YOUR ROAD PROFILE"
+    );
+    setText(
+      els.pendingConfirmationLead,
+      "Your email link was accepted. Road Discovery AU is securely signing you in and creating your Road username and friend code."
+    );
+  } else if (hasError) {
+    setText(
+      els.pendingConfirmationTitle,
+      linkExpired
+        ? "LINK EXPIRED OR INVALID"
+        : "EMAIL CONFIRMED — SIGN IN"
+    );
+    setText(
+      els.pendingConfirmationLead,
+      linkExpired
+        ? "That email link can no longer finish the confirmation."
+        : hasConfirmedSession
+          ? "Your email is confirmed. Road Discovery could not finish loading the profile, so try once more."
+          : "The automatic sign-in did not finish, but you can continue with the email and password you created."
+    );
+  } else {
+    setText(
+      els.pendingConfirmationTitle,
+      "CHECK YOUR EMAIL"
+    );
+    setText(
+      els.pendingConfirmationLead,
+      "Your Road Profile is not active yet. Open the email from Road Discovery AU and press Confirm email address. You will return here and be signed in automatically."
+    );
+  }
+
+  els.pendingConfirmationEmailRow?.classList.toggle(
+    "hidden",
+    !email
+  );
+  setText(
+    els.pendingConfirmationEmailValue,
+    email
+  );
+  els.pendingConfirmationSteps?.classList.toggle(
+    "hidden",
+    isConfirming || hasError
+  );
+
+  if (els.pendingConfirmationStatus) {
+    els.pendingConfirmationStatus.className =
+      `rd214-confirmation-status${hasError ? " error" : ""}${hasError ? "" : " hidden"}`;
+    els.pendingConfirmationStatus.textContent =
+      state.auth.confirmationError;
+  }
+
+  if (els.pendingConfirmationSignInBtn) {
+    els.pendingConfirmationSignInBtn.classList.toggle(
+      "hidden",
+      isConfirming
+    );
+    els.pendingConfirmationSignInBtn.disabled =
+      isConfirming || state.auth.loading;
+    els.pendingConfirmationSignInBtn.textContent = hasError
+      ? linkExpired
+        ? "Return to sign in"
+        : hasConfirmedSession
+          ? "Try again"
+          : "Sign in to finish"
+      : "Already confirmed? Sign in";
+  }
+
+  if (els.pendingConfirmationDifferentEmailBtn) {
+    els.pendingConfirmationDifferentEmailBtn.classList.toggle(
+      "hidden",
+      isConfirming
+    );
+    els.pendingConfirmationDifferentEmailBtn.disabled =
+      isConfirming || state.auth.loading;
+  }
+}
+
 function renderAuthViews() {
   const view = state.auth.passwordRecovery
     ? "recovery"
@@ -6542,12 +7082,19 @@ function renderAuthViews() {
   els.authSignInModeBtn?.classList.toggle("active", view === "signin");
   els.authDefaultView?.classList.toggle(
     "hidden",
-    view === "forgot" || view === "recovery"
+    view === "forgot" ||
+      view === "recovery" ||
+      view === "confirmation"
   );
   els.createAuthForm?.classList.toggle("hidden", !isCreate);
   els.signInAuthForm?.classList.toggle("hidden", view !== "signin");
   els.forgotPasswordView?.classList.toggle("hidden", view !== "forgot");
   els.resetPasswordBox?.classList.toggle("hidden", view !== "recovery");
+  els.pendingConfirmationView?.classList.toggle(
+    "hidden",
+    view !== "confirmation"
+  );
+  renderRoadProfileConfirmationView();
 }
 
 function showPasswordRecoveryBox(options = {}) {
@@ -6583,8 +7130,13 @@ function togglePasswordVisibility(input, button) {
 
 function renderAuthState() {
   const signedIn =
-    Boolean(state.auth.user) &&
-    !state.auth.passwordRecovery;
+    Boolean(
+      state.auth.session &&
+      state.auth.user &&
+      state.auth.profile
+    ) &&
+    !state.auth.passwordRecovery &&
+    !state.auth.confirmationRedirect;
   const loading = Boolean(state.auth.loading);
   const submitting = Boolean(state.auth.submitting);
   const profile = state.auth.profile;
@@ -6594,6 +7146,10 @@ function renderAuthState() {
 
   els.signedOutProfileCard?.classList.toggle("hidden", signedIn);
   els.signedInProfileCard?.classList.toggle("hidden", !signedIn);
+  els.friendSharingSettingsSection?.classList.toggle(
+    "hidden",
+    !signedIn
+  );
   renderAuthViews();
 
   if (signedIn) {
@@ -54130,12 +54686,18 @@ function rd148OpenAccountFromMenu() {
   rd149SetFriendsPanelMode("account");
   rd148SetFriendsPanelHeading(
     "Road Profile",
-    state.auth.user
+    state.auth.view === "confirmation"
+      ? "Confirm your email to finish creating your profile."
+      : state.auth.user && state.auth.profile
       ? "Your account and privacy controls."
       : "Sign in or create your Road Profile."
   );
 
-  if (!state.auth.user && !state.auth.passwordRecovery) {
+  if (
+    !state.auth.user &&
+    !state.auth.passwordRecovery &&
+    state.auth.view !== "confirmation"
+  ) {
     setAuthMode("signin");
   }
 
@@ -54199,12 +54761,25 @@ function rd148EnsureGeneralMenuItems() {
 
 
 function rd148UpdateGeneralMenuAccount() {
-  const signedIn = Boolean(state.auth.user) && !state.auth.passwordRecovery;
+  const signedIn = Boolean(
+    state.auth.session &&
+    state.auth.user &&
+    state.auth.profile
+  ) && !state.auth.passwordRecovery;
+  const awaitingConfirmation =
+    !signedIn &&
+    state.auth.view === "confirmation";
   const label = $("rd148AccountMenuLabel");
   const accountStatus = $("rd148AccountMenuStatus");
   const friendsStatus = $("rd148FriendsMenuStatus");
 
-  if (label) label.textContent = signedIn ? "Road Profile" : "Sign in";
+  if (label) {
+    label.textContent = signedIn
+      ? "Road Profile"
+      : awaitingConfirmation
+        ? "Confirm email"
+        : "Sign in";
+  }
 
   if (accountStatus) {
     const identity = String(
@@ -54214,7 +54789,9 @@ function rd148UpdateGeneralMenuAccount() {
       ? identity
         ? `Signed in as ${identity}`
         : "Manage your Road Profile"
-      : "Access or create your Road Profile";
+      : awaitingConfirmation
+        ? "Finish creating your Road Profile"
+        : "Access or create your Road Profile";
   }
 
   if (friendsStatus) {
@@ -54355,6 +54932,7 @@ function rd149CreateFriendsSignedOutGate() {
 
 function rd149FriendsSignedIn() {
   return Boolean(
+    state.auth.session &&
     state.auth.user &&
     state.auth.profile &&
     !state.auth.passwordRecovery
@@ -54393,9 +54971,16 @@ function rd149OpenAccountForFriends() {
   rd149SetFriendsPanelMode("account");
   rd148SetFriendsPanelHeading(
     "Road Profile",
-    "Sign in or create your Road Profile."
+    state.auth.view === "confirmation"
+      ? "Confirm your email to finish creating your profile."
+      : "Sign in or create your Road Profile."
   );
-  if (!state.auth.passwordRecovery) setAuthMode("signin");
+  if (
+    !state.auth.passwordRecovery &&
+    state.auth.view !== "confirmation"
+  ) {
+    setAuthMode("signin");
+  }
   rd148ScrollFriendsPanel();
 }
 
@@ -54405,7 +54990,9 @@ openFriendsPanel = function () {
   rd149SetFriendsPanelMode("account");
   rd148SetFriendsPanelHeading(
     "Road Profile",
-    state.auth.user
+    state.auth.view === "confirmation"
+      ? "Confirm your email to finish creating your profile."
+      : state.auth.user && state.auth.profile
       ? "Your account and privacy controls."
       : "Sign in or create your Road Profile."
   );
@@ -68004,6 +68591,22 @@ function rd199SpecialEntrySkipsOpenSponsor() {
   }
 
   if (
+    typeof getRoadProfileConfirmationRedirectInfo ===
+      "function" &&
+    getRoadProfileConfirmationRedirectInfo().active
+  ) {
+    return true;
+  }
+
+  if (
+    typeof readPendingRoadProfileConfirmation ===
+      "function" &&
+    readPendingRoadProfileConfirmation()
+  ) {
+    return true;
+  }
+
+  if (
     protectedParameters.some((parameter) =>
       url.searchParams.has(parameter)
     )
@@ -68011,7 +68614,7 @@ function rd199SpecialEntrySkipsOpenSponsor() {
     return true;
   }
 
-  return /(?:^|[&#])(?:type=recovery|access_token=|refresh_token=|error=)/i
+  return /(?:^|[&#])(?:type=(?:recovery|signup|email|magiclink)|access_token=|refresh_token=|error=)/i
     .test(url.hash);
 }
 
@@ -70461,3 +71064,161 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryRotatingOverlays =
     "standard-pane-labels-and-riddle-v213";
+
+/* ==================================================
+   Road Discovery AU v214
+   Clear email-confirmation and profile-ready flow
+   ================================================== */
+
+function rd214InstallConfirmationStyles() {
+  if ($("rd214ConfirmationStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd214ConfirmationStyles";
+  style.textContent = `
+    #pendingConfirmationView {
+      display: grid;
+      gap: 12px;
+    }
+
+    #pendingConfirmationView.hidden {
+      display: none !important;
+    }
+
+    .rd214-confirmation-card {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(22px, 5vw, 30px);
+      border: 1px solid rgba(255, 138, 24, 0.55);
+      border-radius: 20px;
+      background:
+        radial-gradient(circle at 90% 0%, rgba(255, 138, 24, 0.2), transparent 45%),
+        linear-gradient(145deg, rgba(23, 31, 41, 0.98), rgba(9, 13, 19, 0.98));
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+    }
+
+    .rd214-confirmation-icon {
+      display: grid;
+      width: 58px;
+      height: 58px;
+      margin-bottom: 17px;
+      place-items: center;
+      border: 1px solid rgba(255, 151, 42, 0.65);
+      border-radius: 17px;
+      background: rgba(255, 132, 18, 0.14);
+      color: #ff9b35;
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .rd214-confirmation-card .auth-flow-kicker {
+      display: block;
+      margin-bottom: 8px;
+      color: #ff9b35;
+      font-size: 0.76rem;
+      font-weight: 900;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .rd214-confirmation-card h3 {
+      margin: 0;
+      color: #f8fafc;
+      font-size: clamp(1.65rem, 6vw, 2.25rem);
+      line-height: 1.02;
+      letter-spacing: -0.035em;
+    }
+
+    .rd214-confirmation-card > p {
+      margin: 14px 0 0;
+      color: #c7d0dc;
+      font-size: 0.98rem;
+      line-height: 1.55;
+    }
+
+    .rd214-confirmation-email {
+      overflow-wrap: anywhere;
+      padding: 12px 14px;
+      border: 1px solid rgba(80, 185, 255, 0.3);
+      border-radius: 12px;
+      background: rgba(68, 172, 246, 0.09);
+    }
+
+    .rd214-confirmation-email strong {
+      display: block;
+      margin-top: 3px;
+      color: #69c6ff;
+    }
+
+    .rd214-confirmation-steps {
+      display: grid;
+      gap: 10px;
+      margin: 18px 0 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: rd214-step;
+    }
+
+    .rd214-confirmation-steps li {
+      position: relative;
+      min-height: 34px;
+      padding: 7px 0 0 43px;
+      color: #e6ebf2;
+      line-height: 1.4;
+      counter-increment: rd214-step;
+    }
+
+    .rd214-confirmation-steps li::before {
+      content: counter(rd214-step);
+      position: absolute;
+      inset: 0 auto auto 0;
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border-radius: 50%;
+      background: #ff8614;
+      color: #11161c;
+      font-weight: 950;
+    }
+
+    .rd214-confirmation-status {
+      padding: 13px 14px;
+      border: 1px solid rgba(102, 196, 255, 0.38);
+      border-radius: 12px;
+      background: rgba(62, 159, 224, 0.1);
+      color: #cdeaff !important;
+      font-weight: 750;
+    }
+
+    .rd214-confirmation-status.error {
+      border-color: rgba(255, 99, 113, 0.48);
+      background: rgba(185, 46, 61, 0.14);
+      color: #ffd1d6 !important;
+    }
+
+    #pendingConfirmationView .auth-submit-btn,
+    #pendingConfirmationView .ghost-btn {
+      min-height: 52px;
+    }
+
+    #pendingConfirmationView .hidden {
+      display: none !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd214InstallConfirmationStyles,
+    { once: true }
+  );
+} else {
+  rd214InstallConfirmationStyles();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryProfileConfirmation =
+    "session-and-profile-required-v214";
