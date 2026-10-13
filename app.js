@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V219-RALLY-OVERLAY-ACTIVE-MAP-SAVE
+ * Build signature: QOTS-RDA-2026-V220-PUBLIC-TROPHIES-DISCOVERIES
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "219",
-    signature: "QOTS-RDA-2026-V219-RALLY-OVERLAY-ACTIVE-MAP-SAVE"
+    version: "220",
+    signature: "QOTS-RDA-2026-V220-PUBLIC-TROPHIES-DISCOVERIES"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V219-RALLY-OVERLAY-ACTIVE-MAP-SAVE</small>
+        <small>Build signature: QOTS-RDA-2026-V220-PUBLIC-TROPHIES-DISCOVERIES</small>
       </main>
     </body>
   `;
@@ -66740,10 +66740,11 @@ function rd190BuildLeaderboardPanel() {
       <section class="rd186-privacy-card">
         <strong>Your routes and location stay private</strong>
         <p>
-          Joining publishes only your generated Road username and the road
-          count for each leaderboard you enable. Your email, friend code,
-          exact roads and live location remain private unless you separately
-          enable your historical public map.
+          Weekly and Monthly publish only your generated Road username and
+          road count. All Time also publishes your highest unlocked road
+          trophy and Hidden Discoveries completion count. Your email, friend
+          code, exact roads, riddle details and live location remain private
+          unless you separately enable your historical public map.
         </p>
       </section>
     </section>
@@ -66966,7 +66967,7 @@ function rd190RenderLeaderboard() {
       : !allTimeEligible
         ? "Unlocks at 30,000 synced roads."
         : rd76Leaderboard.allTimePublic
-          ? "Your generated username and total road count are public."
+          ? "Username, roads, highest trophy and discovery count are public."
           : "Unlocked and currently hidden.";
   }
 
@@ -67330,9 +67331,10 @@ async function rd190ChangeLeaderboardVisibility(
     const label = rd190PeriodLabel(period);
     const confirmed = window.confirm(
       `Appear on the ${label} Leaderboard?\n\n` +
-      "Only your generated Road username and the road count for this " +
-      "period will appear. Your email, live location and exact roads " +
-      "remain private."
+      "Your generated Road username and road count for this period will " +
+      "appear. All Time also shows your highest road trophy and Hidden " +
+      "Discoveries count. Your email, live location, exact roads and " +
+      "riddle details remain private."
     );
 
     if (!confirmed) {
@@ -73239,3 +73241,304 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryConquestMapSaving =
     "blocking-rally-and-live-personal-map-save-v219";
+
+/* ==================================================
+   Road Discovery AU v220
+   Public trophy and Hidden Discovery progress,
+   General Menu order and Road Profile identity colour
+   ================================================== */
+
+const roadDiscoveryV220 = {
+  openGeneralMenu:
+    rd73OpenGeneralMenu,
+
+  updateGeneralMenuAccount:
+    rd148UpdateGeneralMenuAccount,
+
+  compactLeaderboardRow:
+    rd187CompactRow
+};
+
+
+function rd220HighestRoadTrophy(roadCount) {
+  const count = rd186Count(roadCount);
+  let highest = null;
+
+  for (const achievement of RD68_ACHIEVEMENTS) {
+    if (count < achievement.threshold) break;
+    highest = achievement;
+  }
+
+  return highest;
+}
+
+
+function rd220TrophyHtml(roadCount) {
+  const trophy = rd220HighestRoadTrophy(roadCount);
+
+  if (!trophy) return "";
+
+  const name = escapeHtml(trophy.name);
+
+  return `
+    <span
+      class="rd220-trophy-badge"
+      title="Highest unlocked road trophy: ${name}"
+      aria-label="Highest unlocked road trophy: ${name}"
+    >
+      <span aria-hidden="true">★</span>
+      <span>${name}</span>
+    </span>
+  `;
+}
+
+
+function rd220ArrangeGeneralMenu() {
+  const profileButton = $("rd148OpenAccountBtn");
+  const leaderboardButton = $("rd76OpenLeaderboardBtn");
+  const list = profileButton?.parentElement;
+
+  if (
+    !list ||
+    !leaderboardButton ||
+    leaderboardButton.parentElement !== list
+  ) {
+    return;
+  }
+
+  profileButton.insertAdjacentElement(
+    "afterend",
+    leaderboardButton
+  );
+}
+
+
+rd148UpdateGeneralMenuAccount = function () {
+  const result = roadDiscoveryV220
+    .updateGeneralMenuAccount();
+
+  const signedIn = Boolean(
+    state.auth.session &&
+    state.auth.user &&
+    state.auth.profile
+  ) && !state.auth.passwordRecovery;
+  const identity = String(
+    state.auth.profile?.username || ""
+  ).trim();
+  const accountStatus = $("rd148AccountMenuStatus");
+
+  if (signedIn && identity && accountStatus) {
+    accountStatus.innerHTML =
+      `Signed in as <span class="rd220-menu-username">` +
+      `${escapeHtml(identity)}</span>`;
+  }
+
+  rd220ArrangeGeneralMenu();
+  return result;
+};
+
+
+rd73OpenGeneralMenu = function () {
+  rd148UpdateGeneralMenuAccount();
+  rd220ArrangeGeneralMenu();
+
+  return roadDiscoveryV220.openGeneralMenu();
+};
+
+
+rd187CompactRow = function (entry, full = false) {
+  if (rd186State.period !== "all_time") {
+    return roadDiscoveryV220
+      .compactLeaderboardRow(entry, full);
+  }
+
+  const position = rd186Count(entry?.rank_position);
+  const username = String(
+    entry?.road_username || "Road Profile"
+  );
+  const roadCount = rd186Count(entry?.road_count);
+  const isMe = Boolean(entry?.is_me);
+  const hasMap = Boolean(entry?.has_public_map);
+  const trophy = rd220TrophyHtml(roadCount);
+
+  if (!full) {
+    return `
+      <article class="rd187-sidebar-row${isMe ? " is-me" : ""}">
+        <span class="rd187-compact-rank${position <= 3 ? " podium" : ""}">${position || "—"}</span>
+        <div class="rd220-leaderboard-person">
+          <div class="rd220-leaderboard-name">${rd186UsernameHtml(username)}</div>
+          ${trophy}
+        </div>
+        <strong class="rd187-compact-score">${rd76Number(roadCount)}</strong>
+      </article>
+    `;
+  }
+
+  const discoveryFound = rd186Count(
+    entry?.hidden_discoveries_found
+  );
+  const discoveryTotal = rd186Count(
+    entry?.hidden_discoveries_total
+  );
+
+  return `
+    <article class="rd187-full-row rd220-full-row${isMe ? " is-me" : ""}">
+      <span class="rd187-compact-rank${position <= 3 ? " podium" : ""}">${position || "—"}</span>
+      <div class="rd220-full-person">
+        <div class="rd220-full-name-line">
+          <div class="rd220-leaderboard-name">${rd186UsernameHtml(username)}</div>
+          ${trophy}
+        </div>
+        <span class="rd220-hidden-progress">
+          Hidden Discoveries
+          <strong>${rd76Number(discoveryFound)} / ${rd76Number(discoveryTotal)}</strong>
+        </span>
+      </div>
+      <strong class="rd187-compact-score">${rd76Number(roadCount)} roads</strong>
+      ${
+        hasMap
+          ? `<button class="rd187-full-map-button" type="button" data-rd186-map-user="${escapeHtml(username)}">View road map</button>`
+          : ""
+      }
+    </article>
+  `;
+};
+
+
+function rd220InstallStyles() {
+  if ($("rd220PublicProfileStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd220PublicProfileStyles";
+  style.textContent = `
+    .rd220-menu-username,
+    #profileUsernameValue {
+      color: #65c7ff !important;
+    }
+
+    .rd220-leaderboard-person,
+    .rd220-full-name-line {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .rd220-leaderboard-person {
+      overflow: hidden;
+    }
+
+    .rd220-leaderboard-name {
+      min-width: 0;
+      overflow: hidden;
+      color: #f5f7fb;
+      font-size: 0.72rem;
+      font-weight: 900;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .rd220-trophy-badge {
+      min-width: 0;
+      max-width: 112px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      flex: 0 1 auto;
+      overflow: hidden;
+      border: 1px solid #80501e;
+      border-radius: 999px;
+      background: #261a0d;
+      color: #ffbd68;
+      padding: 2px 5px;
+      font-size: 0.54rem;
+      font-weight: 950;
+      line-height: 1.15;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .rd220-trophy-badge > span:last-child {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rd220-full-person {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    .rd220-full-name-line {
+      flex-wrap: wrap;
+    }
+
+    .rd220-full-name-line .rd220-leaderboard-name {
+      font-size: 0.79rem;
+    }
+
+    .rd220-hidden-progress {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+      color: #9da9b7;
+      font-size: 0.64rem;
+      font-weight: 750;
+      line-height: 1.25;
+    }
+
+    .rd220-hidden-progress strong {
+      color: #58ddd2;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    .rd220-full-row {
+      min-height: 58px;
+    }
+
+    @media (max-width: 430px) {
+      .rd187-sidebar-row {
+        gap: 6px;
+        padding-inline: 7px;
+      }
+
+      .rd220-leaderboard-person {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .rd220-trophy-badge {
+        max-width: 100%;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd220Init() {
+  rd220InstallStyles();
+  rd148UpdateGeneralMenuAccount();
+  rd220ArrangeGeneralMenu();
+  rd190RenderLeaderboard();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd220Init,
+    { once: true }
+  );
+} else {
+  rd220Init();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryPublicProfileDetails =
+    "menu-second-blue-user-trophy-discovery-count-v220";
