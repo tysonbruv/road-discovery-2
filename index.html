@@ -2,7 +2,7 @@
 <!--
   Road Discovery AU
   Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
-  Proprietary build signature: QOTS-RDA-2026-V215-FRIENDS-IDENTITY
+  Proprietary build signature: QOTS-RDA-2026-V216-CLEAR-AUTH-SCREENS
 -->
 <html lang="en">
 <head>
@@ -27,7 +27,7 @@
 
   <meta
     name="road-discovery-build"
-    content="QOTS-RDA-2026-V215-FRIENDS-IDENTITY"
+    content="QOTS-RDA-2026-V216-CLEAR-AUTH-SCREENS"
   />
 
   <meta
@@ -1327,37 +1327,115 @@
               class="auth-card"
             >
               <div id="authDefaultView">
-                <div class="auth-card-heading">
-                  <h3>Road Profile</h3>
+                <div
+                  id="signInAuthForm"
+                  class="auth-form rd216-auth-screen"
+                  aria-labelledby="rd216SignInTitle"
+                >
+                  <div class="auth-card-heading rd216-auth-screen-heading">
+                    <span class="auth-flow-kicker">Road Profile</span>
 
-                  <p>
-                    You can keep using the map without an account. Friends
-                    features need a Road Profile.
-                  </p>
-                </div>
+                    <h3 id="rd216SignInTitle">
+                      Sign in to your Road Profile
+                    </h3>
 
-                <div class="auth-mode-tabs">
+                    <p>
+                      Enter the email and password you used when creating
+                      your profile.
+                    </p>
+                  </div>
+
+                  <label
+                    class="field-label"
+                    for="signInEmailInput"
+                  >
+                    Email
+                  </label>
+
+                  <input
+                    id="signInEmailInput"
+                    class="text-field"
+                    type="email"
+                    inputmode="email"
+                    autocomplete="email"
+                    placeholder="you@example.com"
+                  />
+
+                  <label
+                    class="field-label"
+                    for="signInPasswordInput"
+                  >
+                    Password
+                  </label>
+
+                  <input
+                    id="signInPasswordInput"
+                    class="text-field"
+                    type="password"
+                    autocomplete="current-password"
+                    placeholder="Your password"
+                  />
+
                   <button
-                    id="authCreateModeBtn"
-                    class="auth-mode-btn active"
+                    id="signInBtn"
+                    class="wide-btn auth-submit-btn"
                     type="button"
                   >
-                    Create Road Profile
+                    Sign In
                   </button>
 
                   <button
-                    id="authSignInModeBtn"
-                    class="auth-mode-btn"
+                    id="forgotPasswordBtn"
+                    class="ghost-btn wide-btn"
                     type="button"
                   >
-                    Sign in
+                    Forgot password
                   </button>
+
+                  <div class="rd216-new-profile-choice">
+                    <strong>New to Road Discovery?</strong>
+
+                    <span>
+                      Create a profile once to receive your Road username
+                      and friend code.
+                    </span>
+
+                    <button
+                      id="authCreateModeBtn"
+                      class="ghost-btn wide-btn rd216-create-profile-choice-btn"
+                      type="button"
+                    >
+                      Create a Road Profile
+                    </button>
+                  </div>
                 </div>
 
                 <div
                   id="createAuthForm"
-                  class="auth-form"
+                  class="auth-form rd216-auth-screen hidden"
+                  aria-labelledby="rd216CreateTitle"
                 >
+                  <button
+                    id="authSignInModeBtn"
+                    class="auth-flow-back-btn rd216-back-to-sign-in"
+                    type="button"
+                  >
+                    ← Back to Sign In
+                  </button>
+
+                  <div class="auth-card-heading rd216-auth-screen-heading">
+                    <span class="auth-flow-kicker">New profile</span>
+
+                    <h3 id="rd216CreateTitle">
+                      Create your Road Profile
+                    </h3>
+
+                    <p>
+                      Use an email you can open. You will confirm it before
+                      your Road username and friend code are created.
+                    </p>
+                  </div>
+
                   <label
                     class="field-label"
                     for="createEmailInput"
@@ -1396,65 +1474,15 @@
                   >
                     Create Road Profile
                   </button>
-                </div>
 
-                <div
-                  id="signInAuthForm"
-                  class="auth-form hidden"
-                >
-                  <label
-                    class="field-label"
-                    for="signInEmailInput"
-                  >
-                    Email
-                  </label>
-
-                  <input
-                    id="signInEmailInput"
-                    class="text-field"
-                    type="email"
-                    inputmode="email"
-                    autocomplete="email"
-                    placeholder="you@example.com"
-                  />
-
-                  <label
-                    class="field-label"
-                    for="signInPasswordInput"
-                  >
-                    Password
-                  </label>
-
-                  <input
-                    id="signInPasswordInput"
-                    class="text-field"
-                    type="password"
-                    autocomplete="current-password"
-                    placeholder="Your password"
-                  />
-
-                  <button
-                    id="signInBtn"
-                    class="wide-btn auth-submit-btn"
-                    type="button"
-                  >
-                    Sign in
-                  </button>
-
-                  <button
-                    id="forgotPasswordBtn"
-                    class="ghost-btn wide-btn"
-                    type="button"
-                  >
-                    Forgot password
-                  </button>
+                  <div class="rd216-create-confirmation-note">
+                    <strong>After pressing Create Road Profile:</strong>
+                    check your email and press the confirmation link. Road
+                    Discovery will bring you back and finish your profile.
+                  </div>
                 </div>
 
                 <div class="privacy-note">
-                  Check your email and click the confirmation link after creating
-                  your Road Profile. This gives you your road username and friend
-                  code.
-                  <br /><br />
                   Friends cannot see your live location, current drive,
                   blue location marker, start point, finish point, speed,
                   heading or live position. They can only see roads you have
@@ -2193,7 +2221,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=215"></script>
+  <script src="app.js?v=216"></script>
 
   <script>
     const isCapacitorNative = Boolean(
