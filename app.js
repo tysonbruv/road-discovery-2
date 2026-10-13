@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V215-FRIENDS-IDENTITY
+ * Build signature: QOTS-RDA-2026-V216-CLEAR-AUTH-SCREENS
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "215",
-    signature: "QOTS-RDA-2026-V215-FRIENDS-IDENTITY"
+    version: "216",
+    signature: "QOTS-RDA-2026-V216-CLEAR-AUTH-SCREENS"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V215-FRIENDS-IDENTITY</small>
+        <small>Build signature: QOTS-RDA-2026-V216-CLEAR-AUTH-SCREENS</small>
       </main>
     </body>
   `;
@@ -1596,7 +1596,7 @@ const state = {
     session: null,
     user: null,
     profile: null,
-    view: "create",
+    view: "signin",
     loading: false,
     checkingSession: false,
     submitting: false,
@@ -2234,8 +2234,20 @@ function bindEvents() {
   els.closeMultiplayerBtn?.addEventListener("click", closePanels);
   els.closeFriendsBtn?.addEventListener("click", closePanels);
 
-  els.authCreateModeBtn?.addEventListener("click", () => setAuthMode("create"));
-  els.authSignInModeBtn?.addEventListener("click", () => setAuthMode("signin"));
+  els.authCreateModeBtn?.addEventListener("click", () => {
+    setAuthMode("create");
+    window.setTimeout(
+      () => els.createEmailInput?.focus(),
+      0
+    );
+  });
+  els.authSignInModeBtn?.addEventListener("click", () => {
+    setAuthMode("signin");
+    window.setTimeout(
+      () => els.signInEmailInput?.focus(),
+      0
+    );
+  });
   els.pendingConfirmationSignInBtn?.addEventListener(
     "click",
     continueRoadProfileConfirmation
@@ -6327,6 +6339,7 @@ async function signOutRoadProfile() {
   state.auth.user = null;
   state.auth.profile = null;
   state.auth.loading = false;
+  state.auth.view = "signin";
 
   clearFriendData();
 
@@ -7067,8 +7080,6 @@ function renderAuthViews() {
     : state.auth.view;
   const isCreate = view === "create";
 
-  els.authCreateModeBtn?.classList.toggle("active", isCreate);
-  els.authSignInModeBtn?.classList.toggle("active", view === "signin");
   els.authDefaultView?.classList.toggle(
     "hidden",
     view === "forgot" ||
@@ -7083,6 +7094,7 @@ function renderAuthViews() {
     "hidden",
     view !== "confirmation"
   );
+  rd216UpdateAuthPanelHeading(view);
   renderRoadProfileConfirmationView();
 }
 
@@ -71338,3 +71350,151 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryFriendsIdentity =
     "profile-controls-in-settings-v215";
+
+/* ==================================================
+   Road Discovery AU v216
+   Separate, unmistakable Sign In and Create screens
+   ================================================== */
+
+function rd216InstallAuthScreenStyles() {
+  if ($("rd216AuthScreenStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd216AuthScreenStyles";
+  style.textContent = `
+    #authDefaultView .rd216-auth-screen {
+      display: grid;
+      gap: 12px;
+    }
+
+    #authDefaultView .rd216-auth-screen.hidden {
+      display: none !important;
+    }
+
+    .rd216-auth-screen-heading {
+      margin: 0 0 5px;
+      padding: 2px 0 17px;
+      border-bottom: 1px solid rgba(104, 127, 151, 0.32);
+    }
+
+    .rd216-auth-screen-heading .auth-flow-kicker {
+      display: block;
+      margin-bottom: 7px;
+      color: #ff9831;
+      font-size: 0.72rem;
+      font-weight: 950;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .rd216-auth-screen-heading h3 {
+      margin: 0;
+      color: #f8fafc;
+      font-size: clamp(1.45rem, 5vw, 1.9rem);
+      line-height: 1.08;
+      letter-spacing: -0.025em;
+    }
+
+    .rd216-auth-screen-heading p {
+      margin: 9px 0 0;
+      color: #aeb9c7;
+      line-height: 1.5;
+    }
+
+    #signInBtn,
+    #createProfileBtn {
+      min-height: 52px;
+    }
+
+    .rd216-new-profile-choice {
+      display: grid;
+      gap: 7px;
+      margin-top: 7px;
+      padding: 16px;
+      border: 1px solid rgba(94, 134, 171, 0.42);
+      border-radius: 15px;
+      background: rgba(43, 67, 88, 0.16);
+      text-align: center;
+    }
+
+    .rd216-new-profile-choice > strong {
+      color: #f4f7fb;
+      font-size: 0.98rem;
+    }
+
+    .rd216-new-profile-choice > span {
+      color: #9eabba;
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    .rd216-create-profile-choice-btn {
+      min-height: 48px;
+      margin-top: 4px;
+      border-color: rgba(103, 199, 255, 0.6) !important;
+      background: rgba(67, 161, 219, 0.09) !important;
+      color: #77ceff !important;
+    }
+
+    .rd216-back-to-sign-in {
+      justify-self: start;
+      margin: 0 0 3px;
+      color: #70caff;
+    }
+
+    .rd216-create-confirmation-note {
+      padding: 13px 14px;
+      border-left: 3px solid #ff8a18;
+      border-radius: 0 11px 11px 0;
+      background: rgba(255, 134, 20, 0.08);
+      color: #bec8d4;
+      font-size: 0.86rem;
+      line-height: 1.5;
+    }
+
+    .rd216-create-confirmation-note strong {
+      color: #ffab55;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function rd216UpdateAuthPanelHeading(view) {
+  if (!["signin", "create"].includes(view)) return;
+
+  const panel = $("friendsPanel");
+  const signedIn = Boolean(
+    state.auth.session &&
+    state.auth.user &&
+    state.auth.profile
+  );
+
+  if (
+    !panel?.classList.contains("rd149-account-mode") ||
+    signedIn ||
+    typeof rd148SetFriendsPanelHeading !== "function"
+  ) {
+    return;
+  }
+
+  rd148SetFriendsPanelHeading(
+    view === "create" ? "Create Road Profile" : "Sign In",
+    view === "create"
+      ? "Create a new Road Profile."
+      : "Sign in to your existing Road Profile."
+  );
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd216InstallAuthScreenStyles,
+    { once: true }
+  );
+} else {
+  rd216InstallAuthScreenStyles();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryAuthScreens =
+    "signin-default-separate-create-v216";
