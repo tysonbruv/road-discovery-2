@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V214-CONFIRMED-PROFILE
+ * Build signature: QOTS-RDA-2026-V215-FRIENDS-IDENTITY
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "214",
-    signature: "QOTS-RDA-2026-V214-CONFIRMED-PROFILE"
+    version: "215",
+    signature: "QOTS-RDA-2026-V215-FRIENDS-IDENTITY"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V214-CONFIRMED-PROFILE</small>
+        <small>Build signature: QOTS-RDA-2026-V215-FRIENDS-IDENTITY</small>
       </main>
     </body>
   `;
@@ -1877,10 +1877,12 @@ function cacheEls() {
     "profileUsernameValue",
     "profileFriendCodeValue",
     "copyFriendCodeBtn",
-    "profileProfileToggle",
-    "profileMapToggle",
     "signOutBtn",
 
+    "rd215FriendsIdentityCard",
+    "rd215FriendsUsername",
+    "rd215FriendsCode",
+    "rd215CopyFriendCodeBtn",
     "showAddFriendBtn",
     "addFriendBox",
     "friendCodeInput",
@@ -2260,6 +2262,7 @@ function bindEvents() {
     );
   });
   els.copyFriendCodeBtn?.addEventListener("click", copyFriendCode);
+  els.rd215CopyFriendCodeBtn?.addEventListener("click", copyFriendCode);
   els.signOutBtn?.addEventListener("click", signOutRoadProfile);
 
   els.createPasswordInput?.addEventListener("keydown", (event) => {
@@ -2278,20 +2281,6 @@ function bindEvents() {
     input?.addEventListener("keydown", (event) => {
       if (event.key === "Enter") updateRecoveredPassword();
     });
-  });
-
-  els.profileProfileToggle?.addEventListener("change", () => {
-    handleProfilePrivacyToggle(
-      "show_profile",
-      Boolean(els.profileProfileToggle.checked)
-    );
-  });
-
-  els.profileMapToggle?.addEventListener("change", () => {
-    handleProfilePrivacyToggle(
-      "show_map",
-      Boolean(els.profileMapToggle.checked)
-    );
   });
 
   els.friendProfileToggle?.addEventListener("change", () => {
@@ -7158,6 +7147,19 @@ function renderAuthState() {
     setText(els.profileFriendCodeValue, profile?.friend_code || "Creating code...");
   }
 
+  setText(
+    els.rd215FriendsUsername,
+    profile?.username || "Creating profile..."
+  );
+  setText(
+    els.rd215FriendsCode,
+    profile?.friend_code || "Creating code..."
+  );
+  els.rd215FriendsIdentityCard?.classList.toggle(
+    "hidden",
+    !signedIn
+  );
+
   if (els.createProfileBtn) {
     els.createProfileBtn.disabled = signedIn || submitting;
   }
@@ -7201,8 +7203,6 @@ function renderAuthState() {
 
   [
     els.signOutBtn,
-    els.profileProfileToggle,
-    els.profileMapToggle,
     els.friendProfileToggle,
     els.friendMapToggle
   ].forEach((element) => {
@@ -7213,6 +7213,13 @@ function renderAuthState() {
 
   if (els.copyFriendCodeBtn) {
     els.copyFriendCodeBtn.disabled =
+      loading ||
+      submitting ||
+      !profile?.friend_code;
+  }
+
+  if (els.rd215CopyFriendCodeBtn) {
+    els.rd215CopyFriendCodeBtn.disabled =
       loading ||
       submitting ||
       !profile?.friend_code;
@@ -9058,13 +9065,6 @@ function applyFriendSettingsToUI() {
     els.friendMapToggle.checked = showMap;
   }
 
-  if (els.profileProfileToggle) {
-    els.profileProfileToggle.checked = showProfile;
-  }
-
-  if (els.profileMapToggle) {
-    els.profileMapToggle.checked = showMap;
-  }
 }
 
 /* ---------- Checkpoint 7 shared historical roads ---------- */
@@ -54850,6 +54850,7 @@ function rd149InstallSeparatedPanelStyles() {
   style.id = "rd149SeparatedPanelStyles";
   style.textContent = `
     #friendsPanel.rd149-account-mode #rd149FriendsSignedOutGate,
+    #friendsPanel.rd149-account-mode #rd215FriendsIdentityCard,
     #friendsPanel.rd149-account-mode #showAddFriendBtn,
     #friendsPanel.rd149-account-mode #addFriendBox,
     #friendsPanel.rd149-account-mode .friends-block {
@@ -54870,6 +54871,8 @@ function rd149InstallSeparatedPanelStyles() {
       display: block !important;
     }
 
+    #friendsPanel.rd149-friends-mode.rd149-friends-signed-out
+      #rd215FriendsIdentityCard,
     #friendsPanel.rd149-friends-mode.rd149-friends-signed-out
       #showAddFriendBtn,
     #friendsPanel.rd149-friends-mode.rd149-friends-signed-out
@@ -71222,3 +71225,116 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryProfileConfirmation =
     "session-and-profile-required-v214";
+
+/* ==================================================
+   Road Discovery AU v215
+   Simplified Road Profile and Friends identity card
+   ================================================== */
+
+function rd215InstallFriendsIdentityStyles() {
+  if ($("rd215FriendsIdentityStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd215FriendsIdentityStyles";
+  style.textContent = `
+    #rd215FriendsIdentityCard.hidden {
+      display: none !important;
+    }
+
+    .rd215-friends-identity {
+      display: grid;
+      overflow: hidden;
+      margin: 0 0 14px;
+      border: 1px solid rgba(91, 132, 168, 0.52);
+      border-radius: 17px;
+      background:
+        radial-gradient(circle at 100% 0%, rgba(61, 169, 235, 0.12), transparent 52%),
+        rgba(17, 24, 33, 0.96);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.018);
+    }
+
+    .rd215-friends-identity-row {
+      display: grid;
+      min-width: 0;
+      gap: 5px;
+      padding: 13px 15px;
+    }
+
+    .rd215-friends-identity-row +
+      .rd215-friends-identity-row {
+      border-top: 1px solid rgba(91, 132, 168, 0.28);
+    }
+
+    .rd215-friends-identity-row span {
+      color: #97a6b8;
+      font-size: 0.7rem;
+      font-weight: 850;
+      letter-spacing: 0.095em;
+      text-transform: uppercase;
+    }
+
+    .rd215-friends-identity-row strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      color: #f7f9fc;
+      font-size: 0.98rem;
+      line-height: 1.3;
+    }
+
+    .rd215-friends-code-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .rd215-friends-code-row > div {
+      display: grid;
+      min-width: 0;
+      gap: 5px;
+    }
+
+    #rd215FriendsCode {
+      color: #67c7ff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      letter-spacing: 0.04em;
+    }
+
+    .rd215-copy-friend-code-btn {
+      min-width: 72px;
+      min-height: 42px;
+      border: 1px solid rgba(255, 145, 32, 0.72);
+      border-radius: 11px;
+      padding: 8px 13px;
+      background: rgba(255, 134, 20, 0.12);
+      color: #ff9a35;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .rd215-copy-friend-code-btn:active {
+      transform: translateY(1px) scale(0.98);
+    }
+
+    .rd215-copy-friend-code-btn:disabled {
+      cursor: default;
+      opacity: 0.48;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd215InstallFriendsIdentityStyles,
+    { once: true }
+  );
+} else {
+  rd215InstallFriendsIdentityStyles();
+}
+
+document.documentElement.dataset
+  .roadDiscoveryFriendsIdentity =
+    "profile-controls-in-settings-v215";
