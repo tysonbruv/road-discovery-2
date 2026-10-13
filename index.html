@@ -2,7 +2,7 @@
 <!--
   Road Discovery AU
   Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
-  Proprietary build signature: QOTS-RDA-2026-V214-CONFIRMED-PROFILE
+  Proprietary build signature: QOTS-RDA-2026-V215-FRIENDS-IDENTITY
 -->
 <html lang="en">
 <head>
@@ -27,7 +27,7 @@
 
   <meta
     name="road-discovery-build"
-    content="QOTS-RDA-2026-V214-CONFIRMED-PROFILE"
+    content="QOTS-RDA-2026-V215-FRIENDS-IDENTITY"
   />
 
   <meta
@@ -1723,66 +1723,6 @@
                 Copy Friend Code
               </button>
 
-              <div class="profile-toggle-group">
-                <label
-                  class="toggle-row"
-                  for="profileProfileToggle"
-                >
-                  <div class="toggle-text">
-                    <strong>
-                      Show my Road Profile
-                    </strong>
-
-                    <span>
-                      Off by default. Approved friends can see your
-                      shared statistics only while this is on.
-                    </span>
-                  </div>
-
-                  <input
-                    id="profileProfileToggle"
-                    class="toggle-input"
-                    type="checkbox"
-                  />
-
-                  <span
-                    class="toggle-switch"
-                    aria-hidden="true"
-                  >
-                    <span class="toggle-knob"></span>
-                  </span>
-                </label>
-
-                <label
-                  class="toggle-row"
-                  for="profileMapToggle"
-                >
-                  <div class="toggle-text">
-                    <strong>
-                      Show my map overview
-                    </strong>
-
-                    <span>
-                      Off by default. Accepted friends can see your exact
-                      historical orange roads only while this is on.
-                    </span>
-                  </div>
-
-                  <input
-                    id="profileMapToggle"
-                    class="toggle-input"
-                    type="checkbox"
-                  />
-
-                  <span
-                    class="toggle-switch"
-                    aria-hidden="true"
-                  >
-                    <span class="toggle-knob"></span>
-                  </span>
-                </label>
-              </div>
-
               <div class="privacy-note">
   Shared roads are historical map-completion progress only.
   Shared roads do not include your live location or active drive.
@@ -1801,6 +1741,38 @@
                 type="button"
               >
                 Sign out
+              </button>
+            </div>
+          </section>
+
+          <section
+            id="rd215FriendsIdentityCard"
+            class="rd215-friends-identity hidden"
+            aria-label="Your Friends identity"
+          >
+            <div class="rd215-friends-identity-row">
+              <span>Road username</span>
+
+              <strong id="rd215FriendsUsername">
+                road_user_loading
+              </strong>
+            </div>
+
+            <div class="rd215-friends-identity-row rd215-friends-code-row">
+              <div>
+                <span>Friend code</span>
+
+                <strong id="rd215FriendsCode">
+                  RD-0000-0000
+                </strong>
+              </div>
+
+              <button
+                id="rd215CopyFriendCodeBtn"
+                class="rd215-copy-friend-code-btn"
+                type="button"
+              >
+                Copy
               </button>
             </div>
           </section>
@@ -2221,7 +2193,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="app.js?v=214"></script>
+  <script src="app.js?v=215"></script>
 
   <script>
     const isCapacitorNative = Boolean(
