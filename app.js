@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V218-PROFILE-EMAIL-RESTORED
+ * Build signature: QOTS-RDA-2026-V219-RALLY-OVERLAY-ACTIVE-MAP-SAVE
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "218",
-    signature: "QOTS-RDA-2026-V218-PROFILE-EMAIL-RESTORED"
+    version: "219",
+    signature: "QOTS-RDA-2026-V219-RALLY-OVERLAY-ACTIVE-MAP-SAVE"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V218-PROFILE-EMAIL-RESTORED</small>
+        <small>Build signature: QOTS-RDA-2026-V219-RALLY-OVERLAY-ACTIVE-MAP-SAVE</small>
       </main>
     </body>
   `;
@@ -71602,3 +71602,1640 @@ document.documentElement.dataset
 document.documentElement.dataset
   .roadDiscoveryProfileEmail =
     "signed-in-email-restored-v218";
+
+/* ==================================================
+   Road Discovery AU v219
+   Blocking Rally calculation feedback and personal
+   Saved Maps access during a live Conquest match
+   ================================================== */
+
+const roadDiscoveryV219 = {
+  snapRallyPoint:
+    rd109SnapRallyPoint,
+
+  renderPlacementOverlay:
+    rd94RenderPlacementOverlay,
+
+  cancelArenaPlacement:
+    rd94CancelArenaPlacement,
+
+  openMultiplayerPanel,
+  renderMultiplayerState,
+
+  resetConquestState:
+    rd86ResetConquestState
+};
+
+
+const RD219_RALLY_LOADING_MESSAGE =
+  "Calculating nearby roads…";
+
+const RD219_RALLY_FAILURE_MESSAGE =
+  "Could not load roads near that location. Try placing the Rally Circle again.";
+
+const RD219_SAVED_MAP_LIMIT = 10;
+
+
+Object.assign(state, {
+  rd219RallyBlocking: false,
+  rd219RallyFailureMessage: "",
+  rd219SavedMapsLoading: false,
+  rd219SavingActiveMap: false,
+  rd219SaveStage: "",
+  rd219SaveGeneration: 0
+});
+
+
+function rd219InstallStyles() {
+  if ($("rd219ConquestStyles")) return;
+
+  const style =
+    document.createElement("style");
+
+  style.id = "rd219ConquestStyles";
+
+  style.textContent = `
+    .rd219-rally-blocker {
+      position: fixed;
+      z-index: 50000;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding:
+        max(22px, env(safe-area-inset-top))
+        max(22px, env(safe-area-inset-right))
+        max(22px, env(safe-area-inset-bottom))
+        max(22px, env(safe-area-inset-left));
+      background: rgba(1, 5, 10, 0.76);
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+      touch-action: none;
+      overscroll-behavior: contain;
+      pointer-events: auto;
+    }
+
+    .rd219-rally-blocker.hidden {
+      display: none !important;
+    }
+
+    .rd219-rally-card {
+      width: min(390px, calc(100vw - 38px));
+      display: grid;
+      justify-items: center;
+      gap: 11px;
+      padding: 24px 22px;
+      border: 1px solid rgba(255, 143, 31, 0.78);
+      border-radius: 20px;
+      background:
+        linear-gradient(
+          145deg,
+          rgba(31, 21, 12, 0.98),
+          rgba(8, 14, 21, 0.98)
+        );
+      color: #fff4e5;
+      text-align: center;
+      box-shadow:
+        0 24px 80px rgba(0, 0, 0, 0.68),
+        0 0 0 5px rgba(255, 134, 21, 0.08);
+    }
+
+    .rd219-rally-spinner {
+      width: 34px;
+      height: 34px;
+      border: 4px solid rgba(255, 194, 133, 0.25);
+      border-top-color: #ff8a18;
+      border-radius: 50%;
+      animation: rd219-rally-spin 0.72s linear infinite;
+    }
+
+    .rd219-rally-error-icon {
+      display: none;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border: 2px solid #ff8e98;
+      border-radius: 50%;
+      color: #ffd2d6;
+      font-size: 1.35rem;
+      font-weight: 1000;
+    }
+
+    .rd219-rally-card strong {
+      font-size: clamp(1rem, 4vw, 1.22rem);
+      line-height: 1.3;
+    }
+
+    .rd219-rally-card span:last-child {
+      color: #b8c3d2;
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+
+    .rd219-rally-blocker.failed
+      .rd219-rally-card {
+      border-color: rgba(255, 93, 106, 0.76);
+      box-shadow:
+        0 24px 80px rgba(0, 0, 0, 0.68),
+        0 0 0 5px rgba(255, 75, 91, 0.08);
+    }
+
+    .rd219-rally-blocker.failed
+      .rd219-rally-spinner {
+      display: none;
+    }
+
+    .rd219-rally-blocker.failed
+      .rd219-rally-error-icon {
+      display: grid;
+    }
+
+    body.rd219-rally-calculating
+      #rd185RallyMoveBanner {
+      display: none !important;
+    }
+
+    .rd219-active-map-save {
+      display: grid;
+      gap: 10px;
+      margin: 18px 0 12px;
+      padding: 13px;
+      border: 1px solid rgba(72, 199, 184, 0.42);
+      border-radius: 16px;
+      background:
+        linear-gradient(
+          145deg,
+          rgba(18, 58, 57, 0.28),
+          rgba(12, 20, 30, 0.92)
+        );
+    }
+
+    .rd219-active-map-save[hidden] {
+      display: none !important;
+    }
+
+    .rd219-active-map-save-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .rd219-active-map-save-copy {
+      display: grid;
+      gap: 3px;
+    }
+
+    .rd219-active-map-save-copy strong {
+      color: #effffd;
+      font-size: 0.91rem;
+      font-weight: 950;
+    }
+
+    .rd219-active-map-save-copy span {
+      color: #98aaa9;
+      font-size: 0.69rem;
+      line-height: 1.4;
+    }
+
+    .rd219-active-map-count {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      border: 1px solid rgba(86, 223, 204, 0.42);
+      border-radius: 999px;
+      background: rgba(31, 112, 103, 0.2);
+      color: #7aedde;
+      font-size: 0.66rem;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    .rd219-active-map-save-btn {
+      min-height: 46px;
+      border: 1px solid #55ddcc;
+      border-radius: 12px;
+      background: #42cbb9;
+      color: #071513;
+      font: inherit;
+      font-size: 0.84rem;
+      font-weight: 1000;
+      cursor: pointer;
+    }
+
+    .rd219-active-map-save-btn:disabled {
+      border-color: rgba(133, 153, 166, 0.34);
+      background: rgba(58, 72, 84, 0.72);
+      color: #a8b4c0;
+      cursor: default;
+    }
+
+    .rd219-active-map-save-status {
+      margin: 0;
+      color: #9eafbd;
+      font-size: 0.68rem;
+      line-height: 1.4;
+    }
+
+    @keyframes rd219-rally-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rd219-rally-spinner {
+        animation-duration: 1.5s;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd219EnsureRallyBlocker() {
+  rd219InstallStyles();
+
+  let blocker =
+    $("rd219RallyBlocker");
+
+  if (blocker) return blocker;
+
+  blocker =
+    document.createElement("div");
+
+  blocker.id =
+    "rd219RallyBlocker";
+
+  blocker.className =
+    "rd219-rally-blocker hidden";
+
+  blocker.setAttribute(
+    "aria-hidden",
+    "true"
+  );
+
+  blocker.innerHTML = `
+    <div
+      class="rd219-rally-card"
+      role="status"
+      aria-live="assertive"
+      aria-atomic="true"
+    >
+      <span
+        class="rd219-rally-spinner"
+        aria-hidden="true"
+      ></span>
+
+      <span
+        class="rd219-rally-error-icon"
+        aria-hidden="true"
+      >!</span>
+
+      <strong id="rd219RallyBlockerMessage">
+        ${RD219_RALLY_LOADING_MESSAGE}
+      </strong>
+
+      <span id="rd219RallyBlockerDetail">
+        Please wait while the Rally Circle is checked.
+      </span>
+    </div>
+  `;
+
+  for (const eventName of [
+    "click",
+    "dblclick",
+    "pointerdown",
+    "pointermove",
+    "pointerup",
+    "touchstart",
+    "touchmove",
+    "touchend",
+    "wheel"
+  ]) {
+    blocker.addEventListener(
+      eventName,
+      (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      },
+      { passive: false }
+    );
+  }
+
+  document.body.appendChild(blocker);
+
+  return blocker;
+}
+
+
+function rd219SetRallyBlocker(
+  mode = "hidden",
+  message = ""
+) {
+  const blocker =
+    rd219EnsureRallyBlocker();
+
+  const visible =
+    mode !== "hidden";
+
+  const failed =
+    mode === "failed";
+
+  state.rd219RallyBlocking =
+    visible;
+
+  blocker.classList.toggle(
+    "hidden",
+    !visible
+  );
+
+  blocker.classList.toggle(
+    "failed",
+    failed
+  );
+
+  blocker.setAttribute(
+    "aria-hidden",
+    visible ? "false" : "true"
+  );
+
+  document.body.classList.toggle(
+    "rd219-rally-calculating",
+    visible
+  );
+
+  const messageElement =
+    $("rd219RallyBlockerMessage");
+
+  const detailElement =
+    $("rd219RallyBlockerDetail");
+
+  if (messageElement) {
+    messageElement.textContent =
+      message ||
+      RD219_RALLY_LOADING_MESSAGE;
+  }
+
+  if (detailElement) {
+    detailElement.textContent = failed
+      ? "The map is ready for another location."
+      : "Please wait while the Rally Circle is checked.";
+  }
+}
+
+
+function rd219Wait(milliseconds) {
+  return new Promise((resolve) => {
+    window.setTimeout(
+      resolve,
+      milliseconds
+    );
+  });
+}
+
+
+rd109SnapRallyPoint = async function (
+  point
+) {
+  const rallyCalculation = Boolean(
+    state.conquestArena.active &&
+    state.conquestArena.busy &&
+    !hasActiveConquestRound() &&
+    !hasActiveHideSeekRound()
+  );
+
+  if (!rallyCalculation) {
+    return roadDiscoveryV219
+      .snapRallyPoint(point);
+  }
+
+  const movingExistingRally =
+    Boolean(
+      state.conquestArena.centre
+    );
+
+  state.rd219RallyFailureMessage =
+    "";
+
+  rd219SetRallyBlocker(
+    "loading",
+    movingExistingRally
+      ? "Recalculating nearby roads…"
+      : RD219_RALLY_LOADING_MESSAGE
+  );
+
+  try {
+    const rally =
+      await roadDiscoveryV219
+        .snapRallyPoint(point);
+
+    state.rd219RallyFailureMessage =
+      "";
+
+    return rally;
+
+  } catch (error) {
+    const originalMessage =
+      rd86ConquestErrorMessage(
+        error
+      );
+
+    const failureMessage =
+      /load roads|road server|network|fetch/i
+        .test(originalMessage)
+        ? RD219_RALLY_FAILURE_MESSAGE
+        : `${originalMessage} Try placing the Rally Circle again.`;
+
+    state.rd219RallyFailureMessage =
+      failureMessage;
+
+    rd219SetRallyBlocker(
+      "failed",
+      failureMessage
+    );
+
+    await rd219Wait(1400);
+
+    throw new Error(
+      failureMessage
+    );
+
+  } finally {
+    rd219SetRallyBlocker("hidden");
+  }
+};
+
+
+rd94RenderPlacementOverlay = function (
+  overrideMessage = ""
+) {
+  const retryMessage = Boolean(
+    state.rd219RallyFailureMessage &&
+    state.conquestArena.active &&
+    !state.conquestArena.busy &&
+    !state.conquestArena.centre
+  )
+    ? state.rd219RallyFailureMessage
+    : "";
+
+  const result =
+    roadDiscoveryV219
+      .renderPlacementOverlay(
+        retryMessage ||
+        overrideMessage
+      );
+
+  if (
+    !state.conquestArena.active ||
+    state.conquestArena.centre
+  ) {
+    state.rd219RallyFailureMessage =
+      "";
+  }
+
+  return result;
+};
+
+
+rd94CancelArenaPlacement = function (
+  showMessage = true
+) {
+  state.rd219RallyFailureMessage =
+    "";
+
+  rd219SetRallyBlocker("hidden");
+
+  return roadDiscoveryV219
+    .cancelArenaPlacement(
+      showMessage
+    );
+};
+
+
+function rd219CleanObjectives(
+  objectives
+) {
+  const byCode = new Map();
+
+  for (
+    const objective of
+      Array.isArray(objectives)
+        ? objectives
+        : []
+  ) {
+    const code = String(
+      objective?.code || ""
+    ).toUpperCase();
+
+    const lat = Number(
+      objective?.lat
+    );
+
+    const lng = Number(
+      objective?.lng
+    );
+
+    if (
+      !/^[A-G]$/.test(code) ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      continue;
+    }
+
+    byCode.set(code, {
+      code,
+      lat: Number(lat.toFixed(6)),
+      lng: Number(lng.toFixed(6))
+    });
+  }
+
+  return [...byCode.values()]
+    .sort((first, second) =>
+      first.code.localeCompare(
+        second.code
+      )
+    );
+}
+
+
+function rd219CurrentMatchSnapshot() {
+  const rallySource =
+    state.conquest.rallyPoint ||
+    state.conquestArena.centre;
+
+  const rally = {
+    lat: Number(rallySource?.lat),
+    lng: Number(rallySource?.lng)
+  };
+
+  const objectives =
+    rd219CleanObjectives(
+      state.conquest.objectives
+    );
+
+  if (
+    !Number.isFinite(rally.lat) ||
+    !Number.isFinite(rally.lng) ||
+    ![5, 7].includes(
+      objectives.length
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    rally: {
+      lat: Number(
+        rally.lat.toFixed(6)
+      ),
+      lng: Number(
+        rally.lng.toFixed(6)
+      )
+    },
+    objectives,
+    objectiveCount:
+      objectives.length
+  };
+}
+
+
+function rd219MapFingerprint(
+  rally,
+  objectives
+) {
+  const cleanObjectives =
+    rd219CleanObjectives(
+      objectives
+    );
+
+  const rallyLat = Number(
+    rally?.lat
+  );
+
+  const rallyLng = Number(
+    rally?.lng
+  );
+
+  if (
+    !Number.isFinite(rallyLat) ||
+    !Number.isFinite(rallyLng)
+  ) {
+    return "";
+  }
+
+  return [
+    `${rallyLat.toFixed(5)},${rallyLng.toFixed(5)}`,
+    ...cleanObjectives.map(
+      (objective) =>
+        `${objective.code}:` +
+        `${objective.lat.toFixed(5)},` +
+        `${objective.lng.toFixed(5)}`
+    )
+  ].join("|");
+}
+
+
+function rd219SavedMapMatches(
+  savedMap,
+  snapshot
+) {
+  return Boolean(
+    savedMap &&
+    snapshot &&
+    rd219MapFingerprint(
+      savedMap.rally,
+      savedMap.objectives
+    ) ===
+      rd219MapFingerprint(
+        snapshot.rally,
+        snapshot.objectives
+      )
+  );
+}
+
+
+function rd219ExistingSavedMap(
+  snapshot
+) {
+  return (
+    state.customConquest.savedMaps
+      .find((savedMap) =>
+        rd219SavedMapMatches(
+          savedMap,
+          snapshot
+        )
+      ) || null
+  );
+}
+
+
+async function rd219LoadPersonalSavedMaps(
+  force = false
+) {
+  const userId = String(
+    state.auth.user?.id || ""
+  );
+
+  if (
+    !userId ||
+    !state.auth.client ||
+    state.rd219SavedMapsLoading
+  ) {
+    return;
+  }
+
+  if (
+    state.customConquest
+      .savedMapsOwnerId !== userId
+  ) {
+    state.customConquest.savedMaps =
+      [];
+
+    state.customConquest
+      .savedMapsLoaded = false;
+
+    state.customConquest
+      .savedMapsOwnerId = userId;
+  }
+
+  if (
+    state.customConquest
+      .savedMapsLoaded &&
+    !force
+  ) {
+    rd219RenderActiveMapSave();
+    return;
+  }
+
+  state.rd219SavedMapsLoading =
+    true;
+
+  state.customConquest
+    .savedMapsError = "";
+
+  rd219RenderActiveMapSave();
+
+  try {
+    const { data, error } =
+      await state.auth.client.rpc(
+        "get_my_conquest_saved_maps"
+      );
+
+    if (error) throw error;
+
+    state.customConquest.savedMaps =
+      (
+        Array.isArray(data)
+          ? data
+          : []
+      )
+        .map(rd114NormaliseSavedMap)
+        .filter(Boolean)
+        .slice(
+          0,
+          RD219_SAVED_MAP_LIMIT
+        );
+
+    state.customConquest
+      .savedMapsLoaded = true;
+
+  } catch (error) {
+    console.error(error);
+
+    state.customConquest
+      .savedMapsError =
+        rd86ConquestErrorMessage(
+          error
+        );
+
+  } finally {
+    state.rd219SavedMapsLoading =
+      false;
+
+    rd114RenderSavedMapsUi();
+    rd219RenderActiveMapSave();
+  }
+}
+
+
+function rd219EnsureActiveMapSave() {
+  rd219InstallStyles();
+
+  const panel =
+    els.multiplayerPanel ||
+    $("multiplayerPanel");
+
+  const content =
+    panel?.querySelector(
+      ".panel-content"
+    );
+
+  if (!content) return null;
+
+  let section =
+    $("rd219ActiveMapSave");
+
+  if (!section) {
+    section =
+      document.createElement(
+        "section"
+      );
+
+    section.id =
+      "rd219ActiveMapSave";
+
+    section.className =
+      "rd219-active-map-save";
+
+    section.hidden = true;
+
+    section.innerHTML = `
+      <div class="rd219-active-map-save-head">
+        <div class="rd219-active-map-save-copy">
+          <strong>Save this map</strong>
+          <span>
+            Keep this Rally and objective layout in your Road Profile.
+          </span>
+        </div>
+
+        <span
+          id="rd219ActiveMapCount"
+          class="rd219-active-map-count"
+        >
+          0 / ${RD219_SAVED_MAP_LIMIT}
+        </span>
+      </div>
+
+      <button
+        id="rd219SaveActiveMapBtn"
+        class="rd219-active-map-save-btn"
+        type="button"
+      >
+        Save map
+      </button>
+
+      <p
+        id="rd219ActiveMapStatus"
+        class="rd219-active-map-save-status"
+        aria-live="polite"
+      ></p>
+    `;
+
+    section.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.target.closest(
+            "#rd219SaveActiveMapBtn"
+          )
+        ) {
+          void rd219SaveActiveMap();
+        }
+      }
+    );
+  }
+
+  const mapSwitch =
+    $("rd170MatchMapSwitch");
+
+  const leaveButton =
+    $("leaveMultiplayerRoomBtn");
+
+  const anchor =
+    mapSwitch ||
+    leaveButton ||
+    null;
+
+  const destination =
+    anchor?.parentElement ||
+    content;
+
+  if (
+    section.parentElement !== destination ||
+    section.nextElementSibling !==
+      anchor
+  ) {
+    destination.insertBefore(
+      section,
+      anchor
+    );
+  }
+
+  return section;
+}
+
+
+function rd219ActiveSaveVisible() {
+  return Boolean(
+    state.conquest.roundId &&
+    [
+      "active",
+      "overtime"
+    ].includes(
+      state.conquest.phase
+    )
+  );
+}
+
+
+function rd219RenderActiveMapSave() {
+  const section =
+    rd219EnsureActiveMapSave();
+
+  if (!section) return;
+
+  const visible =
+    rd219ActiveSaveVisible();
+
+  section.hidden = !visible;
+
+  if (!visible) return;
+
+  const count =
+    state.customConquest
+      .savedMaps.length;
+
+  const snapshot =
+    rd219CurrentMatchSnapshot();
+
+  const existing =
+    rd219ExistingSavedMap(
+      snapshot
+    );
+
+  const countElement =
+    $("rd219ActiveMapCount");
+
+  const button =
+    $("rd219SaveActiveMapBtn");
+
+  const status =
+    $("rd219ActiveMapStatus");
+
+  if (countElement) {
+    countElement.textContent =
+      state.rd219SavedMapsLoading
+        ? `… / ${RD219_SAVED_MAP_LIMIT}`
+        : `${count} / ${RD219_SAVED_MAP_LIMIT}`;
+  }
+
+  if (!button || !status) return;
+
+  const atLimit =
+    count >= RD219_SAVED_MAP_LIMIT;
+
+  button.disabled = Boolean(
+    !snapshot ||
+    state.rd219SavedMapsLoading ||
+    state.rd219SavingActiveMap ||
+    existing ||
+    atLimit ||
+    state.customConquest
+      .savedMapsError
+  );
+
+  button.textContent =
+    state.rd219SavingActiveMap
+      ? "Saving map…"
+      : existing
+        ? "Map saved"
+        : atLimit
+          ? "Saved map limit reached"
+          : "Save map";
+
+  status.textContent =
+    state.rd219SavingActiveMap
+      ? state.rd219SaveStage ||
+        "Preparing this Conquest map…"
+      : state.rd219SavedMapsLoading
+        ? "Loading your Saved Maps…"
+        : state.customConquest
+            .savedMapsError
+          ? state.customConquest
+              .savedMapsError
+          : !snapshot
+            ? "Waiting for the complete Rally and objective layout."
+            : existing
+              ? "This Rally and objective layout is already in your Saved Maps."
+              : atLimit
+                ? "Delete a Saved Map before saving another one."
+                : "Only Rally, A–G and safe road locations are saved—not scores, teams, crates or player locations.";
+}
+
+
+function rd219RoadPointsFromWays(
+  ways
+) {
+  const points = [];
+  const seen = new Set();
+
+  for (
+    const way of
+      Array.isArray(ways)
+        ? ways
+        : []
+  ) {
+    const highway = String(
+      way?.tags?.highway ||
+      "road"
+    );
+
+    if (
+      !rd94SafeHighwayType(
+        highway
+      ) ||
+      !Array.isArray(
+        way?.geometry
+      )
+    ) {
+      continue;
+    }
+
+    for (
+      let index = 1;
+      index < way.geometry.length;
+      index += 1
+    ) {
+      const first =
+        way.geometry[index - 1];
+
+      const second =
+        way.geometry[index];
+
+      const lat =
+        (
+          Number(first?.lat) +
+          Number(second?.lat)
+        ) / 2;
+
+      const lng =
+        (
+          Number(first?.lon) +
+          Number(second?.lon)
+        ) / 2;
+
+      if (
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng)
+      ) {
+        continue;
+      }
+
+      const key =
+        `${lat.toFixed(6)},` +
+        `${lng.toFixed(6)}`;
+
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+
+      points.push({
+        lat,
+        lng,
+        highway
+      });
+    }
+  }
+
+  return points;
+}
+
+
+function rd219RoadDensity(
+  point,
+  roadPoints
+) {
+  let count = 0;
+
+  for (const roadPoint of roadPoints) {
+    if (
+      haversine(
+        point,
+        roadPoint
+      ) <=
+        RD86_CONQUEST_ROAD_DENSITY_RADIUS_M
+    ) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+
+function rd219SelectRoadCandidates(
+  pool,
+  roadPoints,
+  limit,
+  alreadySelected = []
+) {
+  const selected = [];
+
+  shuffleHideSeekArray(pool);
+
+  for (const point of pool.slice(0, 900)) {
+    if (
+      [...alreadySelected, ...selected]
+        .some((candidate) =>
+          haversine(
+            candidate,
+            point
+          ) <
+            RD93_CONQUEST_CANDIDATE_SPACING_M
+        )
+    ) {
+      continue;
+    }
+
+    const roadCount =
+      rd219RoadDensity(
+        point,
+        roadPoints
+      );
+
+    if (
+      roadCount <
+        RD86_CONQUEST_MIN_ROAD_COUNT
+    ) {
+      continue;
+    }
+
+    selected.push({
+      lat: Number(
+        point.lat.toFixed(6)
+      ),
+      lng: Number(
+        point.lng.toFixed(6)
+      ),
+      road_count: roadCount,
+      routeable: false
+    });
+
+    if (selected.length >= limit) {
+      break;
+    }
+  }
+
+  return selected;
+}
+
+
+function rd219BuildLiveMapCandidates(
+  snapshot,
+  ways
+) {
+  const roadPoints =
+    rd219RoadPointsFromWays(ways);
+
+  const hull =
+    rd94ConvexHull(
+      snapshot.objectives
+    );
+
+  const pointsInside =
+    roadPoints.filter((point) =>
+      rd94PointInPolygon(
+        point,
+        hull
+      )
+    );
+
+  const innerPool =
+    pointsInside.filter((point) => {
+      const distance =
+        haversine(
+          snapshot.rally,
+          point
+        );
+
+      return Boolean(
+        distance >=
+          RD111_TEAM_START_MIN_M &&
+        distance <=
+          RD111_TEAM_START_MAX_M
+      );
+    });
+
+  const outerPool =
+    pointsInside.filter((point) => {
+      const distance =
+        haversine(
+          snapshot.rally,
+          point
+        );
+
+      return Boolean(
+        distance >=
+          RD94_ARENA_MIN_CENTRE_M &&
+        distance <=
+          RD94_ARENA_MAX_CENTRE_M
+      );
+    });
+
+  const inner =
+    rd219SelectRoadCandidates(
+      innerPool,
+      roadPoints,
+      RD111_TEAM_START_LIMIT
+    );
+
+  const outerLimit = Math.max(
+    0,
+    RD86_CONQUEST_MAX_CANDIDATES -
+      snapshot.objectives.length -
+      inner.length
+  );
+
+  const outer =
+    rd219SelectRoadCandidates(
+      outerPool,
+      roadPoints,
+      outerLimit,
+      inner
+    );
+
+  const objectives =
+    snapshot.objectives.map(
+      (objective) => ({
+        lat: objective.lat,
+        lng: objective.lng,
+        road_count: 100000,
+        routeable: false
+      })
+    );
+
+  return [
+    ...inner,
+    ...outer,
+    ...objectives
+  ].slice(
+    0,
+    RD86_CONQUEST_MAX_CANDIDATES
+  );
+}
+
+
+function rd219StoredCandidates(
+  snapshot
+) {
+  const storedSnapshot =
+    state.conquestArena
+      .savedMapSnapshot;
+
+  const storedCandidates =
+    state.conquestArena
+      .savedRoadCandidates;
+
+  if (
+    !rd219SavedMapMatches(
+      storedSnapshot,
+      snapshot
+    ) ||
+    !Array.isArray(
+      storedCandidates
+    ) ||
+    storedCandidates.length <
+      RD86_CONQUEST_MIN_CANDIDATES
+  ) {
+    return [];
+  }
+
+  return storedCandidates
+    .map((candidate) => ({
+      lat: Number(candidate?.lat),
+      lng: Number(candidate?.lng),
+      road_count: Math.max(
+        1,
+        Number(
+          candidate?.road_count
+        ) || 1
+      ),
+      routeable: true
+    }))
+    .filter((candidate) =>
+      Number.isFinite(
+        candidate.lat
+      ) &&
+      Number.isFinite(
+        candidate.lng
+      )
+    )
+    .slice(
+      0,
+      RD86_CONQUEST_MAX_CANDIDATES
+    );
+}
+
+
+async function rd219VerifiedCandidates(
+  snapshot,
+  guard
+) {
+  const stored =
+    rd219StoredCandidates(
+      snapshot
+    );
+
+  if (
+    stored.length >=
+      RD86_CONQUEST_MIN_CANDIDATES
+  ) {
+    return stored;
+  }
+
+  state.rd219SaveStage =
+    "Loading safe road locations…";
+
+  rd219RenderActiveMapSave();
+
+  const ways =
+    await rd179FetchRoadWays(
+      snapshot.rally.lat,
+      snapshot.rally.lng,
+      RD94_ARENA_MAX_CENTRE_M +
+        300
+    );
+
+  guard();
+
+  if (!ways.length) {
+    throw new Error(
+      "Could not load roads for this map. Try Save map again."
+    );
+  }
+
+  const candidates =
+    rd219BuildLiveMapCandidates(
+      snapshot,
+      ways
+    );
+
+  if (
+    candidates.length <
+      RD86_CONQUEST_MIN_CANDIDATES
+  ) {
+    throw new Error(
+      "Not enough suitable roads were found inside this Conquest map."
+    );
+  }
+
+  state.rd219SaveStage =
+    "Checking reachable road locations…";
+
+  rd219RenderActiveMapSave();
+
+  const routeable =
+    await rd86FilterRouteableCandidates(
+      snapshot.rally,
+      candidates
+    );
+
+  guard();
+
+  if (
+    routeable.length <
+      RD86_CONQUEST_MIN_CANDIDATES
+  ) {
+    throw new Error(
+      "Not enough reachable road locations were found for this saved map."
+    );
+  }
+
+  return routeable;
+}
+
+
+function rd219AutomaticMapName() {
+  const number = Math.min(
+    RD219_SAVED_MAP_LIMIT,
+    state.customConquest
+      .savedMaps.length + 1
+  );
+
+  let dateLabel = "";
+
+  try {
+    dateLabel =
+      new Intl.DateTimeFormat(
+        "en-AU",
+        {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+          timeZone:
+            "Australia/Sydney"
+        }
+      ).format(new Date());
+
+  } catch (error) {
+    dateLabel =
+      new Date()
+        .toLocaleDateString(
+          "en-AU"
+        );
+  }
+
+  return (
+    `Conquest Map ${number} • ` +
+    dateLabel
+  ).slice(0, 40);
+}
+
+
+async function rd219SaveActiveMap() {
+  if (
+    state.rd219SavingActiveMap ||
+    !rd219ActiveSaveVisible() ||
+    !state.auth.client ||
+    !state.auth.user
+  ) {
+    return;
+  }
+
+  if (
+    !state.customConquest
+      .savedMapsLoaded
+  ) {
+    await rd219LoadPersonalSavedMaps();
+  }
+
+  if (
+    state.customConquest
+      .savedMapsError
+  ) {
+    showToast(
+      "Could not load your Saved Maps. Try again."
+    );
+    return;
+  }
+
+  const snapshot =
+    rd219CurrentMatchSnapshot();
+
+  if (!snapshot) {
+    showToast(
+      "The complete Conquest map is still loading"
+    );
+    return;
+  }
+
+  if (
+    rd219ExistingSavedMap(
+      snapshot
+    )
+  ) {
+    showToast(
+      "You already saved this map"
+    );
+    rd219RenderActiveMapSave();
+    return;
+  }
+
+  if (
+    state.customConquest
+      .savedMaps.length >=
+        RD219_SAVED_MAP_LIMIT
+  ) {
+    showToast(
+      "Saved map limit reached • manage Saved Maps before saving another"
+    );
+    return;
+  }
+
+  const generation =
+    ++state.rd219SaveGeneration;
+
+  const roundId = String(
+    state.conquest.roundId || ""
+  );
+
+  const guard = () => {
+    if (
+      generation !==
+        state.rd219SaveGeneration ||
+      roundId !==
+        String(
+          state.conquest.roundId || ""
+        )
+    ) {
+      throw new Error(
+        "Map save cancelled because the Conquest match closed."
+      );
+    }
+  };
+
+  state.rd219SavingActiveMap =
+    true;
+
+  state.rd219SaveStage =
+    "Preparing this Conquest map…";
+
+  rd219RenderActiveMapSave();
+
+  try {
+    const candidates =
+      await rd219VerifiedCandidates(
+        snapshot,
+        guard
+      );
+
+    guard();
+
+    state.rd219SaveStage =
+      "Saving to your Road Profile…";
+
+    rd219RenderActiveMapSave();
+
+    const { error } =
+      await state.auth.client.rpc(
+        "save_my_conquest_map",
+        {
+          p_map_id: null,
+          p_map_name:
+            rd219AutomaticMapName(),
+          p_objective_count:
+            snapshot.objectiveCount,
+          p_rally_lat:
+            snapshot.rally.lat,
+          p_rally_lng:
+            snapshot.rally.lng,
+          p_objectives:
+            snapshot.objectives,
+          p_road_candidates:
+            candidates.map(
+              (candidate) => ({
+                lat: Number(
+                  Number(
+                    candidate.lat
+                  ).toFixed(6)
+                ),
+                lng: Number(
+                  Number(
+                    candidate.lng
+                  ).toFixed(6)
+                ),
+                road_count:
+                  Math.max(
+                    1,
+                    Number(
+                      candidate
+                        .road_count
+                    ) || 1
+                  )
+              })
+            )
+        }
+      );
+
+    if (error) throw error;
+
+    guard();
+
+    await rd219LoadPersonalSavedMaps(
+      true
+    );
+
+    const savedCount =
+      state.customConquest
+        .savedMaps.length;
+
+    showToast(
+      `Conquest map saved • ${savedCount} / ${RD219_SAVED_MAP_LIMIT}`
+    );
+
+  } catch (error) {
+    const message =
+      rd86ConquestErrorMessage(
+        error
+      );
+
+    console.error(error);
+    showToast(message);
+
+  } finally {
+    if (
+      generation ===
+        state.rd219SaveGeneration
+    ) {
+      state.rd219SavingActiveMap =
+        false;
+
+      state.rd219SaveStage = "";
+    }
+
+    rd219RenderActiveMapSave();
+  }
+}
+
+
+openMultiplayerPanel = function () {
+  const result =
+    roadDiscoveryV219
+      .openMultiplayerPanel();
+
+  rd219EnsureActiveMapSave();
+  rd219RenderActiveMapSave();
+
+  if (rd219ActiveSaveVisible()) {
+    void rd219LoadPersonalSavedMaps();
+  }
+
+  window.requestAnimationFrame(() => {
+    rd219EnsureActiveMapSave();
+    rd219RenderActiveMapSave();
+  });
+
+  return result;
+};
+
+
+renderMultiplayerState = function () {
+  const result =
+    roadDiscoveryV219
+      .renderMultiplayerState();
+
+  rd219EnsureActiveMapSave();
+  rd219RenderActiveMapSave();
+
+  return result;
+};
+
+
+rd86ResetConquestState = function (
+  options = {}
+) {
+  state.rd219SaveGeneration += 1;
+  state.rd219SavingActiveMap = false;
+  state.rd219SaveStage = "";
+
+  const result =
+    roadDiscoveryV219
+      .resetConquestState(options);
+
+  rd219RenderActiveMapSave();
+
+  return result;
+};
+
+
+function rd219Init() {
+  rd219InstallStyles();
+  rd219EnsureRallyBlocker();
+  rd219EnsureActiveMapSave();
+  rd219RenderActiveMapSave();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd219Init,
+    { once: true }
+  );
+} else {
+  rd219Init();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryConquestMapSaving =
+    "blocking-rally-and-live-personal-map-save-v219";
