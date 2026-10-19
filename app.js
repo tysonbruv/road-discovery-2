@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V220-PUBLIC-TROPHIES-DISCOVERIES
+ * Build signature: QOTS-RDA-2026-V221-BOOK-ANOTHER-WEEK
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "220",
-    signature: "QOTS-RDA-2026-V220-PUBLIC-TROPHIES-DISCOVERIES"
+    version: "221",
+    signature: "QOTS-RDA-2026-V221-BOOK-ANOTHER-WEEK"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V220-PUBLIC-TROPHIES-DISCOVERIES</small>
+        <small>Build signature: QOTS-RDA-2026-V221-BOOK-ANOTHER-WEEK</small>
       </main>
     </body>
   `;
@@ -53270,6 +53270,7 @@ function rd144ShowBookingStatus(booking, options = {}) {
         ${booking.status === "pending_review"
           ? `<span class="rd154-submission-locked" role="status">&#10003; Advertisement submitted</span>`
           : ""}
+        ${code ? `<button id="rd221BookAnotherWeekBtn" class="rd144-primary-button" type="button">Book another week</button>` : ""}
         <button id="rd144CheckAnotherBtn" class="rd144-secondary-button" type="button">Check another booking</button>
       </div>
       ${!token && ["pending_artwork", "needs_changes"].includes(booking.status)
@@ -53282,6 +53283,9 @@ function rd144ShowBookingStatus(booking, options = {}) {
   });
   $("rd144OpenUploadBtn")?.addEventListener("click", () => {
     rd144OpenSubmission(code, token);
+  });
+  $("rd221BookAnotherWeekBtn")?.addEventListener("click", () => {
+    void rd142OpenBooking();
   });
   $("rd144CheckAnotherBtn")?.addEventListener("click", () => {
     rd144RenderStatusLookup();
@@ -54444,6 +54448,7 @@ function rd145BookingCard(booking) {
         <button type="button" data-rd145-action="view" data-rd145-code="${rd142Escape(code)}">View progress</button>
         ${canUpload ? `<button class="primary" type="button" data-rd145-action="upload" data-rd145-code="${rd142Escape(code)}">${booking.status === "needs_changes" ? "Upload revised ad" : "Submit advertisement"}</button>` : ""}
         ${booking.status === "pending_review" ? `<span class="rd154-submission-locked" role="status">&#10003; Advertisement submitted</span>` : ""}
+        <button class="primary" type="button" data-rd145-action="book">Book another week</button>
       </div>
     </article>
   `;
@@ -54460,6 +54465,7 @@ function rd145RenderBookingNumbers(bookings) {
       <section class="rd145-bookings-empty">
         <strong>No booking numbers</strong>
         <p>Paid sponsor bookings made from this Road Profile will appear here automatically.</p>
+        <button type="button" data-rd145-action="book">Book now</button>
       </section>
       <p class="rd145-bookings-note">Opening or abandoning Stripe Checkout never creates a booking number.</p>
     `;
@@ -54601,6 +54607,11 @@ function rd145HandleBookingAction(event) {
   }
   if (action === "refresh") {
     void rd145LoadBookingNumbers();
+    return;
+  }
+  if (action === "book") {
+    closePanels();
+    void rd142OpenBooking();
     return;
   }
   if (action === "copy" && code) {
@@ -73542,3 +73553,12 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryPublicProfileDetails =
     "menu-second-blue-user-trophy-discovery-count-v220";
+
+/* ==================================================
+   Road Discovery AU v221
+   Repeat sponsor booking shortcuts
+   ================================================== */
+
+document.documentElement.dataset
+  .roadDiscoveryRepeatSponsorBooking =
+    "booking-panel-and-progress-v221";
