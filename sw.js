@@ -1,17 +1,17 @@
 "use strict";
 
 /*
-  Road Discovery AU v222 service worker
+  Road Discovery AU v223 service worker
   Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
-  Build signature: QOTS-RDA-2026-V222-ACCOUNT-DELETION
+  Build signature: QOTS-RDA-2026-V223-ACCOUNT-DELETION-SETTINGS
 
   Expected frontend versions:
-  - app.js?v=222
+  - app.js?v=223
   - style.css?v=68
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v222";
+  "road-discovery-au-v223";
 
 const CORE_APP_SHELL = [
   "./",
@@ -22,6 +22,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=68",
+  "./app.js?v=223",
   "./app.js?v=222",
   "./app.js?v=221",
   "./app.js?v=220",
@@ -302,6 +303,11 @@ self.addEventListener(
             )
           ) {
             return (
+              await caches.match(
+                "./app.js?v=223"
+              )
+            ) ||
+              (
               await caches.match(
                 "./app.js?v=222"
               )
