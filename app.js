@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V222-ACCOUNT-DELETION
+ * Build signature: QOTS-RDA-2026-V223-ACCOUNT-DELETION-SETTINGS
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "222",
-    signature: "QOTS-RDA-2026-V222-ACCOUNT-DELETION"
+    version: "223",
+    signature: "QOTS-RDA-2026-V223-ACCOUNT-DELETION-SETTINGS"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V222-ACCOUNT-DELETION</small>
+        <small>Build signature: QOTS-RDA-2026-V223-ACCOUNT-DELETION-SETTINGS</small>
       </main>
     </body>
   `;
@@ -73607,6 +73607,32 @@ function rd222InstallStyles() {
       stroke-linejoin: round;
     }
 
+    .rd222-settings-entry {
+      display: grid;
+      gap: 8px;
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #303b48;
+    }
+
+    .rd222-settings-entry button {
+      width: 100%;
+      min-height: 46px;
+      border: 1px solid #ff5968;
+      border-radius: 12px;
+      padding: 11px 14px;
+      background: rgba(185, 39, 53, 0.88);
+      color: #ffffff;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 950;
+      cursor: pointer;
+    }
+
+    .rd222-settings-entry .small-note {
+      margin: 0;
+    }
+
     .rd222-heading {
       min-width: 0;
       display: flex;
@@ -73845,43 +73871,43 @@ function rd222InstallStyles() {
 function rd222CreateMenuButton() {
   if ($("rd222OpenDataBtn")) return;
 
-  const aboutButton = $("rd73OpenAboutBtn");
-  const list = aboutButton?.parentElement;
-  if (!list) return;
+  const resetSection = $("resetBtn")?.closest(
+    ".panel-section"
+  );
+  if (!resetSection) return;
+
+  const entry = document.createElement("div");
+  entry.id = "rd222DataSettingsEntry";
+  entry.className = "rd222-settings-entry";
 
   const button = document.createElement("button");
   button.id = "rd222OpenDataBtn";
-  button.className = "rd-general-menu-item";
   button.type = "button";
-  button.innerHTML = `
-    <span class="rd-general-menu-icon data-delete" aria-hidden="true">
-      <svg viewBox="0 0 24 24">
-        <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />
-      </svg>
-    </span>
-    <span class="rd-general-menu-copy">
-      <strong>YOUR DATA &amp; DELETE ACCOUNT</strong>
-      <small>See what this app saves—or delete it</small>
-    </span>
-    <span class="rd-general-menu-arrow" aria-hidden="true">›</span>
-  `;
+  button.textContent = "Your Data & Delete Account";
 
-  list.insertBefore(button, aboutButton);
+  const note = document.createElement("p");
+  note.className = "small-note";
+  note.textContent =
+    "See what Road Discovery saves—or permanently delete your Road Profile and saved progress.";
+
+  entry.append(button, note);
+  resetSection.appendChild(entry);
   button.addEventListener("click", rd222OpenDataPanel);
 }
 
 
 function rd222ArrangeMenuButton() {
-  const button = $("rd222OpenDataBtn");
-  const aboutButton = $("rd73OpenAboutBtn");
+  const entry = $("rd222DataSettingsEntry");
+  const resetSection = $("resetBtn")?.closest(
+    ".panel-section"
+  );
 
   if (
-    button &&
-    aboutButton &&
-    button.parentElement === aboutButton.parentElement &&
-    button.nextElementSibling !== aboutButton
+    entry &&
+    resetSection &&
+    entry.parentElement !== resetSection
   ) {
-    aboutButton.parentElement.insertBefore(button, aboutButton);
+    resetSection.appendChild(entry);
   }
 }
 
@@ -74201,7 +74227,7 @@ function rd222HandleBack() {
   }
 
   rd222CloseDataPanelOnly();
-  rd73OpenGeneralMenu();
+  openPanel("settingsPanel");
 }
 
 
@@ -74541,3 +74567,7 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryAccountDeletion =
     "plain-language-server-deletion-local-wipe-v222";
+
+document.documentElement.dataset
+  .roadDiscoveryAccountDeletionPlacement =
+    "settings-below-reset-discovered-roads-v223";
