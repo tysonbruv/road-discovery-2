@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V226-DIM-ROADS-SLIDER
+ * Build signature: QOTS-RDA-2026-V227-ROAD-BRIGHTNESS
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "226",
-    signature: "QOTS-RDA-2026-V226-DIM-ROADS-SLIDER"
+    version: "227",
+    signature: "QOTS-RDA-2026-V227-ROAD-BRIGHTNESS"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V226-DIM-ROADS-SLIDER</small>
+        <small>Build signature: QOTS-RDA-2026-V227-ROAD-BRIGHTNESS</small>
       </main>
     </body>
   `;
@@ -287,7 +287,7 @@ const ROAD_DISCOVERY_DIM_THEME_SEPARATOR =
   ":";
 
 const ROAD_DISCOVERY_DIM_ROAD_STRENGTH_DEFAULT =
-  50;
+  100;
 
 const ROAD_DISCOVERY_TRULY_DARK_BACKGROUND =
   "#05070a";
@@ -422,19 +422,19 @@ ROAD_DISCOVERY_BASEMAP_PALETTES[
 };
 
 const ROAD_DISCOVERY_DIM_ROAD_COLOURS = {
-  motorway: "#211f1f",
-  trunk: "#1f1e1e",
-  primary: "#1e1d1d",
-  secondary: "#1c1b1b",
-  tertiary: "#1a1919",
-  minor: "#181818",
-  service: "#161616",
-  track: "#141414"
+  motorway: "#0d0d0d",
+  trunk: "#0c0c0c",
+  primary: "#0b0b0b",
+  secondary: "#0a0a0a",
+  tertiary: "#090909",
+  minor: "#080808",
+  service: "#070707",
+  track: "#060606"
 };
 
 const ROAD_DISCOVERY_DIM_ROAD_DEFAULT_COLOURS = {
-  tunnelRoad: "#141414",
-  roadDefault: "#1c1b1b"
+  tunnelRoad: "#060606",
+  roadDefault: "#0a0a0a"
 };
 
 function roadDiscoveryClampDimRoadStrength(
@@ -531,10 +531,10 @@ function roadDiscoveryEnsureDimThemePalette(
   ) {
     roads[roadClass] =
       roadDiscoveryMixHexColours(
-        sourcePalette.roads[roadClass],
         ROAD_DISCOVERY_DIM_ROAD_COLOURS[
           roadClass
         ],
+        sourcePalette.roads[roadClass],
         strength
       );
   }
@@ -545,16 +545,16 @@ function roadDiscoveryEnsureDimThemePalette(
     ...sourcePalette,
     tunnelRoad:
       roadDiscoveryMixHexColours(
-        sourcePalette.tunnelRoad,
         ROAD_DISCOVERY_DIM_ROAD_DEFAULT_COLOURS
           .tunnelRoad,
+        sourcePalette.tunnelRoad,
         strength
       ),
     roadDefault:
       roadDiscoveryMixHexColours(
-        sourcePalette.roadDefault,
         ROAD_DISCOVERY_DIM_ROAD_DEFAULT_COLOURS
           .roadDefault,
+        sourcePalette.roadDefault,
         strength
       ),
     roads
@@ -564,15 +564,15 @@ function roadDiscoveryEnsureDimThemePalette(
 }
 
 /*
-  Dim roads is a basemap-only choice. It does not touch the orange saved
-  trail, the active drive trail, GPS, waypoints, riddles or game graphics.
+  Road brightness is a basemap-only choice. It does not touch the orange
+  saved trail, active trail, GPS, labels, riddles or game graphics.
 */
 ROAD_DISCOVERY_BASEMAP_PALETTES[
   ROAD_DISCOVERY_DIM_DARK_THEME
 ] = {
   ...ROAD_DISCOVERY_BASEMAP_PALETTES.dark,
-  tunnelRoad: "#141414",
-  roadDefault: "#1c1b1b",
+  tunnelRoad: "#060606",
+  roadDefault: "#0a0a0a",
   roads: {
     ...ROAD_DISCOVERY_DIM_ROAD_COLOURS
   }
@@ -584,8 +584,8 @@ ROAD_DISCOVERY_BASEMAP_PALETTES[
   ...ROAD_DISCOVERY_BASEMAP_PALETTES[
     ROAD_DISCOVERY_TRULY_DARK_THEME
   ],
-  tunnelRoad: "#141414",
-  roadDefault: "#1c1b1b",
+  tunnelRoad: "#060606",
+  roadDefault: "#0a0a0a",
   roads: {
     ...ROAD_DISCOVERY_DIM_ROAD_COLOURS
   }
@@ -75142,7 +75142,7 @@ function rd225SaveDimMapRoads() {
     );
   } catch (error) {
     console.error(error);
-    showToast("Could not save Dim roads setting");
+    showToast("Could not save Road brightness setting");
   }
 }
 
@@ -75296,12 +75296,12 @@ function rd225InsertDimRoadSetting() {
   setting.htmlFor = "rd225DimRoadsToggle";
   setting.innerHTML = `
     <div class="toggle-text">
-      <strong>Dim roads</strong>
+      <strong>Road brightness</strong>
 
       <span>
-        Makes ordinary grey map roads darker so your
-        orange discovered roads stand out. Turn it on,
-        then choose the strength from 1% to 100%.
+        Turn this on to choose how bright ordinary grey
+        roads appear. 1% is almost black. 100% matches
+        the normal default Dark-map road brightness.
       </span>
 
       <span class="rd225-map-note">
@@ -75373,8 +75373,8 @@ function rd225InsertDimRoadSetting() {
 
         showToast(
           enabled
-            ? "Dim roads on"
-            : "Dim roads off"
+            ? "Road brightness on"
+            : "Road brightness off"
         );
       }
     );
@@ -75415,8 +75415,8 @@ document.documentElement.dataset
     "saved-dark-only-basemap-road-palette-v225";
 
 /* ==================================================
-   Road Discovery AU v226
-   Adjustable Dim roads strength + Daylight lock
+   Road Discovery AU v227
+   Adjustable road brightness + Daylight lock
    ================================================== */
 
 const RD226_DIM_ROAD_STRENGTH_KEY =
@@ -75461,7 +75461,7 @@ function rd226SaveDimRoadStrength() {
   } catch (error) {
     console.error(error);
     showToast(
-      "Could not save road dim strength"
+      "Could not save Road brightness"
     );
   }
 }
@@ -75568,7 +75568,7 @@ function rd226UpdateStrengthReadout(value) {
     slider.value = String(strength);
     slider.setAttribute(
       "aria-valuetext",
-      `${strength}% dim strength`
+      `${strength}% road brightness`
     );
   }
 
@@ -75628,7 +75628,7 @@ function rd226InsertDimRoadStrengthSetting() {
   setting.innerHTML = `
     <div class="rd226-dim-road-strength-head">
       <label for="rd226DimRoadStrengthSlider">
-        Dim strength
+        Road brightness
       </label>
 
       <output
@@ -75648,20 +75648,20 @@ function rd226InsertDimRoadStrengthSetting() {
       value="${roadDiscoveryClampDimRoadStrength(
         state.dimMapRoadStrength
       )}"
-      aria-label="Dim ordinary roads strength"
+      aria-label="Ordinary road brightness"
     />
 
     <div
       class="rd226-dim-road-strength-scale"
       aria-hidden="true"
     >
-      <span>1% · lighter</span>
-      <span>100% · darkest</span>
+      <span>1% · almost black</span>
+      <span>100% · normal</span>
     </div>
 
     <p class="rd226-dim-road-strength-note">
-      Only ordinary grey roads change. Your orange
-      roads and map labels stay clear.
+      Lower percentages darken only ordinary grey roads.
+      Your orange roads and map labels stay clear.
     </p>
   `;
 
@@ -75718,8 +75718,8 @@ if (document.readyState === "loading") {
 
 document.documentElement.dataset
   .roadDiscoveryDimRoadStrength =
-    "slider-1-to-100-dark-only-v226";
+    "brightness-1-black-to-100-normal-v227";
 
 document.documentElement.dataset
   .roadDiscoveryDaylightAppearanceLock =
-    "truly-dark-and-dim-controls-disabled-v226";
+    "truly-dark-and-road-brightness-disabled-v227";
