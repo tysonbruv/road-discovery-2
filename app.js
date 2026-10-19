@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V225-DIM-ROADS
+ * Build signature: QOTS-RDA-2026-V226-DIM-ROADS-SLIDER
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "225",
-    signature: "QOTS-RDA-2026-V225-DIM-ROADS"
+    version: "226",
+    signature: "QOTS-RDA-2026-V226-DIM-ROADS-SLIDER"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V225-DIM-ROADS</small>
+        <small>Build signature: QOTS-RDA-2026-V226-DIM-ROADS-SLIDER</small>
       </main>
     </body>
   `;
@@ -283,6 +283,12 @@ const ROAD_DISCOVERY_DIM_DARK_THEME =
 const ROAD_DISCOVERY_DIM_TRULY_DARK_THEME =
   "trulyDarkDim";
 
+const ROAD_DISCOVERY_DIM_THEME_SEPARATOR =
+  ":";
+
+const ROAD_DISCOVERY_DIM_ROAD_STRENGTH_DEFAULT =
+  50;
+
 const ROAD_DISCOVERY_TRULY_DARK_BACKGROUND =
   "#05070a";
 
@@ -426,6 +432,137 @@ const ROAD_DISCOVERY_DIM_ROAD_COLOURS = {
   track: "#141414"
 };
 
+const ROAD_DISCOVERY_DIM_ROAD_DEFAULT_COLOURS = {
+  tunnelRoad: "#141414",
+  roadDefault: "#1c1b1b"
+};
+
+function roadDiscoveryClampDimRoadStrength(
+  value
+) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return ROAD_DISCOVERY_DIM_ROAD_STRENGTH_DEFAULT;
+  }
+
+  return Math.min(
+    100,
+    Math.max(1, Math.round(numericValue))
+  );
+}
+
+function roadDiscoveryMixHexColours(
+  startHex,
+  endHex,
+  percentage
+) {
+  const amount =
+    roadDiscoveryClampDimRoadStrength(
+      percentage
+    ) / 100;
+  const readChannel = (hex, offset) =>
+    Number.parseInt(hex.slice(offset, offset + 2), 16);
+  const channel = (start, end) =>
+    Math.round(start + (end - start) * amount)
+      .toString(16)
+      .padStart(2, "0");
+
+  return `#${channel(
+    readChannel(startHex, 1),
+    readChannel(endHex, 1)
+  )}${channel(
+    readChannel(startHex, 3),
+    readChannel(endHex, 3)
+  )}${channel(
+    readChannel(startHex, 5),
+    readChannel(endHex, 5)
+  )}`;
+}
+
+function roadDiscoveryDimThemeName(
+  trulyDark = false,
+  strength =
+    ROAD_DISCOVERY_DIM_ROAD_STRENGTH_DEFAULT
+) {
+  const baseTheme = trulyDark
+    ? ROAD_DISCOVERY_DIM_TRULY_DARK_THEME
+    : ROAD_DISCOVERY_DIM_DARK_THEME;
+
+  return `${baseTheme}${
+    ROAD_DISCOVERY_DIM_THEME_SEPARATOR
+  }${roadDiscoveryClampDimRoadStrength(strength)}`;
+}
+
+function roadDiscoveryEnsureDimThemePalette(
+  value
+) {
+  const match = String(value).match(
+    /^(darkDim|trulyDarkDim):(\d{1,3})$/
+  );
+
+  if (!match) return null;
+
+  const strength =
+    roadDiscoveryClampDimRoadStrength(match[2]);
+  const trulyDark =
+    match[1] ===
+      ROAD_DISCOVERY_DIM_TRULY_DARK_THEME;
+  const themeName =
+    roadDiscoveryDimThemeName(
+      trulyDark,
+      strength
+    );
+
+  if (ROAD_DISCOVERY_BASEMAP_PALETTES[themeName]) {
+    return themeName;
+  }
+
+  const sourcePalette = trulyDark
+    ? ROAD_DISCOVERY_BASEMAP_PALETTES[
+      ROAD_DISCOVERY_TRULY_DARK_THEME
+    ]
+    : ROAD_DISCOVERY_BASEMAP_PALETTES.dark;
+  const roads = {};
+
+  for (
+    const roadClass of
+      ROAD_DISCOVERY_BASEMAP_ROAD_CLASSES
+  ) {
+    roads[roadClass] =
+      roadDiscoveryMixHexColours(
+        sourcePalette.roads[roadClass],
+        ROAD_DISCOVERY_DIM_ROAD_COLOURS[
+          roadClass
+        ],
+        strength
+      );
+  }
+
+  ROAD_DISCOVERY_BASEMAP_PALETTES[
+    themeName
+  ] = {
+    ...sourcePalette,
+    tunnelRoad:
+      roadDiscoveryMixHexColours(
+        sourcePalette.tunnelRoad,
+        ROAD_DISCOVERY_DIM_ROAD_DEFAULT_COLOURS
+          .tunnelRoad,
+        strength
+      ),
+    roadDefault:
+      roadDiscoveryMixHexColours(
+        sourcePalette.roadDefault,
+        ROAD_DISCOVERY_DIM_ROAD_DEFAULT_COLOURS
+          .roadDefault,
+        strength
+      ),
+    roads
+  };
+
+  return themeName;
+}
+
 /*
   Dim roads is a basemap-only choice. It does not touch the orange saved
   trail, the active drive trail, GPS, waypoints, riddles or game graphics.
@@ -471,6 +608,13 @@ function roadDiscoveryBaseThemeKey(value = false) {
       ROAD_DISCOVERY_DIM_TRULY_DARK_THEME
   ) {
     return value;
+  }
+
+  const dimTheme =
+    roadDiscoveryEnsureDimThemePalette(value);
+
+  if (dimTheme) {
+    return dimTheme;
   }
 
   /* Legacy "contrast" requests now use the sole Dark map. */
@@ -49078,12 +49222,18 @@ function rd128CurrentMapTheme() {
 
   if (state.trulyDarkMap) {
     return state.dimMapRoads
-      ? ROAD_DISCOVERY_DIM_TRULY_DARK_THEME
+      ? roadDiscoveryDimThemeName(
+        true,
+        state.dimMapRoadStrength
+      )
       : ROAD_DISCOVERY_TRULY_DARK_THEME;
   }
 
   return state.dimMapRoads
-    ? ROAD_DISCOVERY_DIM_DARK_THEME
+    ? roadDiscoveryDimThemeName(
+      false,
+      state.dimMapRoadStrength
+    )
     : RD128_HIGH_CONTRAST_THEME;
 }
 
@@ -74757,16 +74907,30 @@ function rd224InstallTrulyDarkStyles() {
 function rd224UpdateTrulyDarkControl() {
   const toggle = $("rd224TrulyDarkMapToggle");
   const setting = $("rd224TrulyDarkMapSetting");
+  const daylight = Boolean(
+    state.daylightMap
+  );
   const active = Boolean(
     state.trulyDarkMap &&
-    !state.daylightMap
+    !daylight
   );
 
   if (toggle) {
     toggle.checked = Boolean(
       state.trulyDarkMap
     );
+    toggle.disabled = daylight;
   }
+
+  setting?.classList.toggle(
+    "rd226-map-option-disabled",
+    daylight
+  );
+
+  setting?.setAttribute(
+    "aria-disabled",
+    String(daylight)
+  );
 
   setting?.classList.toggle(
     "active",
@@ -75003,16 +75167,70 @@ function rd225InstallDimRoadStyles() {
 function rd225UpdateDimRoadControl() {
   const toggle = $("rd225DimRoadsToggle");
   const setting = $("rd225DimRoadsSetting");
+  const sliderSetting = $(
+    "rd226DimRoadStrengthSetting"
+  );
+  const slider = $(
+    "rd226DimRoadStrengthSlider"
+  );
+  const output = $(
+    "rd226DimRoadStrengthValue"
+  );
+  const daylight = Boolean(
+    state.daylightMap
+  );
+  const strength =
+    roadDiscoveryClampDimRoadStrength(
+      state.dimMapRoadStrength
+    );
   const active = Boolean(
     state.dimMapRoads &&
-    !state.daylightMap
+    !daylight
   );
 
   if (toggle) {
     toggle.checked = Boolean(
       state.dimMapRoads
     );
+    toggle.disabled = daylight;
   }
+
+  if (slider) {
+    slider.value = String(strength);
+    slider.disabled = Boolean(
+      daylight || !state.dimMapRoads
+    );
+  }
+
+  if (output) {
+    output.value = `${strength}%`;
+    output.textContent = `${strength}%`;
+  }
+
+  sliderSetting?.classList.toggle(
+    "hidden",
+    !state.dimMapRoads
+  );
+
+  sliderSetting?.classList.toggle(
+    "rd226-map-option-disabled",
+    daylight
+  );
+
+  sliderSetting?.setAttribute(
+    "aria-disabled",
+    String(daylight)
+  );
+
+  setting?.classList.toggle(
+    "rd226-map-option-disabled",
+    daylight
+  );
+
+  setting?.setAttribute(
+    "aria-disabled",
+    String(daylight)
+  );
 
   setting?.classList.toggle(
     "active",
@@ -75082,8 +75300,8 @@ function rd225InsertDimRoadSetting() {
 
       <span>
         Makes ordinary grey map roads darker so your
-        orange discovered roads stand out. GPS, labels,
-        riddles and game markers stay unchanged.
+        orange discovered roads stand out. Turn it on,
+        then choose the strength from 1% to 100%.
       </span>
 
       <span class="rd225-map-note">
@@ -75195,3 +75413,313 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryDimMapRoads =
     "saved-dark-only-basemap-road-palette-v225";
+
+/* ==================================================
+   Road Discovery AU v226
+   Adjustable Dim roads strength + Daylight lock
+   ================================================== */
+
+const RD226_DIM_ROAD_STRENGTH_KEY =
+  "roadDiscoveryAU.dimMapRoadStrength.v1";
+
+const RD226_DIM_ROAD_APPLY_DELAY_MS = 120;
+
+let rd226DimRoadApplyTimer = null;
+
+state.dimMapRoadStrength =
+  rd226LoadDimRoadStrength();
+
+
+function rd226LoadDimRoadStrength() {
+  try {
+    const storedValue = localStorage.getItem(
+      RD226_DIM_ROAD_STRENGTH_KEY
+    );
+
+    return storedValue === null
+      ? ROAD_DISCOVERY_DIM_ROAD_STRENGTH_DEFAULT
+      : roadDiscoveryClampDimRoadStrength(
+        storedValue
+      );
+  } catch (error) {
+    console.error(error);
+    return ROAD_DISCOVERY_DIM_ROAD_STRENGTH_DEFAULT;
+  }
+}
+
+
+function rd226SaveDimRoadStrength() {
+  try {
+    localStorage.setItem(
+      RD226_DIM_ROAD_STRENGTH_KEY,
+      String(
+        roadDiscoveryClampDimRoadStrength(
+          state.dimMapRoadStrength
+        )
+      )
+    );
+  } catch (error) {
+    console.error(error);
+    showToast(
+      "Could not save road dim strength"
+    );
+  }
+}
+
+
+function rd226InstallDimRoadStrengthStyles() {
+  if ($("rd226DimRoadStrengthStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd226DimRoadStrengthStyles";
+  style.textContent = `
+    .rd226-map-option-disabled {
+      cursor: not-allowed;
+      opacity: 0.48;
+    }
+
+    .rd226-map-option-disabled .toggle-text,
+    .rd226-map-option-disabled .toggle-switch {
+      pointer-events: none;
+    }
+
+    .rd226-dim-road-strength-setting {
+      margin: -3px 0 12px;
+      padding: 15px 16px 17px;
+      border: 1px solid rgba(255, 134, 21, 0.32);
+      border-radius: 14px;
+      background: rgba(255, 134, 21, 0.055);
+      transition: opacity 160ms ease,
+        border-color 160ms ease;
+    }
+
+    .rd226-dim-road-strength-setting.hidden {
+      display: none !important;
+    }
+
+    .rd226-dim-road-strength-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 11px;
+    }
+
+    .rd226-dim-road-strength-head label {
+      color: #f3f7fc;
+      font-weight: 850;
+    }
+
+    #rd226DimRoadStrengthValue {
+      min-width: 54px;
+      padding: 5px 9px;
+      border: 1px solid rgba(255, 134, 21, 0.5);
+      border-radius: 999px;
+      background: rgba(255, 134, 21, 0.12);
+      color: #ff9b3d;
+      font-weight: 900;
+      text-align: center;
+    }
+
+    #rd226DimRoadStrengthSlider {
+      width: 100%;
+      height: 28px;
+      margin: 0;
+      cursor: pointer;
+      accent-color: #ff8615;
+    }
+
+    #rd226DimRoadStrengthSlider:disabled {
+      cursor: not-allowed;
+    }
+
+    .rd226-dim-road-strength-scale {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 2px;
+      color: #8f9aaa;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .rd226-dim-road-strength-note {
+      margin: 9px 0 0;
+      color: #aeb8c6;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd226UpdateStrengthReadout(value) {
+  const strength =
+    roadDiscoveryClampDimRoadStrength(value);
+  const slider = $(
+    "rd226DimRoadStrengthSlider"
+  );
+  const output = $(
+    "rd226DimRoadStrengthValue"
+  );
+
+  if (slider) {
+    slider.value = String(strength);
+    slider.setAttribute(
+      "aria-valuetext",
+      `${strength}% dim strength`
+    );
+  }
+
+  if (output) {
+    output.value = `${strength}%`;
+    output.textContent = `${strength}%`;
+  }
+}
+
+
+function rd226ApplyDimRoadStrengthNow() {
+  window.clearTimeout(
+    rd226DimRoadApplyTimer
+  );
+  rd226DimRoadApplyTimer = null;
+
+  if (
+    !state.dimMapRoads ||
+    state.daylightMap
+  ) {
+    rd225UpdateDimRoadControl();
+    return;
+  }
+
+  rd83ApplyDaylightMap();
+}
+
+
+function rd226ScheduleDimRoadStrengthApply() {
+  window.clearTimeout(
+    rd226DimRoadApplyTimer
+  );
+
+  rd226DimRoadApplyTimer = window.setTimeout(
+    rd226ApplyDimRoadStrengthNow,
+    RD226_DIM_ROAD_APPLY_DELAY_MS
+  );
+}
+
+
+function rd226InsertDimRoadStrengthSetting() {
+  if ($("rd226DimRoadStrengthSlider")) {
+    rd225UpdateDimRoadControl();
+    return;
+  }
+
+  const dimRoadSetting = $(
+    "rd225DimRoadsSetting"
+  );
+
+  if (!dimRoadSetting?.parentElement) return;
+
+  const setting = document.createElement("div");
+  setting.id = "rd226DimRoadStrengthSetting";
+  setting.className =
+    "rd226-dim-road-strength-setting hidden";
+  setting.innerHTML = `
+    <div class="rd226-dim-road-strength-head">
+      <label for="rd226DimRoadStrengthSlider">
+        Dim strength
+      </label>
+
+      <output
+        id="rd226DimRoadStrengthValue"
+        for="rd226DimRoadStrengthSlider"
+      >${roadDiscoveryClampDimRoadStrength(
+        state.dimMapRoadStrength
+      )}%</output>
+    </div>
+
+    <input
+      id="rd226DimRoadStrengthSlider"
+      type="range"
+      min="1"
+      max="100"
+      step="1"
+      value="${roadDiscoveryClampDimRoadStrength(
+        state.dimMapRoadStrength
+      )}"
+      aria-label="Dim ordinary roads strength"
+    />
+
+    <div
+      class="rd226-dim-road-strength-scale"
+      aria-hidden="true"
+    >
+      <span>1% · lighter</span>
+      <span>100% · darkest</span>
+    </div>
+
+    <p class="rd226-dim-road-strength-note">
+      Only ordinary grey roads change. Your orange
+      roads and map labels stay clear.
+    </p>
+  `;
+
+  dimRoadSetting.insertAdjacentElement(
+    "afterend",
+    setting
+  );
+
+  const slider = $(
+    "rd226DimRoadStrengthSlider"
+  );
+
+  slider?.addEventListener("input", (event) => {
+    state.dimMapRoadStrength =
+      roadDiscoveryClampDimRoadStrength(
+        event.currentTarget.value
+      );
+
+    rd226UpdateStrengthReadout(
+      state.dimMapRoadStrength
+    );
+    rd226SaveDimRoadStrength();
+    rd226ScheduleDimRoadStrengthApply();
+  });
+
+  slider?.addEventListener("change", () => {
+    rd226SaveDimRoadStrength();
+    rd226ApplyDimRoadStrengthNow();
+  });
+
+  rd225UpdateDimRoadControl();
+}
+
+
+function rd226InitDimRoadStrength() {
+  rd226InstallDimRoadStrengthStyles();
+  rd226InsertDimRoadStrengthSetting();
+  rd224UpdateTrulyDarkControl();
+  rd225UpdateDimRoadControl();
+  rd83ApplyDaylightMap();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd226InitDimRoadStrength,
+    { once: true }
+  );
+} else {
+  rd226InitDimRoadStrength();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryDimRoadStrength =
+    "slider-1-to-100-dark-only-v226";
+
+document.documentElement.dataset
+  .roadDiscoveryDaylightAppearanceLock =
+    "truly-dark-and-dim-controls-disabled-v226";
