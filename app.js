@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V223-ACCOUNT-DELETION-SETTINGS
+ * Build signature: QOTS-RDA-2026-V224-TRULY-DARK-MAP
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "223",
-    signature: "QOTS-RDA-2026-V223-ACCOUNT-DELETION-SETTINGS"
+    version: "224",
+    signature: "QOTS-RDA-2026-V224-TRULY-DARK-MAP"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V223-ACCOUNT-DELETION-SETTINGS</small>
+        <small>Build signature: QOTS-RDA-2026-V224-TRULY-DARK-MAP</small>
       </main>
     </body>
   `;
@@ -145,8 +145,8 @@ if (!rd193IsApprovedRuntime()) {
   );
 }
 
-/* Road Discovery AU v197
-   Self-hosted Australian OpenStreetMap PMTiles basemap with dark and daylight styles.
+/* Road Discovery AU v197 + v224
+   Self-hosted Australian OpenStreetMap PMTiles basemap with dark, truly dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
    Live GPS, current drives, markers, accuracy, speed, heading, waypoints and routes are never uploaded.
@@ -274,6 +274,12 @@ const ROAD_DISCOVERY_BASEMAP_MAJOR_ROADS =
     "tertiary"
   ]);
 
+const ROAD_DISCOVERY_TRULY_DARK_THEME =
+  "trulyDark";
+
+const ROAD_DISCOVERY_TRULY_DARK_BACKGROUND =
+  "#05070a";
+
 const ROAD_DISCOVERY_BASEMAP_PALETTES = {
   light: {
     background: "#e8edf1",
@@ -361,9 +367,57 @@ const ROAD_DISCOVERY_BASEMAP_PALETTES = {
   }
 };
 
+/*
+  Keep the useful grey roads and labels from Dark map, but remove every
+  green/brown/blue area tint. Matching the national ocean mask makes the
+  wide Australia view read as one clean black canvas.
+*/
+ROAD_DISCOVERY_BASEMAP_PALETTES[
+  ROAD_DISCOVERY_TRULY_DARK_THEME
+] = {
+  ...ROAD_DISCOVERY_BASEMAP_PALETTES.dark,
+  background:
+    ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+  landDefault:
+    ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+  landcover: {
+    wood: ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+    grass: ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+    scrub: ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+    farmland: ROAD_DISCOVERY_TRULY_DARK_BACKGROUND
+  },
+  landuseDefault:
+    ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+  landuse: {
+    residential:
+      ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+    commercial:
+      ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+    industrial:
+      ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+    park: ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+    cemetery:
+      ROAD_DISCOVERY_TRULY_DARK_BACKGROUND
+  },
+  water: ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+  waterway: "#171717",
+  tunnelCasing:
+    ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+  roadCasing:
+    ROAD_DISCOVERY_TRULY_DARK_BACKGROUND,
+  labelHalo:
+    ROAD_DISCOVERY_TRULY_DARK_BACKGROUND
+};
+
 function roadDiscoveryBaseThemeKey(value = false) {
   if (value === true || value === "light") {
     return "light";
+  }
+
+  if (
+    value === ROAD_DISCOVERY_TRULY_DARK_THEME
+  ) {
+    return ROAD_DISCOVERY_TRULY_DARK_THEME;
   }
 
   /* Legacy "contrast" requests now use the sole Dark map. */
@@ -48965,8 +49019,12 @@ function rd128SaveHighContrastMap() {
 
 
 function rd128CurrentMapTheme() {
-  return state.daylightMap
-    ? RD83_LIGHT_THEME
+  if (state.daylightMap) {
+    return RD83_LIGHT_THEME;
+  }
+
+  return state.trulyDarkMap
+    ? ROAD_DISCOVERY_TRULY_DARK_THEME
     : RD128_HIGH_CONTRAST_THEME;
 }
 
@@ -49001,9 +49059,7 @@ rd83ApplyDaylightMap = function () {
   const daylight =
     currentTheme === RD83_LIGHT_THEME;
 
-  const highContrast =
-    currentTheme ===
-      RD128_HIGH_CONTRAST_THEME;
+  const highContrast = !daylight;
 
   document.body.classList.toggle(
     "rd83-daylight-map",
@@ -74571,3 +74627,258 @@ document.documentElement.dataset
 document.documentElement.dataset
   .roadDiscoveryAccountDeletionPlacement =
     "settings-below-reset-discovered-roads-v223";
+
+/* ==================================================
+   Road Discovery AU v224
+   Optional neutral-black Dark map
+   ================================================== */
+
+const RD224_TRULY_DARK_MAP_KEY =
+  "roadDiscoveryAU.trulyDarkMap.v1";
+
+const roadDiscoveryV224 = {
+  applyDaylightMap: rd83ApplyDaylightMap
+};
+
+state.trulyDarkMap =
+  rd224LoadTrulyDarkMap();
+
+
+function rd224LoadTrulyDarkMap() {
+  try {
+    return localStorage.getItem(
+      RD224_TRULY_DARK_MAP_KEY
+    ) === "true";
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
+
+
+function rd224SaveTrulyDarkMap() {
+  try {
+    localStorage.setItem(
+      RD224_TRULY_DARK_MAP_KEY,
+      String(Boolean(state.trulyDarkMap))
+    );
+  } catch (error) {
+    console.error(error);
+    showToast("Could not save Truly dark setting");
+  }
+}
+
+
+function rd224InstallTrulyDarkStyles() {
+  if ($("rd224TrulyDarkStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd224TrulyDarkStyles";
+  style.textContent = `
+    body.rd224-truly-dark-map #map,
+    body.rd224-truly-dark-map .leaflet-container {
+      background: ${ROAD_DISCOVERY_TRULY_DARK_BACKGROUND};
+    }
+
+    body.rd224-truly-dark-map .rd194-national-ocean-mask {
+      fill: ${ROAD_DISCOVERY_TRULY_DARK_BACKGROUND};
+    }
+
+    .rd224-truly-dark-map-setting .rd224-map-note {
+      display: block;
+      margin-top: 4px;
+      color: #aeb8c6;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd224UpdateTrulyDarkControl() {
+  const toggle = $("rd224TrulyDarkMapToggle");
+  const setting = $("rd224TrulyDarkMapSetting");
+  const active = Boolean(
+    state.trulyDarkMap &&
+    !state.daylightMap
+  );
+
+  if (toggle) {
+    toggle.checked = Boolean(
+      state.trulyDarkMap
+    );
+  }
+
+  setting?.classList.toggle(
+    "active",
+    active
+  );
+
+  setting?.setAttribute(
+    "data-map-active",
+    String(active)
+  );
+}
+
+
+function rd224ApplyTrulyDarkState() {
+  const active = Boolean(
+    state.trulyDarkMap &&
+    !state.daylightMap
+  );
+
+  document.body.classList.toggle(
+    "rd224-truly-dark-map",
+    active
+  );
+
+  state.map
+    ?.getContainer?.()
+    ?.classList.toggle(
+      "rd224-truly-dark-map-active",
+      active
+    );
+
+  rd224UpdateTrulyDarkControl();
+  rd194ScheduleNationalView?.();
+}
+
+
+function rd224InsertTrulyDarkSetting() {
+  if ($("rd224TrulyDarkMapToggle")) {
+    rd224UpdateTrulyDarkControl();
+    return;
+  }
+
+  const darkSetting = $(
+    "rd128HighContrastMapSetting"
+  );
+  const daylightSetting = $(
+    "rd83DaylightMapSetting"
+  );
+  const mapSection = $(
+    "locationMarkerToggle"
+  )?.closest(".panel-section");
+
+  if (!mapSection) return;
+
+  const setting =
+    document.createElement("label");
+
+  setting.id =
+    "rd224TrulyDarkMapSetting";
+  setting.className =
+    "toggle-row rd224-truly-dark-map-setting";
+  setting.htmlFor =
+    "rd224TrulyDarkMapToggle";
+  setting.innerHTML = `
+    <div class="toggle-text">
+      <strong>Truly dark</strong>
+
+      <span>
+        Removes the green tint and makes the Dark map
+        background black. Roads, labels and your orange
+        trail stay visible.
+      </span>
+
+      <span class="rd224-map-note">
+        Saved for whenever Dark map is selected.
+      </span>
+    </div>
+
+    <input
+      id="rd224TrulyDarkMapToggle"
+      class="toggle-input"
+      type="checkbox"
+    />
+
+    <span
+      class="toggle-switch"
+      aria-hidden="true"
+    >
+      <span class="toggle-knob"></span>
+    </span>
+  `;
+
+  if (
+    darkSetting?.parentElement ===
+      mapSection
+  ) {
+    darkSetting.insertAdjacentElement(
+      "afterend",
+      setting
+    );
+  } else if (
+    daylightSetting?.parentElement ===
+      mapSection
+  ) {
+    daylightSetting.insertAdjacentElement(
+      "beforebegin",
+      setting
+    );
+  } else {
+    mapSection.appendChild(setting);
+  }
+
+  $("rd224TrulyDarkMapToggle")
+    ?.addEventListener(
+      "change",
+      (event) => {
+        const enabled = Boolean(
+          event.currentTarget.checked
+        );
+
+        state.trulyDarkMap = enabled;
+
+        if (enabled && state.daylightMap) {
+          state.daylightMap = false;
+          state.highContrastMap = true;
+          rd83SaveDaylightMap();
+          rd128SaveHighContrastMap();
+        }
+
+        rd224SaveTrulyDarkMap();
+        rd83ApplyDaylightMap();
+
+        showToast(
+          enabled
+            ? "Truly dark map on"
+            : "Truly dark map off"
+        );
+      }
+    );
+
+  rd224UpdateTrulyDarkControl();
+}
+
+
+rd83ApplyDaylightMap = function () {
+  const result = roadDiscoveryV224
+    .applyDaylightMap();
+
+  rd224ApplyTrulyDarkState();
+  return result;
+};
+
+
+function rd224InitTrulyDarkMap() {
+  rd224InstallTrulyDarkStyles();
+  rd224InsertTrulyDarkSetting();
+  rd83ApplyDaylightMap();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd224InitTrulyDarkMap,
+    { once: true }
+  );
+} else {
+  rd224InitTrulyDarkMap();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryTrulyDarkMap =
+    "saved-black-palette-under-dark-map-v224";
