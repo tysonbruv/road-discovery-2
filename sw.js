@@ -1,17 +1,17 @@
 "use strict";
 
 /*
-  Road Discovery AU v226 service worker
+  Road Discovery AU v227 service worker
   Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
-  Build signature: QOTS-RDA-2026-V226-DIM-ROADS-SLIDER
+  Build signature: QOTS-RDA-2026-V227-ROAD-BRIGHTNESS
 
   Expected frontend versions:
-  - app.js?v=226
+  - app.js?v=227
   - style.css?v=68
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v226";
+  "road-discovery-au-v227";
 
 const CORE_APP_SHELL = [
   "./",
@@ -22,6 +22,7 @@ const CORE_APP_SHELL = [
 
 const VERSIONED_APP_FILES = [
   "./style.css?v=68",
+  "./app.js?v=227",
   "./app.js?v=226",
   "./app.js?v=225",
   "./app.js?v=224",
@@ -306,6 +307,11 @@ self.addEventListener(
             )
           ) {
             return (
+              await caches.match(
+                "./app.js?v=227"
+              )
+            ) ||
+              (
               await caches.match(
                 "./app.js?v=226"
               )
