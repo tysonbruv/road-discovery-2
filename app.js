@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V224-TRULY-DARK-MAP
+ * Build signature: QOTS-RDA-2026-V225-DIM-ROADS
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "224",
-    signature: "QOTS-RDA-2026-V224-TRULY-DARK-MAP"
+    version: "225",
+    signature: "QOTS-RDA-2026-V225-DIM-ROADS"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V224-TRULY-DARK-MAP</small>
+        <small>Build signature: QOTS-RDA-2026-V225-DIM-ROADS</small>
       </main>
     </body>
   `;
@@ -145,7 +145,7 @@ if (!rd193IsApprovedRuntime()) {
   );
 }
 
-/* Road Discovery AU v197 + v224
+/* Road Discovery AU v197 + v225
    Self-hosted Australian OpenStreetMap PMTiles basemap with dark, truly dark and daylight styles.
    The existing road/GPS/Overpass/waypoint/localStorage engine remains local and unchanged.
    Only deliberately shared historical orange-road endpoint geometry is uploaded.
@@ -276,6 +276,12 @@ const ROAD_DISCOVERY_BASEMAP_MAJOR_ROADS =
 
 const ROAD_DISCOVERY_TRULY_DARK_THEME =
   "trulyDark";
+
+const ROAD_DISCOVERY_DIM_DARK_THEME =
+  "darkDim";
+
+const ROAD_DISCOVERY_DIM_TRULY_DARK_THEME =
+  "trulyDarkDim";
 
 const ROAD_DISCOVERY_TRULY_DARK_BACKGROUND =
   "#05070a";
@@ -409,6 +415,45 @@ ROAD_DISCOVERY_BASEMAP_PALETTES[
     ROAD_DISCOVERY_TRULY_DARK_BACKGROUND
 };
 
+const ROAD_DISCOVERY_DIM_ROAD_COLOURS = {
+  motorway: "#211f1f",
+  trunk: "#1f1e1e",
+  primary: "#1e1d1d",
+  secondary: "#1c1b1b",
+  tertiary: "#1a1919",
+  minor: "#181818",
+  service: "#161616",
+  track: "#141414"
+};
+
+/*
+  Dim roads is a basemap-only choice. It does not touch the orange saved
+  trail, the active drive trail, GPS, waypoints, riddles or game graphics.
+*/
+ROAD_DISCOVERY_BASEMAP_PALETTES[
+  ROAD_DISCOVERY_DIM_DARK_THEME
+] = {
+  ...ROAD_DISCOVERY_BASEMAP_PALETTES.dark,
+  tunnelRoad: "#141414",
+  roadDefault: "#1c1b1b",
+  roads: {
+    ...ROAD_DISCOVERY_DIM_ROAD_COLOURS
+  }
+};
+
+ROAD_DISCOVERY_BASEMAP_PALETTES[
+  ROAD_DISCOVERY_DIM_TRULY_DARK_THEME
+] = {
+  ...ROAD_DISCOVERY_BASEMAP_PALETTES[
+    ROAD_DISCOVERY_TRULY_DARK_THEME
+  ],
+  tunnelRoad: "#141414",
+  roadDefault: "#1c1b1b",
+  roads: {
+    ...ROAD_DISCOVERY_DIM_ROAD_COLOURS
+  }
+};
+
 function roadDiscoveryBaseThemeKey(value = false) {
   if (value === true || value === "light") {
     return "light";
@@ -418,6 +463,14 @@ function roadDiscoveryBaseThemeKey(value = false) {
     value === ROAD_DISCOVERY_TRULY_DARK_THEME
   ) {
     return ROAD_DISCOVERY_TRULY_DARK_THEME;
+  }
+
+  if (
+    value === ROAD_DISCOVERY_DIM_DARK_THEME ||
+    value ===
+      ROAD_DISCOVERY_DIM_TRULY_DARK_THEME
+  ) {
+    return value;
   }
 
   /* Legacy "contrast" requests now use the sole Dark map. */
@@ -49023,8 +49076,14 @@ function rd128CurrentMapTheme() {
     return RD83_LIGHT_THEME;
   }
 
-  return state.trulyDarkMap
-    ? ROAD_DISCOVERY_TRULY_DARK_THEME
+  if (state.trulyDarkMap) {
+    return state.dimMapRoads
+      ? ROAD_DISCOVERY_DIM_TRULY_DARK_THEME
+      : ROAD_DISCOVERY_TRULY_DARK_THEME;
+  }
+
+  return state.dimMapRoads
+    ? ROAD_DISCOVERY_DIM_DARK_THEME
     : RD128_HIGH_CONTRAST_THEME;
 }
 
@@ -74882,3 +74941,257 @@ if (document.readyState === "loading") {
 document.documentElement.dataset
   .roadDiscoveryTrulyDarkMap =
     "saved-black-palette-under-dark-map-v224";
+
+/* ==================================================
+   Road Discovery AU v225
+   Optional dim ordinary roads for Dark map
+   ================================================== */
+
+const RD225_DIM_MAP_ROADS_KEY =
+  "roadDiscoveryAU.dimMapRoads.v1";
+
+const roadDiscoveryV225 = {
+  applyDaylightMap: rd83ApplyDaylightMap
+};
+
+state.dimMapRoads =
+  rd225LoadDimMapRoads();
+
+
+function rd225LoadDimMapRoads() {
+  try {
+    return localStorage.getItem(
+      RD225_DIM_MAP_ROADS_KEY
+    ) === "true";
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
+
+
+function rd225SaveDimMapRoads() {
+  try {
+    localStorage.setItem(
+      RD225_DIM_MAP_ROADS_KEY,
+      String(Boolean(state.dimMapRoads))
+    );
+  } catch (error) {
+    console.error(error);
+    showToast("Could not save Dim roads setting");
+  }
+}
+
+
+function rd225InstallDimRoadStyles() {
+  if ($("rd225DimRoadStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd225DimRoadStyles";
+  style.textContent = `
+    .rd225-dim-roads-setting .rd225-map-note {
+      display: block;
+      margin-top: 4px;
+      color: #aeb8c6;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd225UpdateDimRoadControl() {
+  const toggle = $("rd225DimRoadsToggle");
+  const setting = $("rd225DimRoadsSetting");
+  const active = Boolean(
+    state.dimMapRoads &&
+    !state.daylightMap
+  );
+
+  if (toggle) {
+    toggle.checked = Boolean(
+      state.dimMapRoads
+    );
+  }
+
+  setting?.classList.toggle(
+    "active",
+    active
+  );
+
+  setting?.setAttribute(
+    "data-map-active",
+    String(active)
+  );
+}
+
+
+function rd225ApplyDimRoadState() {
+  const active = Boolean(
+    state.dimMapRoads &&
+    !state.daylightMap
+  );
+
+  document.body.classList.toggle(
+    "rd225-dim-map-roads",
+    active
+  );
+
+  state.map
+    ?.getContainer?.()
+    ?.classList.toggle(
+      "rd225-dim-map-roads-active",
+      active
+    );
+
+  rd225UpdateDimRoadControl();
+}
+
+
+function rd225InsertDimRoadSetting() {
+  if ($("rd225DimRoadsToggle")) {
+    rd225UpdateDimRoadControl();
+    return;
+  }
+
+  const trulyDarkSetting = $(
+    "rd224TrulyDarkMapSetting"
+  );
+  const darkSetting = $(
+    "rd128HighContrastMapSetting"
+  );
+  const daylightSetting = $(
+    "rd83DaylightMapSetting"
+  );
+  const mapSection = $(
+    "locationMarkerToggle"
+  )?.closest(".panel-section");
+
+  if (!mapSection) return;
+
+  const setting =
+    document.createElement("label");
+
+  setting.id = "rd225DimRoadsSetting";
+  setting.className =
+    "toggle-row rd225-dim-roads-setting";
+  setting.htmlFor = "rd225DimRoadsToggle";
+  setting.innerHTML = `
+    <div class="toggle-text">
+      <strong>Dim roads</strong>
+
+      <span>
+        Makes ordinary grey map roads darker so your
+        orange discovered roads stand out. GPS, labels,
+        riddles and game markers stay unchanged.
+      </span>
+
+      <span class="rd225-map-note">
+        Saved for whenever Dark map is selected.
+      </span>
+    </div>
+
+    <input
+      id="rd225DimRoadsToggle"
+      class="toggle-input"
+      type="checkbox"
+    />
+
+    <span
+      class="toggle-switch"
+      aria-hidden="true"
+    >
+      <span class="toggle-knob"></span>
+    </span>
+  `;
+
+  if (
+    trulyDarkSetting?.parentElement ===
+      mapSection
+  ) {
+    trulyDarkSetting.insertAdjacentElement(
+      "afterend",
+      setting
+    );
+  } else if (
+    darkSetting?.parentElement ===
+      mapSection
+  ) {
+    darkSetting.insertAdjacentElement(
+      "afterend",
+      setting
+    );
+  } else if (
+    daylightSetting?.parentElement ===
+      mapSection
+  ) {
+    daylightSetting.insertAdjacentElement(
+      "beforebegin",
+      setting
+    );
+  } else {
+    mapSection.appendChild(setting);
+  }
+
+  $("rd225DimRoadsToggle")
+    ?.addEventListener(
+      "change",
+      (event) => {
+        const enabled = Boolean(
+          event.currentTarget.checked
+        );
+
+        state.dimMapRoads = enabled;
+
+        if (enabled && state.daylightMap) {
+          state.daylightMap = false;
+          state.highContrastMap = true;
+          rd83SaveDaylightMap();
+          rd128SaveHighContrastMap();
+        }
+
+        rd225SaveDimMapRoads();
+        rd83ApplyDaylightMap();
+
+        showToast(
+          enabled
+            ? "Dim roads on"
+            : "Dim roads off"
+        );
+      }
+    );
+
+  rd225UpdateDimRoadControl();
+}
+
+
+rd83ApplyDaylightMap = function () {
+  const result = roadDiscoveryV225
+    .applyDaylightMap();
+
+  rd225ApplyDimRoadState();
+  return result;
+};
+
+
+function rd225InitDimRoads() {
+  rd225InstallDimRoadStyles();
+  rd225InsertDimRoadSetting();
+  rd83ApplyDaylightMap();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd225InitDimRoads,
+    { once: true }
+  );
+} else {
+  rd225InitDimRoads();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryDimMapRoads =
+    "saved-dark-only-basemap-road-palette-v225";
