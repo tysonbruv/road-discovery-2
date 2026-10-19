@@ -5,15 +5,15 @@
  * Copyright © 2026 Quartz Outback Time Studios. All rights reserved.
  * Proprietary software. Copying, redistribution, hosting, modification or
  * derivative use is not permitted without prior written permission.
- * Build signature: QOTS-RDA-2026-V221-BOOK-ANOTHER-WEEK
+ * Build signature: QOTS-RDA-2026-V222-ACCOUNT-DELETION
  */
 
 const ROAD_DISCOVERY_BUILD_OWNERSHIP =
   Object.freeze({
     owner: "Quartz Outback Time Studios",
     product: "Road Discovery AU",
-    version: "221",
-    signature: "QOTS-RDA-2026-V221-BOOK-ANOTHER-WEEK"
+    version: "222",
+    signature: "QOTS-RDA-2026-V222-ACCOUNT-DELETION"
   });
 
 function rd193IsApprovedRuntime() {
@@ -118,7 +118,7 @@ function rd193ShowUnauthorizedBuild() {
         <p>This copy is not running from an approved Road Discovery AU address or native application.</p>
         <p>Road Discovery AU is proprietary software. Copying, republishing or adapting it requires prior written permission.</p>
         <a href="https://tysonbruv.github.io/road-discovery-2/">Open the official app</a>
-        <small>Build signature: QOTS-RDA-2026-V221-BOOK-ANOTHER-WEEK</small>
+        <small>Build signature: QOTS-RDA-2026-V222-ACCOUNT-DELETION</small>
       </main>
     </body>
   `;
@@ -73562,3 +73562,982 @@ document.documentElement.dataset
 document.documentElement.dataset
   .roadDiscoveryRepeatSponsorBooking =
     "booking-panel-and-progress-v221";
+
+/* ==================================================
+   Road Discovery AU v222
+   Plain-language data explanation and real account deletion
+   ================================================== */
+
+const RD222_DELETE_ACCOUNT_API =
+  `${SUPABASE_URL}/functions/v1/delete-road-account`;
+const RD222_DELETE_CONFIRMATION =
+  "DELETE MY ACCOUNT AND DATA";
+
+const roadDiscoveryV222 = {
+  closePanels,
+  renderAuthState,
+  openGeneralMenu: rd73OpenGeneralMenu
+};
+
+Object.assign(state, {
+  rd222DeleteStage: "explain",
+  rd222DeleteMessage: ""
+});
+
+
+function rd222InstallStyles() {
+  if ($("rd222AccountDeletionStyles")) return;
+
+  const style = document.createElement("style");
+  style.id = "rd222AccountDeletionStyles";
+  style.textContent = `
+    .rd-general-menu-icon.data-delete {
+      border-color: rgba(88, 221, 210, 0.4);
+      background: rgba(88, 221, 210, 0.1);
+      color: #68e7dc;
+    }
+
+    .rd-general-menu-icon.data-delete svg {
+      width: 21px;
+      height: 21px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .rd222-heading {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .rd222-heading > div {
+      min-width: 0;
+    }
+
+    .rd222-data-panel .panel-content {
+      padding-bottom: max(28px, env(safe-area-inset-bottom));
+    }
+
+    .rd222-data-content {
+      display: grid;
+      gap: 12px;
+    }
+
+    .rd222-card {
+      padding: 15px;
+      border: 1px solid #303b48;
+      border-radius: 16px;
+      background: #10161d;
+      color: #dce5ef;
+    }
+
+    .rd222-card h3 {
+      margin: 0 0 7px;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 950;
+      line-height: 1.3;
+    }
+
+    .rd222-card p {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1.58;
+    }
+
+    .rd222-card p + p {
+      margin-top: 9px;
+    }
+
+    .rd222-card strong {
+      color: #ffffff;
+      font-weight: 950;
+    }
+
+    .rd222-save-card {
+      border-color: rgba(88, 221, 210, 0.4);
+      background: rgba(88, 221, 210, 0.075);
+    }
+
+    .rd222-save-card strong,
+    .rd222-save-card h3 {
+      color: #72eee4;
+    }
+
+    .rd222-data-list,
+    .rd222-delete-list {
+      display: grid;
+      gap: 8px;
+      margin: 11px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .rd222-data-list li,
+    .rd222-delete-list li {
+      position: relative;
+      padding-left: 21px;
+      color: #f1f5fa;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.42;
+    }
+
+    .rd222-data-list li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: #58ddd2;
+      font-weight: 950;
+    }
+
+    .rd222-delete-list li::before {
+      content: "—";
+      position: absolute;
+      left: 0;
+      color: #ff9ca5;
+      font-weight: 950;
+    }
+
+    .rd222-plain-meaning {
+      margin-top: 13px !important;
+      color: #72eee4;
+      font-size: 13px !important;
+      font-weight: 950 !important;
+    }
+
+    .rd222-danger-card {
+      border-color: rgba(255, 88, 101, 0.5);
+      background: rgba(255, 69, 84, 0.075);
+    }
+
+    .rd222-danger-card h3,
+    .rd222-danger-card > strong {
+      color: #ffadb5;
+    }
+
+    .rd222-payment-note {
+      color: #aab6c4;
+      font-size: 10.5px !important;
+    }
+
+    .rd222-actions {
+      display: grid;
+      gap: 9px;
+      margin-top: 14px;
+    }
+
+    .rd222-actions button {
+      width: 100%;
+      min-height: 48px;
+      border: 1px solid #3b4755;
+      border-radius: 12px;
+      padding: 11px 14px;
+      background: #202a36;
+      color: #ffffff;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 950;
+      cursor: pointer;
+    }
+
+    .rd222-actions .primary {
+      border-color: #4fbeb5;
+      background: #163633;
+      color: #80f1e8;
+    }
+
+    .rd222-actions .danger {
+      border-color: #ff5968;
+      background: #b92735;
+      color: #ffffff;
+    }
+
+    .rd222-actions button:disabled {
+      cursor: wait;
+      opacity: 0.62;
+    }
+
+    .rd222-status {
+      min-height: 18px;
+      margin: 11px 0 0;
+      color: #ffb1b8;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1.45;
+    }
+
+    .rd222-working,
+    .rd222-success {
+      min-height: 330px;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 14px;
+      text-align: center;
+    }
+
+    .rd222-working-spinner {
+      width: 42px;
+      height: 42px;
+      border: 4px solid rgba(255, 255, 255, 0.13);
+      border-top-color: #58ddd2;
+      border-radius: 50%;
+      animation: rd222-spin 0.8s linear infinite;
+    }
+
+    .rd222-working h3,
+    .rd222-success h3 {
+      margin: 0;
+      color: #ffffff;
+      font-size: 20px;
+      font-weight: 950;
+    }
+
+    .rd222-working p,
+    .rd222-success p {
+      max-width: 310px;
+      margin: 0;
+      color: #b7c2cf;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.55;
+    }
+
+    .rd222-success-mark {
+      display: grid;
+      width: 54px;
+      height: 54px;
+      place-items: center;
+      border: 2px solid #58ddd2;
+      border-radius: 50%;
+      background: rgba(88, 221, 210, 0.1);
+      color: #72eee4;
+      font-size: 26px;
+      font-weight: 950;
+    }
+
+    @keyframes rd222-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 430px) {
+      .rd222-card {
+        padding: 13px;
+      }
+
+      .rd222-data-list,
+      .rd222-delete-list {
+        gap: 7px;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+
+function rd222CreateMenuButton() {
+  if ($("rd222OpenDataBtn")) return;
+
+  const aboutButton = $("rd73OpenAboutBtn");
+  const list = aboutButton?.parentElement;
+  if (!list) return;
+
+  const button = document.createElement("button");
+  button.id = "rd222OpenDataBtn";
+  button.className = "rd-general-menu-item";
+  button.type = "button";
+  button.innerHTML = `
+    <span class="rd-general-menu-icon data-delete" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />
+      </svg>
+    </span>
+    <span class="rd-general-menu-copy">
+      <strong>YOUR DATA &amp; DELETE ACCOUNT</strong>
+      <small>See what this app saves—or delete it</small>
+    </span>
+    <span class="rd-general-menu-arrow" aria-hidden="true">›</span>
+  `;
+
+  list.insertBefore(button, aboutButton);
+  button.addEventListener("click", rd222OpenDataPanel);
+}
+
+
+function rd222ArrangeMenuButton() {
+  const button = $("rd222OpenDataBtn");
+  const aboutButton = $("rd73OpenAboutBtn");
+
+  if (
+    button &&
+    aboutButton &&
+    button.parentElement === aboutButton.parentElement &&
+    button.nextElementSibling !== aboutButton
+  ) {
+    aboutButton.parentElement.insertBefore(button, aboutButton);
+  }
+}
+
+
+function rd222CreateDataPanel() {
+  if ($("rd222DataPanel")) return;
+
+  const panel = document.createElement("aside");
+  panel.id = "rd222DataPanel";
+  panel.className =
+    "side-panel rd222-data-panel hidden";
+  panel.setAttribute("aria-hidden", "true");
+  panel.setAttribute(
+    "aria-label",
+    "Your Data and Delete Account"
+  );
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="rd222-heading">
+        <button
+          id="rd222DataBackBtn"
+          class="panel-close-btn rd-settings-back-btn"
+          type="button"
+          aria-label="Back"
+        >‹</button>
+        <div>
+          <h2>Your Data</h2>
+          <p>What Road Discovery saves—and how to delete it.</p>
+        </div>
+      </div>
+      <button
+        id="rd222DataCloseBtn"
+        class="panel-close-btn"
+        type="button"
+        aria-label="Close Your Data"
+      >×</button>
+    </div>
+    <div
+      id="rd222DataContent"
+      class="panel-content rd222-data-content"
+      aria-live="polite"
+    ></div>
+  `;
+
+  ($("appShell") || document.body).appendChild(panel);
+  els.rd222DataPanel = panel;
+
+  $("rd222DataBackBtn")?.addEventListener(
+    "click",
+    rd222HandleBack
+  );
+  $("rd222DataCloseBtn")?.addEventListener(
+    "click",
+    rd222HandleClose
+  );
+  $("rd222DataContent")?.addEventListener(
+    "click",
+    rd222HandleAction
+  );
+}
+
+
+function rd222SignedIn() {
+  return Boolean(
+    state.auth.user?.id &&
+    state.auth.session?.access_token
+  );
+}
+
+
+function rd222DataList() {
+  return `
+    <ul class="rd222-data-list">
+      <li>Your orange roads</li>
+      <li>Your road count and driving stats</li>
+      <li>Your weekly kilometres</li>
+      <li>Your username and email</li>
+      <li>Your friends and friend code</li>
+      <li>Your riddles collected and solved</li>
+      <li>Your Conquest and Hide &amp; Seek results</li>
+      <li>Your leaderboard results</li>
+      <li>Your saved maps and settings</li>
+    </ul>
+  `;
+}
+
+
+function rd222RenderExplain() {
+  const accountAction = rd222SignedIn()
+    ? `
+      <button
+        class="danger"
+        type="button"
+        data-rd222-action="confirm"
+      >Delete My Account &amp; Data</button>
+    `
+    : `
+      <button
+        class="primary"
+        type="button"
+        data-rd222-action="signin"
+      >Open Road Profile to Sign In</button>
+    `;
+
+  return `
+    <section class="rd222-card rd222-save-card">
+      <h3>What does “your data” mean?</h3>
+      <p>
+        On <strong>this app</strong>, your data means the Road Discovery
+        stuff you have saved.
+      </p>
+      <p>
+        Think of it like a <strong>single-player game save</strong>.
+        It remembers what you have completed.
+      </p>
+    </section>
+
+    <section class="rd222-card">
+      <h3>Road Discovery saves:</h3>
+      ${rd222DataList()}
+      <p class="rd222-plain-meaning">
+        That is your data on this app.
+      </p>
+    </section>
+
+    <section class="rd222-card">
+      <p>
+        Road Discovery is not a messaging or photo-sharing app like
+        Facebook. It does not have a history of your private messages,
+        social posts or personal photos.
+      </p>
+      <p>
+        Here, “data” mainly means your Road Discovery progress—like your
+        saved game.
+      </p>
+    </section>
+
+    <section class="rd222-card rd222-danger-card">
+      <h3>Want to delete it?</h3>
+      <p>
+        First, press <strong>Delete My Account &amp; Data</strong>.
+        This deletes your account and your Road Discovery save.
+      </p>
+      <ul class="rd222-delete-list">
+        <li>No orange-road backup</li>
+        <li>No stats</li>
+        <li>No friends</li>
+        <li>No riddle progress</li>
+        <li>No saved maps</li>
+        <li>No game or leaderboard results</li>
+      </ul>
+      <p><strong>It cannot be restored.</strong></p>
+      <p>
+        Wait until Road Discovery confirms everything has been deleted.
+        Then delete the app from your phone.
+      </p>
+      <p>
+        <strong>Delete the account first. Delete the app second.</strong>
+      </p>
+      <p>
+        Deleting only the app does not delete your online Road Profile.
+      </p>
+      <p>
+        It is like a factory reset for Road Discovery only. It deletes
+        your Road Discovery save without resetting or deleting anything
+        else on your phone.
+      </p>
+      <p class="rd222-payment-note">
+        If you purchased advertising, a basic payment receipt may need to
+        remain for tax and legal records. Your Road Profile and app
+        progress will still be deleted.
+      </p>
+      <div class="rd222-actions">
+        ${accountAction}
+      </div>
+      ${
+        rd222SignedIn()
+          ? ""
+          : `<p class="rd222-status">Sign in before deleting an account.</p>`
+      }
+    </section>
+  `;
+}
+
+
+function rd222RenderConfirm() {
+  return `
+    <section class="rd222-card rd222-danger-card">
+      <h3>Delete everything?</h3>
+      <p>This is permanent.</p>
+      <p>
+        You will lose your account and everything you completed in Road
+        Discovery.
+      </p>
+      <ul class="rd222-delete-list">
+        <li>Your account</li>
+        <li>Your orange-road backup</li>
+        <li>Your stats</li>
+        <li>Your friends</li>
+        <li>Your riddle progress</li>
+        <li>Your saved maps</li>
+        <li>Your game and leaderboard results</li>
+      </ul>
+      <p><strong>There is no undo button.</strong></p>
+      <div class="rd222-actions">
+        <button type="button" data-rd222-action="cancel">
+          No, Keep My Account
+        </button>
+        <button
+          class="danger"
+          type="button"
+          data-rd222-action="delete"
+        >Yes, Delete My Account &amp; Data</button>
+      </div>
+      <p class="rd222-status" role="status">
+        ${escapeHtml(state.rd222DeleteMessage || "")}
+      </p>
+    </section>
+  `;
+}
+
+
+function rd222RenderDeleting() {
+  return `
+    <section class="rd222-working" role="status">
+      <span class="rd222-working-spinner" aria-hidden="true"></span>
+      <h3>Deleting your account…</h3>
+      <p>
+        Keep Road Discovery open. We are deleting your account, orange-road
+        backup, stats, friends, riddles and game progress.
+      </p>
+    </section>
+  `;
+}
+
+
+function rd222RenderSuccess() {
+  return `
+    <section class="rd222-success" role="status">
+      <span class="rd222-success-mark" aria-hidden="true">✓</span>
+      <h3>Account deleted</h3>
+      <p>
+        Your Road Profile and Road Discovery save have been deleted.
+        You are now signed out.
+      </p>
+      <p>
+        If you no longer want Road Discovery, you can now delete the app
+        from your phone.
+      </p>
+      <div class="rd222-actions">
+        <button
+          class="primary"
+          type="button"
+          data-rd222-action="return"
+        >Return to Road Discovery</button>
+      </div>
+    </section>
+  `;
+}
+
+
+function rd222RenderDataPanel() {
+  const content = $("rd222DataContent");
+  if (!content) return;
+
+  if (state.rd222DeleteStage === "confirm") {
+    content.innerHTML = rd222RenderConfirm();
+  } else if (state.rd222DeleteStage === "deleting") {
+    content.innerHTML = rd222RenderDeleting();
+  } else if (state.rd222DeleteStage === "success") {
+    content.innerHTML = rd222RenderSuccess();
+  } else {
+    content.innerHTML = rd222RenderExplain();
+  }
+
+  content.scrollTop = 0;
+  content.parentElement?.scrollTo?.({ top: 0 });
+}
+
+
+function rd222OpenDataPanel() {
+  if (state.rd222DeleteStage !== "success") {
+    state.rd222DeleteStage = "explain";
+    state.rd222DeleteMessage = "";
+  }
+
+  rd222RenderDataPanel();
+  openPanel("rd222DataPanel");
+}
+
+
+function rd222CloseDataPanelOnly() {
+  const panel = $("rd222DataPanel");
+  panel?.classList.add("hidden");
+  panel?.setAttribute("aria-hidden", "true");
+}
+
+
+function rd222ReturnAfterDeletion() {
+  window.location.reload();
+}
+
+
+function rd222HandleBack() {
+  if (state.rd222DeleteStage === "deleting") return;
+
+  if (state.rd222DeleteStage === "confirm") {
+    state.rd222DeleteStage = "explain";
+    state.rd222DeleteMessage = "";
+    rd222RenderDataPanel();
+    return;
+  }
+
+  if (state.rd222DeleteStage === "success") {
+    rd222ReturnAfterDeletion();
+    return;
+  }
+
+  rd222CloseDataPanelOnly();
+  rd73OpenGeneralMenu();
+}
+
+
+function rd222HandleClose() {
+  if (state.rd222DeleteStage === "deleting") return;
+
+  if (state.rd222DeleteStage === "success") {
+    rd222ReturnAfterDeletion();
+    return;
+  }
+
+  closePanels();
+}
+
+
+function rd222OpenRoadProfile() {
+  closePanels();
+  openFriendsPanel();
+
+  if (typeof rd149SetFriendsPanelMode === "function") {
+    rd149SetFriendsPanelMode("account");
+  }
+}
+
+
+function rd222HandleAction(event) {
+  const button = event.target.closest("[data-rd222-action]");
+  if (!button) return;
+
+  const action = button.dataset.rd222Action;
+
+  if (action === "signin") {
+    rd222OpenRoadProfile();
+    return;
+  }
+
+  if (action === "confirm") {
+    if (!rd222SignedIn()) {
+      rd222OpenRoadProfile();
+      return;
+    }
+
+    state.rd222DeleteStage = "confirm";
+    state.rd222DeleteMessage = "";
+    rd222RenderDataPanel();
+    return;
+  }
+
+  if (action === "cancel") {
+    state.rd222DeleteStage = "explain";
+    state.rd222DeleteMessage = "";
+    rd222RenderDataPanel();
+    return;
+  }
+
+  if (action === "delete") {
+    void rd222DeleteAccount();
+    return;
+  }
+
+  if (action === "return") {
+    rd222ReturnAfterDeletion();
+  }
+}
+
+
+async function rd222ReadResponse(response) {
+  try {
+    const payload = await response.json();
+    return payload && typeof payload === "object"
+      ? payload
+      : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+
+function rd222DeleteError(error, status = 0) {
+  if (!navigator.onLine) {
+    return "Connect to the internet, then try again.";
+  }
+
+  if (status === 401 || status === 403) {
+    return "Your sign-in has expired. Sign in again, then try deleting the account.";
+  }
+
+  const message = String(error?.message || "").trim();
+  if (message) return message;
+
+  return "Road Discovery could not delete the account yet. Nothing was deleted. Try again.";
+}
+
+
+function rd222ClearWebStorage(storage) {
+  if (!storage) return;
+
+  const projectReference = (() => {
+    try {
+      return new URL(SUPABASE_URL).hostname.split(".")[0] || "";
+    } catch (_) {
+      return "";
+    }
+  })();
+  const authPrefix = projectReference
+    ? `sb-${projectReference}-auth-token`
+    : "";
+  const remove = [];
+
+  for (let index = 0; index < storage.length; index++) {
+    const key = String(storage.key(index) || "");
+
+    if (
+      key.startsWith("roadDiscovery") ||
+      (authPrefix && key.startsWith(authPrefix))
+    ) {
+      remove.push(key);
+    }
+  }
+
+  for (const key of remove) {
+    storage.removeItem(key);
+  }
+}
+
+
+async function rd222ClearDeviceSave(userId) {
+  const id = String(userId || "");
+
+  if (id && typeof rd150ClearAccount === "function") {
+    await rd150ClearAccount(id);
+  }
+
+  try {
+    rd222ClearWebStorage(window.localStorage);
+  } catch (error) {
+    console.warn("Could not clear Road Discovery local storage", error);
+  }
+
+  try {
+    rd222ClearWebStorage(window.sessionStorage);
+  } catch (error) {
+    console.warn("Could not clear Road Discovery session storage", error);
+  }
+
+  passwordResetRequestMemory.clear();
+
+  if (typeof rd69BlankProgressView === "function") {
+    rd69BlankProgressView();
+  }
+
+  if (typeof rd72ClearAccountView === "function") {
+    rd72ClearAccountView();
+  }
+
+  if (typeof clearFriendData === "function") {
+    clearFriendData();
+  }
+
+  state.rd207TrackedRiddleId = "";
+  state.rd207RiddleSearchLayer?.clearLayers?.();
+
+  if (state.indexedProgress) {
+    state.indexedProgress.activeUserId = "";
+    state.indexedProgress.readyUserId = "";
+  }
+}
+
+
+async function rd222DeleteAccount() {
+  if (state.rd222DeleteStage === "deleting") return;
+
+  if (!rd222SignedIn()) {
+    state.rd222DeleteStage = "explain";
+    state.rd222DeleteMessage = "Sign in before deleting an account.";
+    rd222RenderDataPanel();
+    return;
+  }
+
+  if (state.isRecording || state.watchId !== null) {
+    state.rd222DeleteMessage =
+      "Finish Drive first, then delete the account.";
+    rd222RenderDataPanel();
+    return;
+  }
+
+  if (!navigator.onLine) {
+    state.rd222DeleteMessage =
+      "Connect to the internet, then try again.";
+    rd222RenderDataPanel();
+    return;
+  }
+
+  const userId = String(state.auth.user.id);
+  const accessToken = String(
+    state.auth.session.access_token
+  );
+
+  state.rd222DeleteStage = "deleting";
+  state.rd222DeleteMessage = "";
+  rd222RenderDataPanel();
+
+  try {
+    if (hasActiveMultiplayerRoom()) {
+      try {
+        await leaveMultiplayerRoom({ quiet: true });
+      } catch (error) {
+        console.warn(
+          "Could not leave multiplayer before account deletion",
+          error
+        );
+      }
+    }
+
+    const response = await fetch(
+      RD222_DELETE_ACCOUNT_API,
+      {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "delete_account",
+          confirmation: RD222_DELETE_CONFIRMATION
+        })
+      }
+    );
+    const payload = await rd222ReadResponse(response);
+
+    if (!response.ok || payload.deleted !== true) {
+      const failure = new Error(
+        String(payload.error || "")
+      );
+      failure.status = response.status;
+      throw failure;
+    }
+  } catch (error) {
+    console.error(error);
+    state.rd222DeleteStage = "confirm";
+    state.rd222DeleteMessage = rd222DeleteError(
+      error,
+      Number(error?.status) || 0
+    );
+    rd222RenderDataPanel();
+    return;
+  }
+
+  try {
+    await rd222ClearDeviceSave(userId);
+  } catch (error) {
+    console.warn(
+      "The account was deleted, but local cleanup needs the app to be removed",
+      error
+    );
+  }
+
+  try {
+    await state.auth.client?.auth.signOut({
+      scope: "local"
+    });
+  } catch (error) {
+    console.warn("Local Supabase sign-out was unavailable", error);
+  }
+
+  state.auth.session = null;
+  state.auth.user = null;
+  state.auth.profile = null;
+  state.auth.loading = false;
+  state.auth.submitting = false;
+  state.auth.view = "signin";
+  state.rd222DeleteStage = "success";
+  state.rd222DeleteMessage = "";
+
+  renderAuthState();
+  rd222RenderDataPanel();
+}
+
+
+closePanels = function (hideBackdrop = true) {
+  if (
+    state.rd222DeleteStage === "deleting" &&
+    !$("rd222DataPanel")?.classList.contains("hidden")
+  ) {
+    return;
+  }
+
+  const result = roadDiscoveryV222.closePanels(
+    hideBackdrop
+  );
+  rd222CloseDataPanelOnly();
+  return result;
+};
+
+
+renderAuthState = function () {
+  const result = roadDiscoveryV222.renderAuthState();
+
+  if (
+    $("rd222DataPanel") &&
+    !$("rd222DataPanel").classList.contains("hidden")
+  ) {
+    rd222RenderDataPanel();
+  }
+
+  return result;
+};
+
+
+rd73OpenGeneralMenu = function () {
+  rd222ArrangeMenuButton();
+  return roadDiscoveryV222.openGeneralMenu();
+};
+
+
+function rd222Init() {
+  rd222InstallStyles();
+  rd222CreateMenuButton();
+  rd222CreateDataPanel();
+  rd222ArrangeMenuButton();
+  rd222RenderDataPanel();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    rd222Init,
+    { once: true }
+  );
+} else {
+  rd222Init();
+}
+
+
+document.documentElement.dataset
+  .roadDiscoveryAccountDeletion =
+    "plain-language-server-deletion-local-wipe-v222";
