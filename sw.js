@@ -11,131 +11,16 @@
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v227-drive-view-1";
+  "road-discovery-au-v227-drive-view-2";
 
 const CORE_APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
   "./icon.svg",
-  "./drive-view.js?v=1"
-];
-
-const VERSIONED_APP_FILES = [
   "./style.css?v=68",
   "./app.js?v=227",
-  "./app.js?v=226",
-  "./app.js?v=225",
-  "./app.js?v=224",
-  "./app.js?v=223",
-  "./app.js?v=222",
-  "./app.js?v=221",
-  "./app.js?v=220",
-  "./app.js?v=219",
-  "./app.js?v=218",
-  "./app.js?v=217",
-  "./app.js?v=216",
-  "./app.js?v=215",
-  "./app.js?v=214",
-  "./app.js?v=213",
-  "./app.js?v=212",
-  "./app.js?v=211",
-  "./app.js?v=210",
-  "./app.js?v=209",
-  "./app.js?v=208",
-  "./app.js?v=207",
-  "./app.js?v=202",
-  "./app.js?v=201",
-  "./app.js?v=199",
-  "./app.js?v=198",
-  "./app.js?v=197",
-  "./app.js?v=196",
-  "./app.js?v=195",
-  "./app.js?v=194",
-  "./app.js?v=193",
-  "./app.js?v=192",
-  "./app.js?v=191",
-  "./app.js?v=190",
-  "./app.js?v=189",
-  "./app.js?v=188",
-  "./app.js?v=187",
-  "./app.js?v=186",
-  "./app.js?v=185",
-  "./app.js?v=184",
-  "./app.js?v=183",
-  "./app.js?v=182",
-  "./app.js?v=181",
-  "./app.js?v=180",
-  "./app.js?v=179",
-  "./app.js?v=178",
-  "./app.js?v=177",
-  "./app.js?v=174",
-  "./app.js?v=173",
-  "./app.js?v=172",
-  "./app.js?v=171",
-  "./app.js?v=170",
-  "./app.js?v=169",
-  "./app.js?v=168",
-  "./app.js?v=167",
-  "./app.js?v=166",
-  "./app.js?v=165",
-  "./app.js?v=159",
-  "./app.js?v=158",
-  "./app.js?v=157",
-  "./app.js?v=156",
-  "./app.js?v=155",
-  "./app.js?v=154",
-  "./app.js?v=153",
-  "./app.js?v=152",
-  "./app.js?v=151",
-  "./app.js?v=150",
-  "./app.js?v=149",
-  "./app.js?v=148",
-  "./app.js?v=147",
-  "./style.css?v=67",
-  "./app.js?v=146",
-  "./app.js?v=145",
-  "./app.js?v=144",
-  "./app.js?v=143",
-  "./sponsor-admin.html",
-  "./app.js?v=141",
-  "./app.js?v=140",
-  "./app.js?v=139",
-  "./app.js?v=138",
-  "./app.js?v=137",
-  "./app.js?v=136",
-  "./app.js?v=135",
-  "./app.js?v=134",
-  "./app.js?v=133",
-  "./app.js?v=132",
-  "./app.js?v=131",
-  "./app.js?v=130",
-  "./app.js?v=129",
-  "./app.js?v=128",
-  "./app.js?v=127",
-  "./app.js?v=126",
-  "./app.js?v=125",
-  "./app.js?v=124",
-  "./app.js?v=123",
-  "./style.css?v=66",
-  "./app.js?v=122",
-  "./app.js?v=121",
-  "./app.js?v=120",
-  "./app.js?v=119",
-  "./app.js?v=118",
-  "./app.js?v=117",
-  "./app.js?v=116",
-  "./app.js?v=115",
-  "./app.js?v=114",
-
-  /* Recent deployment fallbacks. */
-  "./app.js?v=113",
-  "./app.js?v=112",
-  "./app.js?v=111",
-  "./app.js?v=110",
-  "./style.css?v=65",
-  "./style.css?v=64",
-  "./style.css?v=63"
+  "./drive-view.js?v=2"
 ];
 
 
@@ -150,20 +35,13 @@ self.addEventListener(
             CORE_APP_SHELL
           );
 
-          await Promise.all(
-            VERSIONED_APP_FILES.map(
-              async (file) => {
-                try {
-                  await cache.add(file);
-                } catch (error) {
-                  console.warn(
-                    `Could not pre-cache ${file}.`,
-                    error
-                  );
-                }
-              }
-            )
-          );
+          // Older URLs remain eligible for the network-first runtime cache.
+          // Preloading every historical query downloads the same app repeatedly.
+          try {
+            await cache.add("./sponsor-admin.html");
+          } catch (error) {
+            console.warn("Could not pre-cache sponsor admin.", error);
+          }
         })
         .then(() =>
           self.skipWaiting()
@@ -184,8 +62,8 @@ self.addEventListener(
             cacheNames
               .filter(
                 (cacheName) =>
-                  cacheName !==
-                    CACHE_NAME
+                  cacheName.startsWith("road-discovery-au-") &&
+                  cacheName !== CACHE_NAME
               )
               .map((cacheName) =>
                 caches.delete(cacheName)
@@ -301,6 +179,9 @@ self.addEventListener(
 
           if (exact) return exact;
 
+          if (url.pathname.endsWith("/drive-view.js")) {
+            return (await caches.match("./drive-view.js?v=2")) || Response.error();
+          }
 
           if (
             url.pathname.endsWith(
@@ -826,11 +707,8 @@ self.addEventListener(
               "/style.css"
             )
           ) {
-            return (
-                  await caches.match(
-                    "./style.css?v=67"
-                  )
-                ) ||
+            return (await caches.match("./style.css?v=68")) ||
+                (await caches.match("./style.css?v=67")) ||
                 (
                   await caches.match(
                     "./style.css?v=66"
