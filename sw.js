@@ -11,13 +11,14 @@
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v227";
+  "road-discovery-au-v227-drive-view-1";
 
 const CORE_APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icon.svg"
+  "./icon.svg",
+  "./drive-view.js?v=1"
 ];
 
 const VERSIONED_APP_FILES = [
