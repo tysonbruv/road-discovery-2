@@ -238,3 +238,108 @@
   }
   document.addEventListener("DOMContentLoaded", installDriveView, {once: true});
 })();
+
+/* Personal location marker, shared by the flat map and the driving view. */
+document.addEventListener("DOMContentLoaded", function installIndicatorColours() {
+  const anchor = document.getElementById("locationMarkerForcedNote");
+  if (!anchor || document.getElementById("rdIndicatorColourSetting")) return;
+
+  const storageKey = "roadDiscoveryAU.indicatorColour.v1";
+  const saved = readJson(storageKey, null);
+  const valid = typeof saved?.colour === "string" && rd71ValidTrailColourKey(saved.colour);
+  let enabled = valid && saved.enabled === true;
+  let key = valid ? saved.colour : "lime";
+  let tint;
+  let halo;
+
+  // The existing app assigns marker colours to players, teams and spectators.
+  // Outside those modes the same hooks style our position dot and heading arrow.
+  const originalColour = hs50OwnMarkerColour;
+  const originalHalo = hs50OwnMarkerHaloColour;
+  function usePersonalColour() {
+    return enabled && !hasActiveHideSeekRound() && !hasActiveConquestRound() &&
+      !rd89IsRallyPhase() && !(state.conquest.viewerIsSpectator && rd87IsCustomConquest());
+  }
+  hs50OwnMarkerColour = () => usePersonalColour() ? tint : originalColour();
+  hs50OwnMarkerHaloColour = () => usePersonalColour() ? halo : originalHalo();
+
+  const style = document.createElement("style");
+  style.textContent = `
+    #rdIndicatorColourSetting { margin: 10px 0; }
+    #rdIndicatorColourGrid { margin-top: 8px; }
+    #rdIndicatorColourGrid[hidden] { display: none; }
+    #rdIndicatorColourGrid .selected::after { content: "✓"; margin-left: auto; font-weight: 800; }
+    #rdIndicatorColourToggle:focus-visible + .toggle-switch { outline: 2px solid currentColor; outline-offset: 3px; }
+    #map.rd-indicator-colour .road-user-combined-arrow {
+      filter: drop-shadow(0 0 1px #eef7ff) drop-shadow(0 0 5px var(--road-marker-halo));
+    }
+    #map.rd-indicator-colour .road-user-combined-dot {
+      box-shadow: 0 0 0 2px rgba(5,7,10,.25), 0 0 10px var(--road-marker-halo);
+    }
+  `;
+  document.head.append(style);
+
+  const setting = document.createElement("div");
+  setting.id = "rdIndicatorColourSetting";
+  setting.innerHTML = `
+    <label class="toggle-row" for="rdIndicatorColourToggle">
+      <span class="toggle-text">
+        <strong id="rdIndicatorColourLabel">Indicator colour</strong>
+        <span id="rdIndicatorColourValue"></span>
+      </span>
+      <input id="rdIndicatorColourToggle" class="toggle-input" type="checkbox"
+        aria-labelledby="rdIndicatorColourLabel" aria-describedby="rdIndicatorColourValue"
+        aria-controls="rdIndicatorColourGrid">
+      <span class="toggle-switch" aria-hidden="true"><span class="toggle-knob"></span></span>
+    </label>
+    <div id="rdIndicatorColourGrid" class="trail-colour-grid" role="group" aria-label="Choose indicator colour" hidden></div>
+  `;
+  anchor.after(setting);
+  const toggle = document.getElementById("rdIndicatorColourToggle");
+  const label = document.getElementById("rdIndicatorColourValue");
+  const grid = document.getElementById("rdIndicatorColourGrid");
+  for (const [value, colour] of Object.entries(RD71_TRAIL_COLOURS)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "trail-colour-choice";
+    button.dataset.indicatorColour = value;
+    button.style.setProperty("--trail-choice-colour", colour.trail);
+    button.innerHTML = '<span class="trail-colour-swatch" aria-hidden="true"></span>' +
+      '<span class="trail-colour-label"></span>';
+    button.lastElementChild.textContent = colour.label;
+    grid.append(button);
+  }
+
+  function update() {
+    const colour = RD71_TRAIL_COLOURS[key];
+    tint = colour.trail;
+    halo = tint + "3d"; // 24% opacity, matching the standard marker halo.
+    toggle.checked = enabled;
+    grid.hidden = !enabled;
+    label.textContent = enabled ? colour.label : "Default blue";
+    for (const button of grid.children) {
+      const selected = button.dataset.indicatorColour === key;
+      button.classList.toggle("selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    }
+    document.getElementById("map")?.classList.toggle("rd-indicator-colour", enabled);
+    applyHideSeekOwnMarkerStyle();
+  }
+
+  function save() {
+    writeJson(storageKey, {enabled, colour: key});
+    update();
+  }
+
+  toggle.addEventListener("change", () => {
+    enabled = toggle.checked;
+    save();
+  });
+  grid.addEventListener("click", (event) => {
+    const value = event.target.closest("button[data-indicator-colour]")?.dataset.indicatorColour;
+    if (!enabled || !rd71ValidTrailColourKey(value) || value === key) return;
+    key = value;
+    save();
+  });
+  update();
+}, {once: true});
