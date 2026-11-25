@@ -11,7 +11,7 @@
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v227-drive-view-4";
+  "road-discovery-au-v227-offline1";
 
 const CORE_APP_SHELL = [
   "./",
@@ -19,7 +19,7 @@ const CORE_APP_SHELL = [
   "./manifest.json",
   "./icon.svg",
   "./style.css?v=68",
-  "./app.js?v=227",
+  "./app.js?v=227-offline1",
   "./drive-view.js?v=4"
 ];
 
@@ -190,7 +190,7 @@ self.addEventListener(
           ) {
             return (
               await caches.match(
-                "./app.js?v=227"
+                "./app.js?v=227-offline1"
               )
             ) ||
               (
