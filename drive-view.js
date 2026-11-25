@@ -67,7 +67,72 @@
     let headingFrame = 0;
     let lastWidth = 0;
     let lastHeight = 0;
+    let gpsWatch = null;
+    let followFrame = 0;
+    let followPoint = null;
+    let lastFollowPoint = null;
     const savedPadding = new Map();
+
+    // Sensor headings change the camera angle. GPS fixes move its centre.
+    const originalUpdateMarker = updateUserMarker;
+    updateUserMarker = function (point) {
+      const result = originalUpdateMarker(point);
+      if (pitched && Number.isFinite(point?.lat) && Number.isFinite(point?.lng)) {
+        state.followUser = true;
+        if (!lastFollowPoint || point.lat !== lastFollowPoint.lat || point.lng !== lastFollowPoint.lng) {
+          followPoint = {lat: point.lat, lng: point.lng};
+          if (!followFrame && !document.hidden) followFrame = requestAnimationFrame(followPosition);
+        }
+      }
+      return result;
+    };
+
+    function followPosition() {
+      followFrame = 0;
+      if (!pitched || document.hidden || !followPoint) return;
+      lastFollowPoint = followPoint;
+      map.panTo([followPoint.lat, followPoint.lng], {animate: false});
+    }
+
+    function syncGpsWatch() {
+      const appWatching = state.watchId != null || state.multiplayer?.watchId != null;
+      const needsWatch = pitched && !document.hidden && !appWatching && navigator.geolocation;
+      if (!needsWatch && gpsWatch !== null) {
+        navigator.geolocation.clearWatch(gpsWatch);
+        gpsWatch = null;
+      }
+      if (!needsWatch || gpsWatch !== null) return;
+      gpsWatch = navigator.geolocation.watchPosition((position) => {
+        if (!pitched || document.hidden || state.watchId != null || state.multiplayer?.watchId != null) return;
+        const point = positionToPoint(position);
+        if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
+        state.currentPoint = point;
+        updateUserMarker(point);
+      }, (error) => {
+        if (!pitched || document.hidden) return;
+        if (error.code === 1) {
+          showToast("Allow location access to follow your position in 3D");
+        } else {
+          showToast("Waiting for GPS to follow your position");
+        }
+      }, {enableHighAccuracy: true, maximumAge: 1000, timeout: 10000});
+    }
+
+    // Drive and multiplayer watches take over GPS when they start. Defer this
+    // check until nested start/stop calls have completed their state changes.
+    function watchTransition(original) {
+      return function (...args) {
+        try {
+          return original.apply(this, args);
+        } finally {
+          queueMicrotask(syncGpsWatch);
+        }
+      };
+    }
+    beginGpsWatch = watchTransition(beginGpsWatch);
+    stopGpsWatch = watchTransition(stopGpsWatch);
+    startMultiplayerLocationWatch = watchTransition(startMultiplayerLocationWatch);
+    stopMultiplayerLocationWatch = watchTransition(stopMultiplayerLocationWatch);
     // Reuse the app's compass/GPS heading even during a parked preview.
     const navigationActive = hs47NavigationIsActive;
     hs47NavigationIsActive = () => pitched || navigationActive();
@@ -174,6 +239,9 @@
         }
       } else {
         zoom = flatZoom;
+        cancelAnimationFrame(followFrame);
+        followFrame = 0;
+        followPoint = lastFollowPoint = null;
         cancelAnimationFrame(headingFrame);
         headingFrame = 0;
         plane.style.transform = originalTransform;
@@ -181,6 +249,7 @@
         savedPadding.clear();
       }
       pitched = enabled;
+      syncGpsWatch();
       lens.classList.toggle("rd-pitched", enabled);
       north.classList.toggle("rd-pitched-north", enabled);
       browse.hidden = !enabled;
@@ -226,10 +295,18 @@
     window.addEventListener("resize", onLayout);
     phone.addEventListener("change", onLayout);
     document.addEventListener("visibilitychange", () => {
+      syncGpsWatch();
       if (document.hidden) {
+        cancelAnimationFrame(followFrame);
+        followFrame = 0;
         cancelAnimationFrame(headingFrame);
         headingFrame = 0;
       } else if (pitched) {
+        const point = state.currentPoint;
+        if (Number.isFinite(point?.lat) && Number.isFinite(point?.lng)) {
+          followPoint = {lat: point.lat, lng: point.lng};
+          if (!followFrame) followFrame = requestAnimationFrame(followPosition);
+        }
         hs48ApplySelectedHeading();
         if (!headingFrame) headingFrame = requestAnimationFrame(paintBearing);
       }
