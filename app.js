@@ -4851,19 +4851,9 @@ async function startDrive() {
     rd169FormatGpsAccuracy(point.accuracy)
   );
 
-  const roadsReady = await ensureRoadsNearPoint(point, {
-    replaceIfFar: true,
-    quiet: false
-  });
-
-  if (!roadsReady || state.roadSegments.length === 0) {
-    setDriveButtons("idle");
-    setDriveStatus("Roads did not load");
-    showToast("Could not load nearby roads. Check reception and try again");
-    return;
-  }
-
+  await roadRecorder.waitRoads(() => ensureRoadsNearPoint(point, {replaceIfFar:true, quiet:false}));
   beginGpsWatch();
+  roadRecorder.begin(point);
 }
 
 function beginGpsWatch() {
@@ -4907,6 +4897,7 @@ function finishDrive() {
 
   setDriveButtons("idle");
 
+  roadRecorder.finish();
   const travelledKm = metersToKm(state.tripDistanceM);
   const discoveredKm = sumTripUnlockedKm().toFixed(2);
   const unlocked = state.tripUnlocked.size.toLocaleString("en-AU");
@@ -5003,6 +4994,7 @@ function resetTripState() {
 
 function onGpsPosition(position) {
   const point = positionToPoint(position);
+  if (!roadRecorder.record(point)) return;
 
     state.currentPoint = point;
 
@@ -5236,7 +5228,7 @@ function loadRoads(lat, lng, radiusM, options = {}) {
   return state.roadLoadPromise;
 }
 
-function buildSegmentsFromWays(ways) {
+function buildSegmentsFromWays(ways, collect) {
   for (const way of ways) {
     if (!Array.isArray(way.geometry) || way.geometry.length < 2) {
       continue;
@@ -5268,11 +5260,11 @@ function buildSegmentsFromWays(ways) {
 
         const id = `${way.id}:${i}:${pieceIndex}:${SEGMENT_SIZE_M}`;
 
-        if (state.roadSegmentIds.has(id)) {
+        if (!collect && state.roadSegmentIds.has(id)) {
           continue;
         }
 
-        state.roadSegmentIds.add(id);
+        if (!collect) state.roadSegmentIds.add(id);
 
         const segment = {
           id,
@@ -5290,6 +5282,7 @@ function buildSegmentsFromWays(ways) {
           layer: null
         };
 
+        if (collect) { collect(segment); continue; }
         state.roadSegments.push(segment);
 
         if (segment.visited) {
@@ -56283,6 +56276,7 @@ async function rd150ClearAccount(userId) {
   if (!id) return;
 
   rd150AdvanceUserGeneration(id);
+  roadRecorder.clearAccount(id);
   state.indexedProgress.pendingSegmentsByUser.delete(id);
   state.indexedProgress.pendingDailyByUser.delete(id);
   state.indexedProgress.visitedOnlyByUser.delete(id);
@@ -62266,6 +62260,7 @@ loadRoads = function (
             LOAD_RADIUS_M
         );
 
+      roadRecorder.roadResult(ways.length > 0);
       if (ways.length === 0) {
         state.rd179LastRoadLoadFailed =
           true;
@@ -75723,3 +75718,205 @@ document.documentElement.dataset
 document.documentElement.dataset
   .roadDiscoveryDaylightAppearanceLock =
     "truly-dark-and-road-brightness-disabled-v227";
+
+const roadRecorder = (function offlineRecorder(){
+  const prefix = "roadDiscoveryAU.pendingDrive.v1/";
+  let trip = "", lastFix = null, lastGoodAt = 0, gapMs = 0, offline = false;
+  let lost = false, storeFailed = false, busy = false, recoveryText = "", summary = "";
+  let chunkKey = "", chunk = [], serial = 0, lastAttempt = new Map();
+  const owner = () => {
+    const id = state.accountProgress.activeUserId;
+    return id && id === state.auth.user?.id ? String(id) : "";
+  };
+  const namespace = id => prefix + encodeURIComponent(id) + "/";
+  const keysFor = id => Object.keys(localStorage).filter(k => k.startsWith(namespace(id))).sort();
+  function ui(){
+    const badge = document.getElementById("rdOfflineRec");
+    if(!badge) return;
+    badge.hidden = !(state.isRecording && offline && !lost && !storeFailed);
+    document.getElementById("rdGpsLost").hidden = !(state.isRecording && lost);
+    const text = storeFailed ? "Phone storage unavailable · GPS trail may be incomplete" : recoveryText || summary;
+    const note = document.getElementById("rdRoadRecovery");
+    if(note.textContent !== text) note.textContent = text;
+    note.hidden = !text;
+  }
+  function installHud(){
+    const hud = document.getElementById("topHud");
+    const accuracy = document.getElementById("accuracyStatus");
+    if(!hud || !accuracy) return;
+    const row = document.createElement("div");
+    row.className="rd-drive-signals";
+    accuracy.before(row);
+    row.append(document.getElementById("gpsStatus"),accuracy);
+    const badge=document.createElement("span");badge.id="rdOfflineRec";badge.textContent="Offline Rec";row.append(badge);
+    const note=document.createElement("div");note.id="rdRoadRecovery";note.setAttribute("role","status");hud.append(note);
+    const warning=document.createElement("div");warning.id="rdGpsLost";warning.setAttribute("role","alert");
+    warning.innerHTML="<strong>GPS LOST</strong><span>Recording paused. It will resume when GPS returns.</span>";
+    document.body.append(warning);
+    const style=document.createElement("style");
+    style.textContent=`#topHud .brand-row{display:none!important}#topHud .stats-bar{margin-top:0}
+.rd-drive-signals{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:5px}
+#topHud .rd-drive-signals>*{position:static;margin:0}#rdOfflineRec,#rdRoadRecovery{border-radius:14px;padding:5px 10px;font:700 12px system-ui}
+#rdOfflineRec{background:#ff921f;color:#211002}#rdRoadRecovery{background:#171a1f;color:white;width:fit-content}
+#rdGpsLost{position:fixed;z-index:1300;top:42%;left:50%;transform:translateX(-50%);width:min(80vw,440px);padding:18px;border-radius:16px;text-align:center;color:white;background:#581917f2;pointer-events:none}
+#rdGpsLost strong,#rdGpsLost span{display:block}#rdGpsLost strong{font:900 clamp(30px,9vw,55px) system-ui}
+#rdOfflineRec[hidden],#rdGpsLost[hidden],#rdRoadRecovery[hidden]{display:none!important}`;
+    document.head.append(style);ui();
+  }
+  function seal(){chunkKey="";chunk=[]}
+  function begin(point){
+    trip=globalThis.crypto.randomUUID();lastFix=null;lastGoodAt=Date.now();gapMs=0;lost=false;
+    summary="";recoveryText="";storeFailed=false;seal();record(point);ui();
+  }
+  function markGap(now){
+    if(trip && now-lastGoodAt>=15000 && !lost){
+      lost=true;lastFix=null;state.lastPoint=null;seal();ui();
+    }
+  }
+  function record(p){
+    if(!trip)return true;
+    const now=Date.now();markGap(now);
+    if(!p || !Number.isFinite(p.lat)||!Number.isFinite(p.lng)||!Number.isFinite(p.accuracy)||
+      p.accuracy>MAX_GPS_ACCURACY_M || Math.abs(now-p.timestamp)>15000){ if(lost)state.lastPoint=null; return false; }
+    if(lastFix && p.timestamp<=lastFix.t)return false;
+    if(lost){gapMs+=now-lastGoodAt;lastFix=null;state.lastPoint=null}
+    lastGoodAt=now;lost=false;
+    const id=owner();if(!id){storeFailed=true;ui();return true}
+    const entry={lat:p.lat,lng:p.lng,t:p.timestamp,a:p.accuracy};
+    if(lastFix && haversine(lastFix,entry)<3 && entry.t-lastFix.t<5000){ui();return true}
+    const previous=lastFix;lastFix=entry;
+    if(!chunkKey || chunk.length>=32 || !chunkKey.startsWith(namespace(id))){
+      seal();chunkKey=namespace(id)+trip+"/"+String(++serial).padStart(8,"0");
+    }
+    const continuous=previous && entry.t>previous.t && entry.t-previous.t<15000 &&
+      haversine(previous,entry)<Math.min(150,(entry.t-previous.t)*0.065+8);
+    chunk.push({p:entry,from:continuous?previous:null});
+    try{localStorage.setItem(chunkKey,JSON.stringify(chunk));storeFailed=false}
+    catch{storeFailed=true}
+    ui();return true;
+  }
+  async function waitRoads(load){
+    const started=Date.now();
+    let timer;
+    const deadline=new Promise(resolve=>{timer=setTimeout(()=>resolve(false),30000)});
+    try{
+      const attempt=Promise.resolve().then(load).catch(()=>false);
+      const ready=await Promise.race([attempt,deadline]);
+      if(!ready && Date.now()-started<30000)await deadline;
+      offline=!ready;
+      return !!ready;
+    }finally{clearTimeout(timer)}
+  }
+  function finish(){
+    if(!trip)return;
+    const id=owner(), tripPrefix=namespace(id)+trip+"/";
+    const pending=keysFor(id).some(k=>k.startsWith(tripPrefix));
+    if(lost)gapMs+=Date.now()-lastGoodAt;
+    summary=pending?"Drive saved on this phone · Checking roads from this drive":"Drive saved on this phone";
+    if(gapMs)summary+=" · GPS signal lost for "+Math.round(gapMs/1000)+" s. Gap left in trail.";
+    if(storeFailed)summary="Drive finished · Some GPS points could not be saved";
+    trip="";lastFix=null;seal();lost=false;offline=false;ui();void recover();
+  }
+  function direction(a,b){
+    return Math.atan2((b.lng-a.lng)*Math.cos(a.lat*Math.PI/180),b.lat-a.lat);
+  }
+  function matched(sample,roads){
+    const {p,from}=sample, span=from?haversine(from,p):0;
+    const steps=Math.max(1,Math.ceil(span/10)), found=new Map();
+    for(let i=1;i<=steps;i++){
+      const q=from?interpolate(from,p,i/steps):p;
+      const choices=[];
+      for(const s of roads){
+        const d=pointToSegmentDistance(q,s.coords[0],s.coords[1]);
+        if(d>Math.min(50,Math.max(UNLOCK_RADIUS_M,p.a+10)))continue;
+        const a={lat:s.coords[0][0],lng:s.coords[0][1]},b={lat:s.coords[1][0],lng:s.coords[1][1]};
+        const diff=span>=6?Math.acos(Math.min(1,Math.abs(Math.cos(direction(from,p)-direction(a,b))))):0;
+        if(diff>1.05)continue;
+        choices.push({s,score:d+diff*14});
+      }
+      choices.sort((a,b)=>a.score-b.score);
+      const best=choices[0];if(!best)continue;
+      if(choices.some(v=>v.s.id.split(":")[0]!==best.s.id.split(":")[0] && v.score-best.score<3))continue;
+      found.set(best.s.id,best.s);
+    }
+    return [...found.values()];
+  }
+  async function recover(){
+    const id=owner();if(!id || busy || storeFailed || document.hidden || !navigator.onLine)return;
+    const now=Date.now();let key;
+    try{key=keysFor(id).find(k=>k!==chunkKey && (lastAttempt.get(k)||0)<=now)}catch{return}
+    if(!key)return;
+    busy=true;lastAttempt.set(key,now+60000);
+    const generation=rd150UserGeneration(id);
+    const valid=()=>owner()===id && rd150UserGeneration(id)===generation && localStorage.getItem(key)!==null;
+    let more=false;
+    recoveryText="Checking saved GPS trail…";ui();
+    try{
+      const batch=JSON.parse(localStorage.getItem(key));if(!batch?.length)return;
+      const center=batch[0].p;
+      const nearby=batch.filter(v=>haversine(center,v.p)<=1100);
+      const radius=Math.ceil(Math.max(...nearby.map(v=>haversine(center,v.p)))+220);
+      let roads;
+      if(state.lastRoadLoadCenter && haversine(center,state.lastRoadLoadCenter)+radius<LOAD_RADIUS_M && state.roadSegments.length){
+        roads=state.roadSegments.filter(s=>pointToSegmentDistance(center,s.coords[0],s.coords[1])<=radius);
+      }else{
+        const ways=await fetchRecoveryWays(center,radius);
+        if(!ways.length || !valid())return;
+        roads=[];buildSegmentsFromWays(ways,s=>roads.push(s));
+      }
+      if(!valid())return;
+      const done=new Set();let added=0;
+      for(const sample of nearby){
+        const hits=matched(sample,roads);if(!hits.length)continue;
+        for(const seg of hits){
+          if(state.savedSegmentIds.has(seg.id))continue;
+          state.visited[seg.id]=sample.p.t;
+          if(new Date(sample.p.t).toDateString()===new Date().toDateString()){
+            state.todayUnlocks.keys[seg.id]=Math.max(1,Math.round(seg.lengthM));
+          }
+          rememberSavedSegment(seg,false);
+          if(trip && key.startsWith(namespace(id)+trip+"/"))state.tripUnlocked.add(seg.id);
+          const live=state.roadSegments.find(s=>s.id===seg.id);
+          if(live){live.visited=true;styleSegment(live)}
+          added++;
+        }
+        done.add(sample);
+      }
+      if(!done.size || !await rd150FlushUser(id) || !valid())return;
+      // A scheduled write can race our flush. Recheck the per-account barrier.
+      if(!await rd150FlushUser(id) || !valid())return;
+      const left=batch.filter(v=>!done.has(v));
+      if(left.length){localStorage.setItem(key,JSON.stringify(left));lastAttempt.set(key,now+300000)}
+      else{localStorage.removeItem(key);lastAttempt.delete(key)}
+      if(added){renderAllStats();rd65ScheduleBackup();void maybeSyncProfileStats({quiet:true});showToast("Recovered "+added+" road segments")}
+      if(!trip){
+        summary=keysFor(id).length?"Drive saved · Some roads are waiting to be matched":"Drive saved · Road matching complete";
+        if(gapMs)summary+=" · GPS gap "+Math.round(gapMs/1000)+" s";
+      }
+      more=true;
+    }catch(error){console.warn("Road recovery will retry",error)}
+    finally{busy=false;recoveryText="";ui();if(more)setTimeout(recover,1500)}
+  }
+  async function fetchRecoveryWays(center,radius){
+    for(const index of rd179RoadServerOrder()){
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),23000);
+      try{
+        const response=await fetch(RD179_OVERPASS_ENDPOINTS[index],{method:"POST",body:new URLSearchParams({data:rd179RoadQuery(center.lat,center.lng,radius)}),signal:controller.signal});
+        if(response.ok){
+          const ways=rd179UsableRoadWays(await response.json());
+          if(ways.length)return ways;
+        }
+      }catch{}finally{clearTimeout(timer)}
+    }
+    return [];
+  }
+  function roadResult(ok){offline=!ok;if(trip){if(ok && !storeFailed)seal();ui()}}
+  function clearAccount(id){for(const key of keysFor(id))localStorage.removeItem(key);seal()}
+  document.addEventListener("DOMContentLoaded",installHud,{once:true});
+  window.addEventListener("online",recover);
+  window.addEventListener("offline",()=>roadResult(false));
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden){markGap(Date.now());void recover()}});
+  setInterval(()=>{if(trip)markGap(Date.now())},1000);
+  setInterval(()=>{void recover()},20000);
+  return {begin,finish,record,waitRoads,roadResult,clearAccount};
+})();
