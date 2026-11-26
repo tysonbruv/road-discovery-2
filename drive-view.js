@@ -61,6 +61,7 @@
     shell.append(browse, button);
 
     let pitched = false;
+    let trackingFollow = false;
     let flatZoom = 0;
     let originalTransform = "";
     let targetBearing = 0;
@@ -78,8 +79,8 @@
     const originalUpdateMarker = updateUserMarker;
     updateUserMarker = function (point) {
       const result = originalUpdateMarker(point);
-      if (pitched && Number.isFinite(point?.lat) && Number.isFinite(point?.lng)) {
-        state.followUser = true;
+      if ((pitched || state.followUser) && Number.isFinite(point?.lat) && Number.isFinite(point?.lng)) {
+        if (pitched) state.followUser = true;
         if (!lastFollowPoint || point.lat !== lastFollowPoint.lat || point.lng !== lastFollowPoint.lng) {
           followPoint = {lat: point.lat, lng: point.lng};
           if (!followFrame && !document.hidden) followFrame = requestAnimationFrame(followPosition);
@@ -90,29 +91,29 @@
 
     function followPosition() {
       followFrame = 0;
-      if (!pitched || document.hidden || !followPoint) return;
+      if ((!pitched && !state.followUser) || document.hidden || !followPoint) return;
       lastFollowPoint = followPoint;
       map.panTo([followPoint.lat, followPoint.lng], {animate: false});
     }
 
     function syncGpsWatch() {
       const appWatching = state.watchId != null || state.multiplayer?.watchId != null;
-      const needsWatch = pitched && !document.hidden && !appWatching && navigator.geolocation;
+      const needsWatch = trackingFollow && state.followUser && !document.hidden && !appWatching && navigator.geolocation;
       if (!needsWatch && gpsWatch !== null) {
         navigator.geolocation.clearWatch(gpsWatch);
         gpsWatch = null;
       }
       if (!needsWatch || gpsWatch !== null) return;
       gpsWatch = navigator.geolocation.watchPosition((position) => {
-        if (!pitched || document.hidden || state.watchId != null || state.multiplayer?.watchId != null) return;
+        if (!trackingFollow || !state.followUser || document.hidden || state.watchId != null || state.multiplayer?.watchId != null) return;
         const point = positionToPoint(position);
         if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
         state.currentPoint = point;
         updateUserMarker(point);
       }, (error) => {
-        if (!pitched || document.hidden) return;
+        if (!trackingFollow || !state.followUser || document.hidden) return;
         if (error.code === 1) {
-          showToast("Allow location access to follow your position in 3D");
+          showToast("Allow location access to follow your position");
         } else {
           showToast("Waiting for GPS to follow your position");
         }
@@ -134,9 +135,23 @@
     stopGpsWatch = watchTransition(stopGpsWatch);
     startMultiplayerLocationWatch = watchTransition(startMultiplayerLocationWatch);
     stopMultiplayerLocationWatch = watchTransition(stopMultiplayerLocationWatch);
+    const originalLocate = locateUser;
+    locateUser = async function (...args) {
+      const result = await originalLocate.apply(this, args);
+      trackingFollow = Boolean(state.followUser);
+      syncGpsWatch();
+      return result;
+    };
+    map.on("dragstart", () => {
+      state.followUser = false;
+      cancelAnimationFrame(followFrame);
+      followFrame = 0;
+      followPoint = lastFollowPoint = null;
+      syncGpsWatch();
+    });
     // Reuse the app's compass/GPS heading even during a parked preview.
     const navigationActive = hs47NavigationIsActive;
-    hs47NavigationIsActive = () => pitched || navigationActive();
+    hs47NavigationIsActive = () => pitched || (trackingFollow && state.followUser) || navigationActive();
 
     // A sensor turn rotates the already-drawn map. Leave Leaflet's projection
     // north-up for the whole 3D session, including its GPS and waypoint layers.
@@ -225,6 +240,8 @@
       const centre = enabled && hasPosition ? [current.lat, current.lng] : map.getCenter();
       let zoom;
       if (enabled) {
+        trackingFollow = true;
+        state.followUser = true;
         flatZoom = map.getZoom();
         zoom = Math.max(map.getMinZoom(), (hasPosition ? Math.max(16, flatZoom) : flatZoom) - 1);
         originalTransform = plane.style.transform;
@@ -286,9 +303,16 @@
     button.addEventListener("click", () => setPitch(!pitched));
     // Leaflet expects a flat hit plane for dragging and selecting waypoints.
     // A tap on the driving view returns the rider to the interactive 2D map.
-    browse.addEventListener("click", () => setPitch(false));
+    browse.addEventListener("click", () => {
+      state.followUser = false;
+      setPitch(false);
+    });
     north.addEventListener("click", () => setPitch(false, true), true);
-    document.getElementById("setWaypointBtn")?.addEventListener("click", () => setPitch(false), true);
+    document.getElementById("setWaypointBtn")?.addEventListener("click", () => {
+      state.followUser = false;
+      setPitch(false);
+      syncGpsWatch();
+    }, true);
     if (window.ResizeObserver) {
       const observer = new ResizeObserver(onLayout);
       observer.observe(shell);
@@ -303,7 +327,7 @@
         followFrame = 0;
         cancelAnimationFrame(headingFrame);
         headingFrame = 0;
-      } else if (pitched) {
+      } else if (pitched || state.followUser) {
         const point = state.currentPoint;
         if (Number.isFinite(point?.lat) && Number.isFinite(point?.lng)) {
           followPoint = {lat: point.lat, lng: point.lng};
@@ -529,7 +553,7 @@ document.addEventListener("DOMContentLoaded", function installSmoothFollow() {
 
 document.addEventListener("DOMContentLoaded", function installUpdateNotes() {
   // Increase this number and edit the list for each public release.
-  const release = 2026112601;
+  const release = 2026112602;
   const metadataKey = "road_discovery_update_seen";
   const prefix = "roadDiscoveryAU.updateSeen.v1/";
   const acknowledged = new Map();
@@ -544,6 +568,7 @@ document.addEventListener("DOMContentLoaded", function installUpdateNotes() {
   dialog.innerHTML = `
     <h2 id="rdUpdateTitle">What’s new</h2>
     <ul id="rdUpdateList">
+      <li>Restored location following when switching from 3D back to 2D.</li>
       <li>Smoother map and location-indicator movement.</li>
       <li>Smoother turns in the 3D driving view.</li>
       <li>Offline recording after a 30-second road-loading wait when GPS is available.</li>
