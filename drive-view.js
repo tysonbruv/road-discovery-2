@@ -33,6 +33,7 @@
         position: absolute; inset: auto; transform-origin: center;
         left: calc(50% - var(--rd-map-half)); top: calc(var(--rd-horizon-depth) - var(--rd-map-half));
         width: var(--rd-side); height: var(--rd-side);
+        transition: transform 160ms linear;
       }
       #rdDriveLens.rd-pitched .road-user-combined { transform: scale(var(--rd-marker-scale)); }
       #rdDriveLens.rd-pitched .road-user-combined-heading { transition: none; }
@@ -152,7 +153,8 @@
       if (!pitched || document.hidden) return;
       if (paintedBearing !== null &&
           Math.abs(hs47ShortestBearingTurn(paintedBearing, targetBearing)) < 0.75) return;
-      paintedBearing = targetBearing;
+      paintedBearing = paintedBearing === null ? targetBearing :
+        paintedBearing + hs47ShortestBearingTurn(paintedBearing, targetBearing);
       plane.style.transform = "rotate(" + paintedBearing + "deg)";
       north.style.setProperty("--rd-camera-bearing", paintedBearing + "deg");
     }
@@ -419,4 +421,106 @@ document.addEventListener("DOMContentLoaded", function installIndicatorColours()
     save();
   });
   update();
+}, {once: true});
+
+document.addEventListener("DOMContentLoaded", function installSmoothFollow() {
+  const map = state.map;
+  if (!map || map.rdSmoothFollow) return;
+  map.rdSmoothFollow = true;
+  const originalPan = map.panTo.bind(map);
+  const nativePan = state.hs50OriginalPanTo || originalPan;
+  const originalDraw = hs47DrawHeadingMarker;
+  let target = null;
+  let lastFixAt = 0;
+  let duration = 800;
+  let markerFrame = 0;
+  let panTarget = null;
+  let panZoom = null;
+
+  function following() {
+    return state.followUser && hs47NavigationIsActive() && !document.hidden;
+  }
+
+  function cancelMotion() {
+    cancelAnimationFrame(markerFrame);
+    markerFrame = 0;
+    panTarget = null;
+    map.stop();
+  }
+
+  map.panTo = function (point, options = {}) {
+    if (!following()) return originalPan(point, options);
+    const next = L.latLng(point);
+    const zoom = map.getZoom();
+    if (panTarget && panZoom === zoom && panTarget.equals(next)) return map;
+    panTarget = next;
+    panZoom = zoom;
+    const distance = map.getCenter().distanceTo(next);
+    const fresh = performance.now() - lastFixAt < 3000;
+    return nativePan(next, {
+      ...options,
+      animate: fresh && distance < 150,
+      duration: duration / 1000,
+      easeLinearity: 1
+    });
+  };
+
+  hs47DrawHeadingMarker = function (point) {
+    if (!Number.isFinite(point?.lat) || !Number.isFinite(point?.lng)) return originalDraw(point);
+    const next = L.latLng(point.lat, point.lng);
+    if (!following()) {
+      cancelAnimationFrame(markerFrame);
+      markerFrame = 0;
+      target = next;
+      lastFixAt = 0;
+      return originalDraw(point);
+    }
+    if (target?.equals(next) && state.userHeadingMarker) {
+      hs47StyleHeadingMarker();
+      return;
+    }
+    const now = performance.now();
+    const elapsed = lastFixAt ? now - lastFixAt : Infinity;
+    duration = Math.min(1000, Math.max(250, elapsed * 0.9));
+    lastFixAt = now;
+    target = next;
+    const marker = state.userHeadingMarker;
+    const from = marker?.getLatLng();
+    cancelAnimationFrame(markerFrame);
+    markerFrame = 0;
+    if (!marker || !from || elapsed > 3000 || from.distanceTo(next) > 150 ||
+        Number(point.accuracy) > MAX_GPS_ACCURACY_M) {
+      return originalDraw(point);
+    }
+    hs47StyleHeadingMarker();
+    function step(time) {
+      markerFrame = 0;
+      if (!following() || state.userHeadingMarker !== marker) return;
+      const progress = Math.min(1, Math.max(0, (time - now) / duration));
+      marker.setLatLng([
+        from.lat + (next.lat - from.lat) * progress,
+        from.lng + (next.lng - from.lng) * progress
+      ]);
+      if (progress < 1) markerFrame = requestAnimationFrame(step);
+    }
+    markerFrame = requestAnimationFrame(step);
+  };
+
+  map.on("dragstart zoomstart", cancelMotion);
+  document.addEventListener("visibilitychange", cancelMotion);
+  for (const id of ["rdDriveView", "rdBrowseMap", "mapNorthIndicator", "setWaypointBtn"]) {
+    document.getElementById(id)?.addEventListener("click", cancelMotion, true);
+  }
+  const finish = finishDrive;
+  finishDrive = function (...args) {
+    cancelMotion();
+    return finish.apply(this, args);
+  };
+  setInterval(() => {
+    if (lastFixAt && performance.now() - lastFixAt > 3000) {
+      cancelMotion();
+      lastFixAt = 0;
+      target = null;
+    }
+  }, 1000);
 }, {once: true});
