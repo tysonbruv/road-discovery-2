@@ -11,7 +11,7 @@
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v227-smooth6";
+  "road-discovery-au-v227-smooth7";
 
 const CORE_APP_SHELL = [
   "./",
@@ -20,7 +20,7 @@ const CORE_APP_SHELL = [
   "./icon.svg",
   "./style.css?v=68",
   "./app.js?v=227-offline1",
-  "./drive-view.js?v=6"
+  "./drive-view.js?v=7"
 ];
 
 
@@ -180,7 +180,7 @@ self.addEventListener(
           if (exact) return exact;
 
           if (url.pathname.endsWith("/drive-view.js")) {
-            return (await caches.match("./drive-view.js?v=6")) || Response.error();
+            return (await caches.match("./drive-view.js?v=7")) || Response.error();
           }
 
           if (
