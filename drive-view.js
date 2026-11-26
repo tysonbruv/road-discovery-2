@@ -524,3 +524,135 @@ document.addEventListener("DOMContentLoaded", function installSmoothFollow() {
     }
   }, 1000);
 }, {once: true});
+
+"use strict";
+
+document.addEventListener("DOMContentLoaded", function installUpdateNotes() {
+  // Increase this number and edit the list for each public release.
+  const release = 2026112601;
+  const metadataKey = "road_discovery_update_seen";
+  const prefix = "roadDiscoveryAU.updateSeen.v1/";
+  const acknowledged = new Map();
+  const syncing = new Set();
+  let displayedUser = "";
+  let timer;
+
+  const dialog = document.createElement("dialog");
+  dialog.id = "rdUpdateNotes";
+  dialog.setAttribute("aria-labelledby", "rdUpdateTitle");
+  dialog.setAttribute("aria-describedby", "rdUpdateList");
+  dialog.innerHTML = `
+    <h2 id="rdUpdateTitle">What’s new</h2>
+    <ul id="rdUpdateList">
+      <li>Smoother map and location-indicator movement.</li>
+      <li>Smoother turns in the 3D driving view.</li>
+      <li>Offline recording after a 30-second road-loading wait when GPS is available.</li>
+      <li>An orange Offline Rec indicator while road data is unavailable.</li>
+      <li>Saved GPS breadcrumbs for recovering missed road sections.</li>
+      <li>A GPS LOST warning and automatic resume when GPS returns.</li>
+      <li>More room for Australia, Weekly and Unlocked at the top of the map.</li>
+    </ul>
+    <button id="rdUpdateContinue" type="button" autofocus>Continue</button>
+  `;
+  const style = document.createElement("style");
+  style.textContent = `
+    #rdUpdateNotes {
+      box-sizing: border-box; width: min(92vw, 450px);
+      max-height: calc(100dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+      overflow-y: auto; border: 1px solid #394047; border-radius: 22px;
+      padding: 24px; background: #101419; color: #f4f6f8;
+      box-shadow: 0 20px 70px #0009; font-family: inherit;
+    }
+    #rdUpdateNotes::backdrop { background: #000b; }
+    #rdUpdateNotes h2 { margin: 0 0 18px; font-size: 26px; }
+    #rdUpdateNotes ul { padding-left: 21px; margin: 0 0 23px; }
+    #rdUpdateNotes li { margin: 10px 0; line-height: 1.45; color: #d9dfe5; }
+    #rdUpdateContinue {
+      width: 100%; min-height: 48px; border: 0; border-radius: 13px;
+      background: #ff8a18; color: #171008; font-family: inherit; font-size: 17px; font-weight: 800;
+      cursor: pointer;
+    }
+    #rdUpdateContinue:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+  `;
+  document.head.append(style);
+  document.body.append(dialog);
+
+  const localKey = id => prefix + encodeURIComponent(id);
+  function localVersion(id) {
+    try { return Number(localStorage.getItem(localKey(id))) || 0; }
+    catch { return 0; }
+  }
+  function cloudVersion() {
+    return Number(state.auth.user?.user_metadata?.[metadataKey]) || 0;
+  }
+  function seen(id) {
+    return Math.max(localVersion(id), acknowledged.get(id) || 0, cloudVersion()) >= release;
+  }
+  async function sync(id) {
+    if (state.auth.user?.id !== id || !navigator.onLine || syncing.has(id) ||
+        cloudVersion() >= release || Math.max(localVersion(id), acknowledged.get(id) || 0) < release) return;
+    syncing.add(id);
+    try {
+      const {data, error} = await state.auth.client.auth.updateUser({
+        data: {[metadataKey]: release}
+      });
+      if (!error && data?.user?.id === id && state.auth.user?.id === id) {
+        state.auth.user = data.user;
+      }
+    } catch {
+      // The device acknowledgement is retried when the connection returns.
+    } finally {
+      syncing.delete(id);
+    }
+  }
+  function check() {
+    timer = undefined;
+    const auth = state.auth;
+    const id = auth.user?.id || "";
+    const ready = id && auth.session && auth.profile && !auth.checkingSession && !auth.passwordRecovery;
+    if (dialog.open && (!ready || id !== displayedUser)) dialog.close();
+    if (!ready) return;
+    if (seen(id)) {
+      if (dialog.open) dialog.close();
+      void sync(id);
+      return;
+    }
+    const playing = state.isRecording || hasActiveHideSeekRound() || hasActiveConquestRound();
+    if (document.hidden || playing || state.drivePreparationOverlayActive) return;
+    if (!dialog.open) {
+      displayedUser = id;
+      dialog.showModal();
+    }
+  }
+  function schedule() {
+    if (timer === undefined) timer = setTimeout(check, 0);
+  }
+  dialog.addEventListener("cancel", event => event.preventDefault());
+  dialog.querySelector("button").addEventListener("click", () => {
+    const id = state.auth.user?.id;
+    if (!id || id !== displayedUser) { dialog.close(); schedule(); return; }
+    acknowledged.set(id, release);
+    try { localStorage.setItem(localKey(id), String(release)); } catch {}
+    dialog.close();
+    void sync(id);
+  });
+  const render = renderAuthState;
+  renderAuthState = function (...args) {
+    const result = render.apply(this, args);
+    // Auth requests run after Supabase's auth-state callback has returned.
+    schedule();
+    return result;
+  };
+  const finish = finishDrive;
+  finishDrive = function (...args) {
+    const result = finish.apply(this, args);
+    schedule();
+    return result;
+  };
+  window.addEventListener("online", schedule);
+  window.addEventListener("storage", event => {
+    if (!event.key || event.key.startsWith(prefix)) schedule();
+  });
+  document.addEventListener("visibilitychange", schedule);
+  schedule();
+}, {once: true});
