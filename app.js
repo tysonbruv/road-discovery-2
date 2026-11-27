@@ -61985,7 +61985,7 @@ const RD179_OVERPASS_ENDPOINTS = [
 ];
 
 const RD179_ROAD_SERVER_TIMEOUT_MS =
-  10000;
+  23000;
 
 
 Object.assign(state, {
@@ -75735,7 +75735,8 @@ const roadRecorder = (function offlineRecorder(){
     if(!badge) return;
     badge.hidden = !(state.isRecording && offline && !lost && !storeFailed);
     document.getElementById("rdGpsLost").hidden = !(state.isRecording && lost);
-    const text = storeFailed ? "Phone storage unavailable · GPS trail may be incomplete" : recoveryText || summary;
+    const text = storeFailed ? "Phone storage unavailable · GPS trail may be incomplete" :
+      (trip && offline && !lost ? "Recording GPS on this phone · Road matching pending" : recoveryText || summary);
     const note = document.getElementById("rdRoadRecovery");
     if(note.textContent !== text) note.textContent = text;
     note.hidden = !text;
@@ -75777,7 +75778,12 @@ const roadRecorder = (function offlineRecorder(){
     if(!trip)return true;
     const now=Date.now();markGap(now);
     if(!p || !Number.isFinite(p.lat)||!Number.isFinite(p.lng)||!Number.isFinite(p.accuracy)||
-      p.accuracy>MAX_GPS_ACCURACY_M || Math.abs(now-p.timestamp)>15000){ if(lost)state.lastPoint=null; return false; }
+      p.accuracy>MAX_GPS_ACCURACY_M || Math.abs(now-p.timestamp)>15000){
+      setGpsStatus(lost ? "GPS lost" : "GPS weak");
+      setAccuracyStatus(rd169FormatGpsAccuracy(p?.accuracy));
+      if(lost)state.lastPoint=null;
+      return false;
+    }
     if(lastFix && p.timestamp<=lastFix.t)return false;
     if(lost){gapMs+=now-lastGoodAt;lastFix=null;state.lastPoint=null}
     lastGoodAt=now;lost=false;
@@ -75842,7 +75848,8 @@ const roadRecorder = (function offlineRecorder(){
     return [...found.values()];
   }
   async function recover(){
-    const id=owner();if(!id || busy || storeFailed || document.hidden || !navigator.onLine)return;
+    const id=owner();if(!id || busy || storeFailed || document.hidden || !navigator.onLine ||
+      state.isLoadingRoads || state.drivePreparationOverlayActive)return;
     const now=Date.now();let key;
     try{key=keysFor(id).find(k=>k!==chunkKey && (lastAttempt.get(k)||0)<=now)}catch{return}
     if(!key)return;
