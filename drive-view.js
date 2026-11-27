@@ -566,7 +566,7 @@ document.addEventListener("DOMContentLoaded", function installSmoothFollow() {
 
 document.addEventListener("DOMContentLoaded", function installUpdateNotes() {
   // Increase this number and edit the list for each public release.
-  const release = 2026112701;
+  const release = 2026112702;
   const metadataKey = "road_discovery_update_seen";
   const prefix = "roadDiscoveryAU.updateSeen.v1/";
   const acknowledged = new Map();
@@ -581,13 +581,15 @@ document.addEventListener("DOMContentLoaded", function installUpdateNotes() {
   dialog.innerHTML = `
     <h2 id="rdUpdateTitle">What’s new</h2>
     <ul id="rdUpdateList">
+      <li>Choose Retry or Offline Record when road data cannot be loaded.</li>
+      <li>See the server name and error details for failed road downloads.</li>
       <li>Fixed a conflict between GPS follow and map zooming.</li>
       <li>Gave road servers more time to respond and paused recovery requests while nearby roads load.</li>
       <li>Added a visible GPS-recording status while roads are waiting to be matched.</li>
       <li>Restored location following when switching from 3D back to 2D.</li>
       <li>Smoother map and location-indicator movement.</li>
       <li>Smoother turns in the 3D driving view.</li>
-      <li>Offline recording after a 30-second road-loading wait when GPS is available.</li>
+      <li>Offline recording saves your GPS journey when you choose Offline Record.</li>
       <li>An orange Offline Rec indicator while road data is unavailable.</li>
       <li>Saved GPS breadcrumbs for recovering missed road sections.</li>
       <li>A GPS LOST warning and automatic resume when GPS returns.</li>
