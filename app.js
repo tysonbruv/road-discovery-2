@@ -4796,6 +4796,7 @@ function getCurrentPosition(options) {
 }
 
 async function startDrive() {
+  roadRecorder.resetStart();
   if (!navigator.geolocation) {
     showToast("GPS is not available");
     return;
@@ -4851,9 +4852,22 @@ async function startDrive() {
     rd169FormatGpsAccuracy(point.accuracy)
   );
 
-  await roadRecorder.waitRoads(() => ensureRoadsNearPoint(point, {replaceIfFar:true, quiet:false}));
+  const roadsReady = await roadRecorder.waitRoads(() => ensureRoadsNearPoint(
+    state.currentPoint || point, {replaceIfFar:true, quiet:false}));
+  if (roadsReady === null) {
+    setDriveButtons("idle");
+    setDriveStatus("Ready to drive");
+    rd54HideDrivePreparationOverlay();
+    return;
+  }
+  const drivePoint = await roadRecorder.freshPoint(point);
+  if (!drivePoint) return;
+  state.currentPoint = drivePoint;
+  state.followUser = true;
+  state.lastPoint = null;
+  updateUserMarker(drivePoint);
   beginGpsWatch();
-  roadRecorder.begin(point);
+  roadRecorder.begin(drivePoint);
 }
 
 function beginGpsWatch() {
@@ -14298,7 +14312,7 @@ startDrive = async function () {
           rd54HideDrivePreparationOverlay();
         }
       }, 650);
-    } else {
+    } else if (!roadRecorder.wasCancelled()) {
       rd54ShowDrivePreparationFailure();
     }
 
@@ -62067,99 +62081,7 @@ function rd179ShowBackupAttempt(
 }
 
 
-async function rd179FetchRoadWays(
-  lat,
-  lng,
-  radiusM
-) {
-  const query = rd179RoadQuery(
-    lat,
-    lng,
-    radiusM
-  );
-
-  const order =
-    rd179RoadServerOrder();
-
-  for (
-    let attempt = 0;
-    attempt < order.length;
-    attempt += 1
-  ) {
-    const endpointIndex =
-      order[attempt];
-
-    const endpoint =
-      RD179_OVERPASS_ENDPOINTS[
-        endpointIndex
-      ];
-
-    const controller =
-      new AbortController();
-
-    const timeout =
-      window.setTimeout(
-        () => controller.abort(),
-        RD179_ROAD_SERVER_TIMEOUT_MS
-      );
-
-    rd179ShowBackupAttempt(
-      attempt + 1
-    );
-
-    try {
-      const response = await fetch(
-        endpoint,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/x-www-form-urlencoded;charset=UTF-8",
-            Accept: "application/json"
-          },
-          body: new URLSearchParams({
-            data: query
-          }),
-          signal: controller.signal
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          `Road server returned ${response.status}`
-        );
-      }
-
-      const ways =
-        rd179UsableRoadWays(
-          await response.json()
-        );
-
-      if (ways.length === 0) {
-        throw new Error(
-          "Road server returned no usable roads"
-        );
-      }
-
-      state.rd179PreferredRoadServerIndex =
-        endpointIndex;
-
-      return ways;
-
-    } catch (error) {
-      console.warn(
-        `Road server ${attempt + 1} failed.`,
-        error
-      );
-
-    } finally {
-      window.clearTimeout(timeout);
-    }
-  }
-
-  return [];
-}
-
+async function rd179FetchRoadWays(lat,lng,radiusM) { return roadStart.fetchWays(lat,lng,radiusM); }
 
 function rd179FinishRoadCoverage(
   driveLoad,
@@ -75719,6 +75641,206 @@ document.documentElement.dataset
   .roadDiscoveryDaylightAppearanceLock =
     "truly-dark-and-road-brightness-disabled-v227";
 
+const roadStart = (function createRoadStart() {
+  const requests = new Set();
+  let failures = [];
+  let cancelled = false;
+  let dialog;
+  let details;
+
+  function showDetails() {
+    if (!details && document.getElementById("rdRoadRecovery")) {
+      details = document.createElement("details");
+      details.style.cssText = "max-width:100%;padding:6px 10px;background:#101419;color:#f5f5f5;border-radius:12px;font-size:12px;pointer-events:auto";
+      const summary = document.createElement("summary");
+      summary.textContent = "Road loading details";
+      details.append(summary, document.createElement("pre"));
+      details.lastElementChild.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere";
+      document.getElementById("rdRoadRecovery").after(details);
+    }
+    const text = failures.join("\n");
+    if (details) {
+      details.hidden = !text;
+      details.lastElementChild.textContent = text;
+    }
+    if (dialog) dialog.querySelector("pre").textContent = text;
+  }
+
+  function stopRequests() {
+    for (const request of requests) {
+      request.cancelled = true;
+      request.controller?.abort();
+    }
+  }
+
+  async function fetchWays(lat, lng, radius, options = {}) {
+    const background = options.background === true;
+    if (!background) {
+      stopRequests();
+      failures = [];
+      showDetails();
+    }
+    const request = {cancelled: false, controller: null};
+    requests.add(request);
+    const deadline = Date.now() + 30000;
+    try {
+      const order = rd179RoadServerOrder();
+      for (let attempt = 0; attempt < order.length; attempt++) {
+        const remaining = deadline - Date.now();
+        if (request.cancelled || remaining <= 0) break;
+        const index = order[attempt];
+        const endpoint = RD179_OVERPASS_ENDPOINTS[index];
+        const host = new URL(endpoint).hostname;
+        const controller = new AbortController();
+        request.controller = controller;
+        const limit = Math.min(23000, remaining);
+        let timer;
+        if (!background) rd179ShowBackupAttempt(attempt + 1);
+        try {
+          const expiry = new Promise((_, reject) => {
+            timer = setTimeout(() => {
+              controller.abort();
+              const error = new Error("timeout");
+              error.name = "TimeoutError";
+              reject(error);
+            }, limit);
+          });
+          const response = await Promise.race([
+            (async () => {
+              const result = await fetch(endpoint, {
+                method: "POST",
+                headers: {"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", Accept: "application/json"},
+                body: new URLSearchParams({data: rd179RoadQuery(lat, lng, radius)}),
+                signal: controller.signal
+              });
+              if (!result.ok) return {reason: "HTTP " + result.status};
+              let data;
+              try { data = await result.json(); }
+              catch (error) {
+                if (controller.signal.aborted) throw error;
+                return {reason: "Response was not readable JSON"};
+              }
+              const ways = rd179UsableRoadWays(data);
+              return ways.length ? {ways} : {reason: data?.remark ? "Server reported a query error" : "No usable road geometry returned"};
+            })(),
+            expiry
+          ]);
+          if (request.cancelled) return [];
+          if (response.ways) {
+            state.rd179PreferredRoadServerIndex = index;
+            return response.ways;
+          }
+          if (!background) failures.push(host + " — " + response.reason);
+        } catch (error) {
+          if (request.cancelled) return [];
+          if (!background) {
+            const reason = controller.signal.aborted || error.name === "TimeoutError"
+              ? "Timed out after " + Math.round(limit / 1000) + " seconds"
+              : "Network or browser access error";
+            failures.push(host + " — " + reason);
+          }
+        } finally {
+          clearTimeout(timer);
+          if (!background && !request.cancelled) showDetails();
+        }
+      }
+      return [];
+    } finally {
+      requests.delete(request);
+    }
+  }
+
+  function choose() {
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.setAttribute("aria-labelledby", "rdRoadChoiceTitle");
+      dialog.style.cssText = "box-sizing:border-box;width:min(92vw,460px);max-height:85dvh;overflow:auto;padding:24px;border:1px solid #41474e;border-radius:22px;background:#101419;color:white;font-family:inherit";
+      dialog.innerHTML = `
+        <h2 id="rdRoadChoiceTitle">Couldn’t load road data</h2>
+        <p>Retry the road download, or record your GPS trail on this phone and match roads later.</p>
+        <pre style="white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 system-ui"></pre>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" data-action="retry" autofocus>Retry</button>
+          <button type="button" data-action="offline">Offline Record</button>
+          <button type="button" data-action="cancel">Cancel</button>
+        </div>`;
+      const style = document.createElement("style");
+      style.textContent = "dialog.rd-road-choice::backdrop{background:#000b}.rd-road-choice button{min-height:48px;padding:10px 15px;border:0;border-radius:12px;background:#ff8a18;color:#15100b;font:700 15px system-ui;cursor:pointer}.rd-road-choice [data-action=cancel]{background:#30363d;color:white}.rd-road-choice button:focus-visible{outline:3px solid white;outline-offset:3px}";
+      dialog.className = "rd-road-choice";
+      document.head.append(style);
+      document.body.append(dialog);
+    }
+    showDetails();
+    return new Promise(resolve => {
+      function finish(action) {
+        dialog.removeEventListener("click", click);
+        dialog.removeEventListener("cancel", cancel);
+        dialog.close();
+        resolve(action);
+      }
+      function click(event) {
+        const action = event.target.closest("button[data-action]")?.dataset.action;
+        if (action) finish(action);
+      }
+      function cancel(event) { event.preventDefault(); finish("cancel"); }
+      dialog.addEventListener("click", click);
+      dialog.addEventListener("cancel", cancel);
+      dialog.showModal();
+    });
+  }
+
+  async function wait(load, setOffline) {
+    cancelled = false;
+    for (;;) {
+      let timer;
+      let timedOut = false;
+      const expiry = new Promise(resolve => {
+        timer = setTimeout(() => { timedOut = true; resolve(false); }, 30000);
+      });
+      const attempt = Promise.resolve().then(load).catch(error => {
+        failures.push("App road loader — " + (error?.name || "Error"));
+        return false;
+      });
+      const ready = await Promise.race([attempt, expiry]);
+      clearTimeout(timer);
+      if (ready) { setOffline(false); return true; }
+      stopRequests();
+      if (!failures.length) failures = [timedOut
+        ? "Road download did not complete within 30 seconds."
+        : "Road loader finished without usable roads."];
+      const action = await choose();
+      if (action === "retry") continue;
+      if (action === "offline") { setOffline(true); return false; }
+      cancelled = true;
+      return null;
+    }
+  }
+
+  async function freshPoint(original) {
+    function usable(point) {
+      return point && Number.isFinite(point.lat) && Number.isFinite(point.lng) &&
+        Number.isFinite(point.accuracy) && point.accuracy <= MAX_GPS_ACCURACY_M &&
+        Date.now() - point.timestamp >= -1000 && Date.now() - point.timestamp < 15000;
+    }
+    if (usable(state.currentPoint)) return state.currentPoint;
+    if (usable(original)) return original;
+    rd54SetDrivePreparationStage("gps");
+    setDriveStatus("Checking GPS");
+    const position = await getCurrentPosition({enableHighAccuracy: true, timeout: 12000, maximumAge: 1000});
+    const point = position ? positionToPoint(position) : null;
+    if (usable(point)) return point;
+    setDriveButtons("idle");
+    setDriveStatus("GPS unavailable");
+    setGpsStatus("GPS unavailable");
+    return null;
+  }
+
+  return {
+    fetchWays, wait, freshPoint,
+    wasCancelled: () => cancelled,
+    resetStart: () => { cancelled = false; }
+  };
+})();
 const roadRecorder = (function offlineRecorder(){
   const prefix = "roadDiscoveryAU.pendingDrive.v1/";
   let trip = "", lastFix = null, lastGoodAt = 0, gapMs = 0, offline = false;
@@ -75802,16 +75924,7 @@ const roadRecorder = (function offlineRecorder(){
     ui();return true;
   }
   async function waitRoads(load){
-    const started=Date.now();
-    let timer;
-    const deadline=new Promise(resolve=>{timer=setTimeout(()=>resolve(false),30000)});
-    try{
-      const attempt=Promise.resolve().then(load).catch(()=>false);
-      const ready=await Promise.race([attempt,deadline]);
-      if(!ready && Date.now()-started<30000)await deadline;
-      offline=!ready;
-      return !!ready;
-    }finally{clearTimeout(timer)}
+    return roadStart.wait(load, value => { offline = value; });
   }
   function finish(){
     if(!trip)return;
@@ -75905,17 +76018,7 @@ const roadRecorder = (function offlineRecorder(){
     finally{busy=false;recoveryText="";ui();if(more)setTimeout(recover,1500)}
   }
   async function fetchRecoveryWays(center,radius){
-    for(const index of rd179RoadServerOrder()){
-      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),23000);
-      try{
-        const response=await fetch(RD179_OVERPASS_ENDPOINTS[index],{method:"POST",body:new URLSearchParams({data:rd179RoadQuery(center.lat,center.lng,radius)}),signal:controller.signal});
-        if(response.ok){
-          const ways=rd179UsableRoadWays(await response.json());
-          if(ways.length)return ways;
-        }
-      }catch{}finally{clearTimeout(timer)}
-    }
-    return [];
+    return roadStart.fetchWays(center.lat, center.lng, radius, {background:true});
   }
   function roadResult(ok){offline=!ok;if(trip){if(ok && !storeFailed)seal();ui()}}
   function clearAccount(id){for(const key of keysFor(id))localStorage.removeItem(key);seal()}
@@ -75925,5 +76028,6 @@ const roadRecorder = (function offlineRecorder(){
   document.addEventListener("visibilitychange",()=>{if(!document.hidden){markGap(Date.now());void recover()}});
   setInterval(()=>{if(trip)markGap(Date.now())},1000);
   setInterval(()=>{void recover()},20000);
-  return {begin,finish,record,waitRoads,roadResult,clearAccount};
+  return {begin,finish,record,waitRoads,roadResult,clearAccount,
+    freshPoint:roadStart.freshPoint,wasCancelled:roadStart.wasCancelled,resetStart:roadStart.resetStart};
 })();
