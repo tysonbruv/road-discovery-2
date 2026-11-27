@@ -157,6 +157,7 @@
     // north-up for the whole 3D session, including its GPS and waypoint layers.
     const flatSetBearing = hs47SetMapBearing;
     hs47SetMapBearing = function (target, ...rest) {
+      if (map.rdSmoothZooming) return;
       if (!pitched) return flatSetBearing(target, ...rest);
       if (!Number.isFinite(target)) return;
       targetBearing = ((target % 360) + 360) % 360;
@@ -460,6 +461,7 @@ document.addEventListener("DOMContentLoaded", function installSmoothFollow() {
   let markerFrame = 0;
   let panTarget = null;
   let panZoom = null;
+  map.rdSmoothZooming = false;
 
   function following() {
     return state.followUser && hs47NavigationIsActive() && !document.hidden;
@@ -469,10 +471,11 @@ document.addEventListener("DOMContentLoaded", function installSmoothFollow() {
     cancelAnimationFrame(markerFrame);
     markerFrame = 0;
     panTarget = null;
-    map.stop();
+    if (!map.rdSmoothZooming) map.stop();
   }
 
   map.panTo = function (point, options = {}) {
+    if (map.rdSmoothZooming) return map;
     if (!following()) return originalPan(point, options);
     const next = L.latLng(point);
     const zoom = map.getZoom();
@@ -530,7 +533,17 @@ document.addEventListener("DOMContentLoaded", function installSmoothFollow() {
     markerFrame = requestAnimationFrame(step);
   };
 
-  map.on("dragstart zoomstart", cancelMotion);
+  map.on("dragstart", cancelMotion);
+  map.on("zoomstart", () => {
+    // Leaflet owns its centre, transforms and tile levels throughout a zoom.
+    // Calling stop() here can re-enter setZoom() at an intermediate level.
+    map.rdSmoothZooming = true;
+    cancelMotion();
+  });
+  map.on("zoomend", () => {
+    map.rdSmoothZooming = false;
+    panTarget = null;
+  });
   document.addEventListener("visibilitychange", cancelMotion);
   for (const id of ["rdDriveView", "rdBrowseMap", "mapNorthIndicator", "setWaypointBtn"]) {
     document.getElementById(id)?.addEventListener("click", cancelMotion, true);
@@ -553,7 +566,7 @@ document.addEventListener("DOMContentLoaded", function installSmoothFollow() {
 
 document.addEventListener("DOMContentLoaded", function installUpdateNotes() {
   // Increase this number and edit the list for each public release.
-  const release = 2026112602;
+  const release = 2026112701;
   const metadataKey = "road_discovery_update_seen";
   const prefix = "roadDiscoveryAU.updateSeen.v1/";
   const acknowledged = new Map();
@@ -568,6 +581,9 @@ document.addEventListener("DOMContentLoaded", function installUpdateNotes() {
   dialog.innerHTML = `
     <h2 id="rdUpdateTitle">What’s new</h2>
     <ul id="rdUpdateList">
+      <li>Fixed a conflict between GPS follow and map zooming.</li>
+      <li>Gave road servers more time to respond and paused recovery requests while nearby roads load.</li>
+      <li>Added a visible GPS-recording status while roads are waiting to be matched.</li>
       <li>Restored location following when switching from 3D back to 2D.</li>
       <li>Smoother map and location-indicator movement.</li>
       <li>Smoother turns in the 3D driving view.</li>
