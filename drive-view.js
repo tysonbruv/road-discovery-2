@@ -399,6 +399,13 @@ document.addEventListener("DOMContentLoaded", function installIndicatorColours()
     <div id="rdIndicatorColourGrid" class="trail-colour-grid" role="group" aria-label="Choose indicator colour" hidden></div>
   `;
   anchor.after(setting);
+  const help = document.createElement("details");
+  help.style.cssText="margin:12px 0;padding:10px;border-radius:10px;background:#1b2025";
+  const summary=document.createElement("summary");
+  summary.textContent="How Offline Record works";
+  const description=document.createElement("p");
+  description.textContent=RD_OFFLINE_HELP;
+  help.append(summary,description);setting.after(help);
   const toggle = document.getElementById("rdIndicatorColourToggle");
   const label = document.getElementById("rdIndicatorColourValue");
   const grid = document.getElementById("rdIndicatorColourGrid");
@@ -566,7 +573,7 @@ document.addEventListener("DOMContentLoaded", function installSmoothFollow() {
 
 document.addEventListener("DOMContentLoaded", function installUpdateNotes() {
   // Increase this number and edit the list for each public release.
-  const release = 2026112702;
+  const release = 2026112801;
   const metadataKey = "road_discovery_update_seen";
   const prefix = "roadDiscoveryAU.updateSeen.v1/";
   const acknowledged = new Map();
@@ -581,19 +588,10 @@ document.addEventListener("DOMContentLoaded", function installUpdateNotes() {
   dialog.innerHTML = `
     <h2 id="rdUpdateTitle">What’s new</h2>
     <ul id="rdUpdateList">
-      <li>Choose Retry or Offline Record when road data cannot be loaded.</li>
-      <li>See the server name and error details for failed road downloads.</li>
-      <li>Fixed a conflict between GPS follow and map zooming.</li>
-      <li>Gave road servers more time to respond and paused recovery requests while nearby roads load.</li>
-      <li>Added a visible GPS-recording status while roads are waiting to be matched.</li>
-      <li>Restored location following when switching from 3D back to 2D.</li>
-      <li>Smoother map and location-indicator movement.</li>
-      <li>Smoother turns in the 3D driving view.</li>
-      <li>Offline recording saves your GPS journey when you choose Offline Record.</li>
-      <li>An orange Offline Rec indicator while road data is unavailable.</li>
-      <li>Saved GPS breadcrumbs for recovering missed road sections.</li>
-      <li>A GPS LOST warning and automatic resume when GPS returns.</li>
-      <li>More room for Australia, Weekly and Unlocked at the top of the map.</li>
+      <li>Offline GPS trails stay on this device as a dashed red line after you reopen the map.</li>
+      <li>Finish Drive shows how many GPS points were saved. View saved trail takes you back to them.</li>
+      <li>Road matching and account backup retry when data becomes available.</li>
+      <li>Recent road downloads can be reused on this device. Tap ⓘ beside Offline Record for help.</li>
     </ul>
     <button id="rdUpdateContinue" type="button" autofocus>Continue</button>
   `;
