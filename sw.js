@@ -11,7 +11,15 @@
 */
 
 const CACHE_NAME =
-  "road-discovery-au-v227-zoom8";
+  "road-discovery-au-v227-offline-checkpoint1";
+
+const BOOT_RESOURCES = new Set([
+  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+  "https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js",
+  "https://unpkg.com/protomaps-leaflet@4.0.1/dist/protomaps-leaflet.js",
+  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+]);
 
 const CORE_APP_SHELL = [
   "./",
@@ -19,8 +27,8 @@ const CORE_APP_SHELL = [
   "./manifest.json",
   "./icon.svg",
   "./style.css?v=68",
-  "./app.js?v=227-offline2",
-  "./drive-view.js?v=8"
+  "./app.js?v=227-offline-checkpoint1",
+  "./drive-view.js?v=10"
 ];
 
 
@@ -35,6 +43,9 @@ self.addEventListener(
             CORE_APP_SHELL
           );
 
+          await Promise.allSettled(Array.from(BOOT_RESOURCES, url =>
+            cache.add(new Request(url,{mode:"cors",credentials:"omit"}))
+          ));
           // Older URLs remain eligible for the network-first runtime cache.
           // Preloading every historical query downloads the same app repeatedly.
           try {
@@ -94,6 +105,17 @@ self.addEventListener(
       OSRM and other external requests remain
       controlled by their own network services.
     */
+    if (BOOT_RESOURCES.has(url.href)) {
+      event.respondWith((async()=>{
+        const cache=await caches.open(CACHE_NAME);
+        const saved=await cache.match(url.href);
+        if(saved)return saved;
+        const response=await fetch(new Request(url.href,{mode:"cors",credentials:"omit"}));
+        if(response.ok)await cache.put(url.href,response.clone());
+        return response;
+      })());
+      return;
+    }
     if (
       url.origin !==
         self.location.origin
@@ -180,7 +202,7 @@ self.addEventListener(
           if (exact) return exact;
 
           if (url.pathname.endsWith("/drive-view.js")) {
-            return (await caches.match("./drive-view.js?v=8")) || Response.error();
+            return (await caches.match("./drive-view.js?v=10")) || Response.error();
           }
 
           if (
@@ -190,7 +212,7 @@ self.addEventListener(
           ) {
             return (
               await caches.match(
-                "./app.js?v=227-offline2"
+                "./app.js?v=227-offline-checkpoint1"
               )
             ) ||
               (
